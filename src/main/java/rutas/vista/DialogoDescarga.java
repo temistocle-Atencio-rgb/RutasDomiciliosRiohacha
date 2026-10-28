@@ -36,8 +36,8 @@ public final class DialogoDescarga {
         estado.setForeground(Tema.GRIS_OSCURO);
         JProgressBar barra = new JProgressBar();
         barra.setIndeterminate(true);
-        JLabel nota = new JLabel("<html><div style='width:330px;color:#5B6675'>Se descargan las calles, sentidos, "
-                + "semáforos y lugares. Puede tardar de 1 a 3 minutos. Datos © colaboradores de OpenStreetMap.</div></html>");
+        Tema.Parrafo nota = Tema.parrafo("Se descargan las calles, sentidos, semáforos y lugares. Puede tardar "
+                + "de 1 a 3 minutos. Datos © colaboradores de OpenStreetMap.", 330);
         nota.setFont(Tema.texto(11.5f));
         JPanel centro = new JPanel(new BorderLayout(0, 8));
         centro.setOpaque(false);

@@ -420,10 +420,10 @@ public class PanelPedidos extends JPanel {
         javax.swing.JTextArea area = new javax.swing.JTextArea(12, 42);
         area.setFont(Tema.texto(12.5f));
         area.setLineWrap(true);
-        JLabel ayuda = new JLabel("<html>Un pedido por línea. Puede incluir el nombre del cliente antes de la dirección.<br>"
-                + "Ejemplos:<br>&nbsp;&nbsp;Ana María, Calle 15 # 10-20<br>&nbsp;&nbsp;Cra 7 con Calle 12 (tienda)"
-                + "<br>&nbsp;&nbsp;Luis - Droguería La Economía<br>Escriba URGENTE en la línea para entregarlo primero.</html>");
-        ayuda.setFont(Tema.texto(12));
+        Tema.Parrafo ayuda = Tema.parrafo("Un pedido por línea. Puede incluir el nombre del cliente antes de la dirección.\n"
+                + "Ejemplos:\n    Ana María, Calle 15 # 10-20\n    Cra 7 con Calle 12 (tienda)\n"
+                + "    Luis - Droguería La Economía\nEscriba URGENTE en la línea para entregarlo primero.", 460);
+        ayuda.setForeground(Tema.GRIS_OSCURO);
         JPanel p = new JPanel(new BorderLayout(0, 8));
         p.add(ayuda, BorderLayout.NORTH);
         p.add(new JScrollPane(area), BorderLayout.CENTER);
@@ -501,11 +501,10 @@ public class PanelPedidos extends JPanel {
             for (int i = 0; i < rutas.size(); i++) {
                 Ruta x = rutas.get(i);
                 peor = Math.max(peor, x.getSegundos());
-                Color c = PanelMapa.colorRuta(i);
-                String hex = String.format("#%02x%02x%02x", c.getRed(), c.getGreen(), c.getBlue());
-                JLabel l = new JLabel("<html><span style='color:" + hex + "'>●</span> <b>Moto " + (i + 1) + ":</b> "
-                        + x.getParadas().size() + " entregas · " + Geo.formatoDistancia(x.getMetros()) + " · "
-                        + Geo.formatoTiempo(x.getSegundos()) + "</html>");
+                JLabel l = new JLabel("Moto " + (i + 1) + ":  " + x.getParadas().size() + " entregas · "
+                        + Geo.formatoDistancia(x.getMetros()) + " · " + Geo.formatoTiempo(x.getSegundos()));
+                l.setIcon(Tema.punto(PanelMapa.colorRuta(i)));
+                l.setIconTextGap(6);
                 l.setFont(Tema.texto(12));
                 l.setForeground(Tema.GRIS_OSCURO);
                 l.setAlignmentX(LEFT_ALIGNMENT);
@@ -547,7 +546,7 @@ public class PanelPedidos extends JPanel {
             for (Parada p : r.getSinCamino()) {
                 sb.append(p.etiqueta()).append("; ");
             }
-            JLabel l = Tema.parrafo(sb + "(revise vías cerradas o calles de una vía).", 262);
+            Tema.Parrafo l = Tema.parrafo(sb + "(revise vías cerradas o calles de una vía).", 262);
             l.setForeground(Tema.ERROR);
             t.add(Tema.espacio(4));
             t.add(l);
@@ -555,13 +554,10 @@ public class PanelPedidos extends JPanel {
 
         t.add(Tema.etiqueta("Orden de entrega"));
         for (int i = 0; i < r.getParadas().size(); i++) {
-            JLabel l = new JLabel("<html><b>" + (i + 1) + ".</b> "
-                    + (r.getParadas().get(i).isUrgente() ? "<b style='color:#D64545'>URGENTE</b> " : "")
-                    + escapar(r.getParadas().get(i).etiqueta())
-                    + " <span style='color:#5B6675'>· " + r.getLlegadas().get(i).format(Ruta.FORMATO_HORA) + "</span></html>");
-            l.setFont(Tema.texto(12));
-            l.setForeground(Tema.GRIS_OSCURO);
-            l.setAlignmentX(LEFT_ALIGNMENT);
+            Parada pa = r.getParadas().get(i);
+            Tema.Parrafo l = Tema.parrafo((i + 1) + ". " + (pa.isUrgente() ? "URGENTE · " : "") + pa.etiqueta()
+                    + "  ·  " + r.getLlegadas().get(i).format(Ruta.FORMATO_HORA), 262);
+            l.setForeground(pa.isUrgente() ? Tema.ERROR : Tema.GRIS_OSCURO);
             l.setBorder(BorderFactory.createEmptyBorder(1, 0, 1, 0));
             t.add(l);
         }
@@ -621,10 +617,6 @@ public class PanelPedidos extends JPanel {
         SwingUtilities.invokeLater(() -> scrollRectToVisible(t.getBounds()));
     }
 
-    private static String escapar(String s) {
-        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
-    }
-
     private JPanel metrica(String titulo, String valor) {
         JPanel p = new JPanel();
         p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
@@ -681,15 +673,16 @@ public class PanelPedidos extends JPanel {
         tabla.getTableHeader().setFont(Tema.textoFuerte(11.5f));
         tabla.setRowHeight(24);
         tabla.setEnabled(false);
-        StringBuilder leyenda = new StringBuilder("<html>Cada celda es el costo del mejor camino (Dijkstra) "
-                + "de la fila a la columna. No es simétrica por las calles de una vía.<br>");
+        StringBuilder leyenda = new StringBuilder("Cada celda es el costo del mejor camino (Dijkstra) "
+                + "de la fila a la columna. No es simétrica por las calles de una vía.\n");
         for (int i = 1; i < m.tamano(); i++) {
             List<Parada> pts = app.getPlanificador().getUltimosPuntos();
-            leyenda.append("E").append(i).append(" = ").append(escapar(pts.size() > i ? pts.get(i).etiqueta() : ""))
-                    .append("<br>");
+            leyenda.append("E").append(i).append(" = ").append(pts.size() > i ? pts.get(i).etiqueta() : "")
+                    .append("\n");
         }
-        JLabel l = new JLabel(leyenda + "</html>");
+        Tema.Parrafo l = Tema.parrafo(leyenda.toString().trim(), 600);
         l.setFont(Tema.texto(11.5f));
+        l.setForeground(Tema.GRIS_OSCURO);
         l.setBorder(BorderFactory.createEmptyBorder(8, 4, 8, 4));
         JPanel p = new JPanel(new BorderLayout());
         p.add(new JScrollPane(tabla), BorderLayout.CENTER);
@@ -741,17 +734,9 @@ public class PanelPedidos extends JPanel {
         public Component getListCellRendererComponent(JList<?> list, Object value, int index,
                                                       boolean sel, boolean foco) {
             Parada p = (Parada) value;
-            String html = "<html><div style='width:250px'><b style='color:#003A73'>" + (index + 1) + ".</b> "
-                    + (p.isUrgente() ? "<b style='color:#D64545'>URGENTE</b> " : "") + escapar(p.etiqueta())
-                    + "<br><span style='color:#5B6675;font-size:9px'>" + escapar(p.getPrecision()) + "</span></div></html>";
-            JLabel l = (JLabel) super.getListCellRendererComponent(list, html, index, sel, foco);
-            l.setFont(Tema.texto(12));
-            l.setBorder(BorderFactory.createEmptyBorder(4, 8, 4, 8));
-            if (sel) {
-                l.setBackground(Tema.AZUL_SUAVE);
-                l.setForeground(Tema.GRIS_OSCURO);
-            }
-            return l;
+            return Tema.celda(list, (index + 1) + ". " + (p.isUrgente() ? "URGENTE · " : "") + p.etiqueta(),
+                    Tema.textoFuerte(12), p.isUrgente() ? Tema.ERROR : Tema.AZUL_PROFUNDO, p.getPrecision(), sel,
+                    Color.WHITE);
         }
     }
 
@@ -759,22 +744,14 @@ public class PanelPedidos extends JPanel {
         @Override
         public Component getListCellRendererComponent(JList<?> list, Object value, int index,
                                                       boolean sel, boolean foco) {
-            String texto;
             if (value instanceof Cliente) {
-                texto = "<html><b>" + escapar(((Cliente) value).getNombre()) + "</b> <span style='color:#5B6675'>· cliente · "
-                        + escapar(((Cliente) value).getDireccion()) + "</span></html>";
-            } else {
-                Lugar l = (Lugar) value;
-                texto = "<html>" + escapar(l.getNombre()) + " <span style='color:#5B6675'>· " + l.getCategoria() + "</span></html>";
+                Cliente c = (Cliente) value;
+                return Tema.celda(list, c.getNombre(), Tema.textoFuerte(12), Tema.GRIS_OSCURO,
+                        "Cliente · " + c.getDireccion(), sel, Color.WHITE);
             }
-            JLabel l = (JLabel) super.getListCellRendererComponent(list, texto, index, sel, foco);
-            l.setFont(Tema.texto(12));
-            l.setBorder(BorderFactory.createEmptyBorder(3, 8, 3, 8));
-            if (sel) {
-                l.setBackground(Tema.AZUL_SUAVE);
-                l.setForeground(Tema.GRIS_OSCURO);
-            }
-            return l;
+            Lugar l = (Lugar) value;
+            return Tema.celda(list, l.getNombre(), Tema.texto(12), Tema.GRIS_OSCURO, l.getCategoria().toString(), sel,
+                    Color.WHITE);
         }
     }
 
@@ -783,17 +760,9 @@ public class PanelPedidos extends JPanel {
         public Component getListCellRendererComponent(JList<?> list, Object value, int index,
                                                       boolean sel, boolean foco) {
             Indicacion i = (Indicacion) value;
-            JLabel l = (JLabel) super.getListCellRendererComponent(list,
-                    "<html><div style='width:250px'>" + escapar(i.getTexto()) + "</div></html>", index, sel, foco);
-            l.setFont(i.isEsEntrega() ? Tema.textoFuerte(12) : Tema.texto(12));
-            l.setForeground(i.isEsEntrega() ? Tema.AZUL_PROFUNDO : Tema.GRIS_OSCURO);
-            l.setBorder(BorderFactory.createEmptyBorder(4, 8, 4, 8));
-            if (i.isEsEntrega()) {
-                l.setBackground(sel ? Tema.AZUL_SUAVE : new Color(0xFFF4E6));
-            } else if (sel) {
-                l.setBackground(Tema.AZUL_SUAVE);
-            }
-            return l;
+            return Tema.celda(list, i.getTexto(), i.isEsEntrega() ? Tema.textoFuerte(12) : Tema.texto(12),
+                    i.isEsEntrega() ? Tema.AZUL_PROFUNDO : Tema.GRIS_OSCURO, null, sel,
+                    i.isEsEntrega() ? new Color(0xFFF4E6) : Color.WHITE);
         }
     }
 }

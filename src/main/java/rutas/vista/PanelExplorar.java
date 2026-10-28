@@ -31,7 +31,7 @@ public class PanelExplorar extends JPanel {
     private final DefaultListModel<Object> modelo = new DefaultListModel<>();
     private final JList<Object> lista = new JList<>(modelo);
     private final JLabel lblConteo = new JLabel();
-    private final JLabel lblCobertura = Tema.parrafo("", 262);
+    private final Tema.Parrafo lblCobertura = Tema.parrafo("", 262);
 
     public PanelExplorar(Aplicacion app) {
         this.app = app;
@@ -113,10 +113,8 @@ public class PanelExplorar extends JPanel {
             {"Semáforos y pares", semaforos + " semáforos · " + pares + " pares"},
         };
         for (String[] f : filas) {
-            JLabel l = new JLabel("<html><span style='color:#5B6675'>" + f[0] + ":</span> <b>" + f[1] + "</b></html>");
-            l.setFont(Tema.texto(12));
+            Tema.Parrafo l = Tema.parrafo(f[0] + ":  " + f[1], 262);
             l.setForeground(Tema.GRIS_OSCURO);
-            l.setAlignmentX(LEFT_ALIGNMENT);
             l.setBorder(BorderFactory.createEmptyBorder(2, 0, 2, 0));
             t.add(l);
         }
@@ -146,9 +144,9 @@ public class PanelExplorar extends JPanel {
             cuenta += llega[i] ? 1 : 0;
         }
         app.getPanelMapa().setNoAlcanzables(no);
-        lblCobertura.setText(String.format("<html><div style='width:262px'>BFS desde la salida: se llega a <b>%,d de %,d</b> "
+        lblCobertura.setText(String.format("BFS desde la salida: se llega a %,d de %,d "
                 + "nodos (%.1f %%) en %.1f ms, ida y vuelta. Los puntos rojos son zonas donde no se puede entrar "
-                + "o salir respetando el sentido de las calles o las vías cerradas.</div></html>",
+                + "o salir respetando el sentido de las calles o las vías cerradas.",
                 cuenta, g.getCantidadNodos(), 100.0 * cuenta / g.getCantidadNodos(), (t1 - t0) / 1e6));
     }
 
@@ -229,22 +227,13 @@ public class PanelExplorar extends JPanel {
     private static class Render extends DefaultListCellRenderer {
         @Override
         public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean sel, boolean foco) {
-            String html;
             if (value instanceof Lugar) {
                 Lugar l = (Lugar) value;
-                html = "<html>" + l.getNombre().replace("<", "&lt;") + " <span style='color:#5B6675'>· "
-                        + l.getCategoria() + "</span></html>";
-            } else {
-                html = "<html><b style='color:#003A73'>" + value + "</b> <span style='color:#5B6675'>· vía</span></html>";
+                return Tema.celda(list, l.getNombre(), Tema.texto(12), Tema.GRIS_OSCURO,
+                        l.getCategoria().toString(), sel, java.awt.Color.WHITE);
             }
-            JLabel l = (JLabel) super.getListCellRendererComponent(list, html, index, sel, foco);
-            l.setFont(Tema.texto(12));
-            l.setBorder(BorderFactory.createEmptyBorder(3, 8, 3, 8));
-            if (sel) {
-                l.setBackground(Tema.AZUL_SUAVE);
-                l.setForeground(Tema.GRIS_OSCURO);
-            }
-            return l;
+            return Tema.celda(list, String.valueOf(value), Tema.textoFuerte(12), Tema.AZUL_PROFUNDO, "Vía", sel,
+                    java.awt.Color.WHITE);
         }
     }
 }

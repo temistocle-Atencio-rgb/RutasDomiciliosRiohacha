@@ -308,13 +308,73 @@ public final class Tema {
         return l;
     }
 
-    /** Texto que se parte en varias lineas segun el ancho. */
-    public static JLabel parrafo(String texto, int ancho) {
-        JLabel l = new JLabel("<html><div style='width:" + ancho + "px'>" + texto + "</div></html>");
-        l.setFont(texto(12));
-        l.setForeground(GRIS_TEXTO);
-        l.setAlignmentX(Component.LEFT_ALIGNMENT);
-        return l;
+    /** Texto que se parte en varias lineas segun el ancho disponible. */
+    public static Parrafo parrafo(String texto, int ancho) {
+        return new Parrafo(texto, ancho);
+    }
+
+    /**
+     * Parrafo de solo lectura hecho con JTextArea: ajusta el texto en varias lineas
+     * y se ve como una etiqueta (sin borde ni fondo).
+     */
+    public static class Parrafo extends javax.swing.JTextArea {
+        public Parrafo(String texto, int ancho) {
+            super(texto);
+            setLineWrap(true);
+            setWrapStyleWord(true);
+            setEditable(false);
+            setFocusable(false);
+            setOpaque(false);
+            setBorder(BorderFactory.createEmptyBorder());
+            setFont(texto(12));
+            setForeground(GRIS_TEXTO);
+            setAlignmentX(Component.LEFT_ALIGNMENT);
+            setSize(new Dimension(ancho, 10)); // ancho inicial para calcular el alto
+        }
+
+        @Override
+        public Dimension getMaximumSize() {
+            return new Dimension(Integer.MAX_VALUE, getPreferredSize().height);
+        }
+    }
+
+    /**
+     * Fila de una lista con un titulo y un detalle debajo, hecha con dos JTextArea
+     * para que el texto largo baje de linea. Se usa en los renderizadores de las listas.
+     */
+    public static Component celda(javax.swing.JList<?> lista, String titulo, java.awt.Font fuenteTitulo,
+                                  Color colorTitulo, String detalle, boolean seleccionada, Color fondo) {
+        JPanel p = new JPanel(new java.awt.BorderLayout(0, 1));
+        p.setBorder(BorderFactory.createEmptyBorder(4, 8, 4, 8));
+        p.setBackground(seleccionada ? AZUL_SUAVE : fondo);
+        int ancho = Math.max(120, (lista.getWidth() > 0 ? lista.getWidth() : 280) - 16);
+        Parrafo t = new Parrafo(titulo, ancho);
+        t.setFont(fuenteTitulo);
+        t.setForeground(colorTitulo);
+        p.add(t, java.awt.BorderLayout.NORTH);
+        if (detalle != null && !detalle.isEmpty()) {
+            Parrafo d = new Parrafo(detalle, ancho);
+            d.setFont(texto(11));
+            d.setForeground(GRIS_TEXTO);
+            p.add(d, java.awt.BorderLayout.CENTER);
+        }
+        return p;
+    }
+
+    /** Icono de un circulo de color (para la leyenda de las motos). */
+    public static javax.swing.Icon punto(Color color) {
+        return new javax.swing.Icon() {
+            public void paintIcon(Component c, Graphics g0, int x, int y) {
+                Graphics2D g = (Graphics2D) g0.create();
+                suavizar(g);
+                g.setColor(color);
+                g.fillOval(x, y + 1, 10, 10);
+                g.dispose();
+            }
+
+            public int getIconWidth() { return 10; }
+            public int getIconHeight() { return 12; }
+        };
     }
 
     public static JCheckBox casilla(String texto) {

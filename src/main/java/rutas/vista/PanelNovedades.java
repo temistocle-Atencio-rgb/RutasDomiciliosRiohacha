@@ -94,7 +94,7 @@ public class PanelNovedades extends JPanel {
             String.format("%.0f min por cada entrega.", tr.tiempoEntrega() / 60),
         };
         for (String f : filas) {
-            JLabel l = Tema.parrafo("• " + f, 262);
+            Tema.Parrafo l = Tema.parrafo("• " + f, 262);
             l.setForeground(Tema.GRIS_OSCURO);
             l.setBorder(BorderFactory.createEmptyBorder(2, 0, 2, 0));
             t.add(l);
@@ -146,18 +146,10 @@ public class PanelNovedades extends JPanel {
         @Override
         public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean sel, boolean foco) {
             Incidente i = (Incidente) value;
-            String html = "<html><b style='color:#D64545'>" + i.getTipo() + "</b> · "
-                    + app.getMapa().getVia(i.getVia()).nombreVisible()
-                    + "<br><span style='color:#5B6675'>" + i.getFecha().format(Ruta.FORMATO_FECHA)
-                    + (i.getNota().isEmpty() ? "" : " · " + i.getNota().replace("<", "&lt;")) + "</span></html>";
-            JLabel l = (JLabel) super.getListCellRendererComponent(list, html, index, sel, foco);
-            l.setFont(Tema.texto(12));
-            l.setBorder(BorderFactory.createEmptyBorder(4, 8, 4, 8));
-            if (sel) {
-                l.setBackground(Tema.AZUL_SUAVE);
-                l.setForeground(Tema.GRIS_OSCURO);
-            }
-            return l;
+            return Tema.celda(list, i.getTipo() + " · " + app.getMapa().getVia(i.getVia()).nombreVisible(),
+                    Tema.textoFuerte(12), Tema.ERROR,
+                    i.getFecha().format(Ruta.FORMATO_FECHA) + (i.getNota().isEmpty() ? "" : " · " + i.getNota()),
+                    sel, java.awt.Color.WHITE);
         }
     }
 }

@@ -23,8 +23,8 @@ public class PanelHistorial extends JPanel {
     private final Aplicacion app;
     private final DefaultListModel<Ruta> modelo = new DefaultListModel<>();
     private final JList<Ruta> lista = new JList<>(modelo);
-    private final JLabel detalle = Tema.parrafo("", 262);
-    private final JLabel resumen = Tema.parrafo("", 262);
+    private final Tema.Parrafo detalle = Tema.parrafo("", 262);
+    private final Tema.Parrafo resumen = Tema.parrafo("", 262);
 
     public PanelHistorial(Aplicacion app) {
         this.app = app;
@@ -34,7 +34,7 @@ public class PanelHistorial extends JPanel {
 
         add(Tema.tituloSeccion("Historial de rutas"));
         add(Tema.parrafo("Las rutas, clientes y novedades se guardan en la carpeta de datos del usuario:", 272));
-        JLabel ruta = Tema.parrafo(app.getCarpetaUsuario().getAbsolutePath(), 272);
+        Tema.Parrafo ruta = Tema.parrafo(app.getCarpetaUsuario().getAbsolutePath(), 272);
         ruta.setForeground(Tema.AZUL_PROFUNDO);
         add(ruta);
         Tema.Boton abrir = Tema.botonPequeno("Abrir carpeta");
@@ -57,12 +57,14 @@ public class PanelHistorial extends JPanel {
             Ruta r = lista.getSelectedValue();
             if (r != null && !e.getValueIsAdjusting()) {
                 app.mostrarRuta(r);
-                StringBuilder sb = new StringBuilder("<b>Salida:</b> " + r.getBase().getDireccion() + "<br>");
+                StringBuilder sb = new StringBuilder("Salida: " + r.getBase().getDireccion() + "\n");
                 for (int i = 0; i < r.getParadas().size(); i++) {
-                    sb.append(i + 1).append(". ").append(r.getParadas().get(i).etiqueta()).append("<br>");
+                    sb.append(i + 1).append(". ").append(r.getParadas().get(i).etiqueta()).append("\n");
                 }
-                sb.append("<span style='color:#5B6675'>").append(r.getMetodo()).append(" · ").append(r.getCriterio()).append("</span>");
-                detalle.setText("<html><div style='width:262px'>" + sb + "</div></html>");
+                sb.append(r.getMetodo()).append(" · ").append(r.getCriterio());
+                detalle.setText(sb.toString());
+                detalle.setForeground(Tema.GRIS_OSCURO);
+                revalidate();
             }
         });
         JScrollPane sc = new JScrollPane(lista);
@@ -97,8 +99,9 @@ public class PanelHistorial extends JPanel {
             km += r.getMetros() / 1000;
             entregas += r.getParadas().size();
         }
-        resumen.setText(String.format("<html><div style='width:262px'><b>%d rutas</b> guardadas · %d entregas · "
-                + "%.1f km recorridos</div></html>", modelo.size(), entregas, km));
+        resumen.setText(String.format("%d rutas guardadas · %d entregas · %.1f km recorridos",
+                modelo.size(), entregas, km));
+        resumen.setForeground(Tema.AZUL_PROFUNDO);
     }
 
     private void repetir() {
@@ -123,17 +126,9 @@ public class PanelHistorial extends JPanel {
         @Override
         public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean sel, boolean foco) {
             Ruta r = (Ruta) value;
-            String html = "<html><b>" + r.getFecha().format(Ruta.FORMATO_FECHA) + "</b><br><span style='color:#5B6675'>"
-                    + r.getParadas().size() + " entregas · " + Geo.formatoDistancia(r.getMetros()) + " · "
-                    + Geo.formatoTiempo(r.getSegundos()) + "</span></html>";
-            JLabel l = (JLabel) super.getListCellRendererComponent(list, html, index, sel, foco);
-            l.setFont(Tema.texto(12));
-            l.setBorder(BorderFactory.createEmptyBorder(4, 8, 4, 8));
-            if (sel) {
-                l.setBackground(Tema.AZUL_SUAVE);
-                l.setForeground(Tema.GRIS_OSCURO);
-            }
-            return l;
+            return Tema.celda(list, r.getFecha().format(Ruta.FORMATO_FECHA), Tema.textoFuerte(12), Tema.GRIS_OSCURO,
+                    r.getParadas().size() + " entregas · " + Geo.formatoDistancia(r.getMetros()) + " · "
+                    + Geo.formatoTiempo(r.getSegundos()), sel, java.awt.Color.WHITE);
         }
     }
 }

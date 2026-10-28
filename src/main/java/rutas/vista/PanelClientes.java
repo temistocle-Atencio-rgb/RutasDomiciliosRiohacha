@@ -167,17 +167,8 @@ public class PanelClientes extends JPanel {
         @Override
         public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean sel, boolean foco) {
             Cliente c = (Cliente) value;
-            String html = "<html><b>" + c.getNombre().replace("<", "&lt;") + "</b><br><span style='color:#5B6675'>"
-                    + c.getDireccion().replace("<", "&lt;") + (c.getTelefono().isEmpty() ? "" : " · " + c.getTelefono())
-                    + "</span></html>";
-            JLabel l = (JLabel) super.getListCellRendererComponent(list, html, index, sel, foco);
-            l.setFont(Tema.texto(12));
-            l.setBorder(BorderFactory.createEmptyBorder(4, 8, 4, 8));
-            if (sel) {
-                l.setBackground(Tema.AZUL_SUAVE);
-                l.setForeground(Tema.GRIS_OSCURO);
-            }
-            return l;
+            return Tema.celda(list, c.getNombre(), Tema.textoFuerte(12), Tema.GRIS_OSCURO,
+                    c.getDireccion() + (c.getTelefono().isEmpty() ? "" : " · " + c.getTelefono()), sel, java.awt.Color.WHITE);
         }
     }
 }

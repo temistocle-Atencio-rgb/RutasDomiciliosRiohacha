@@ -174,7 +174,6 @@ datos/
   riohacha/lugares.txt    lugares con nombre y categoría
   riohacha/costa.txt      línea de costa para dibujar el mar
   riohacha/alias.txt      nombres populares de las vías (la ancha=Calle 7)
-  procesar_osm.py         versión en Python del procesador de OpenStreetMap
 ```
 
 Datos de cada usuario: en Windows `%APPDATA%\DomiRuta` (en Linux/macOS `~/.domiruta`),

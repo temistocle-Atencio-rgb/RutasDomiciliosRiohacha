@@ -19,15 +19,14 @@ echo Usando el JDK de %JDK%
 echo [1/4] Compilando...
 if exist target\empaque rmdir /s /q target\empaque
 mkdir target\empaque\clases
-dir /s /b src\main\java\*.java > target\empaque\fuentes.txt
-"%JDK%javac" -encoding UTF-8 --release 17 -d target\empaque\clases @target\empaque\fuentes.txt || goto error
+rem se compila desde Main y javac trae solas las clases que usa
+"%JDK%javac" -encoding UTF-8 --release 17 -d target\empaque\clases -sourcepath src\main\java src\main\java\rutas\Main.java || goto error
 xcopy /e /i /q src\main\resources target\empaque\clases >nul
 
 echo [2/4] Armando DomiRuta.jar...
 mkdir target\empaque\entrada
 "%JDK%jar" --create --file target\empaque\entrada\DomiRuta.jar --main-class rutas.Main -C target\empaque\clases . || goto error
 xcopy /e /i /q datos target\empaque\entrada\datos >nul
-del /q target\empaque\entrada\datos\*.py 2>nul
 
 echo [3/4] Creando la aplicacion con Java incluido (jpackage)...
 if exist dist rmdir /s /q dist
