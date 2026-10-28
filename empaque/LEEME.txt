@@ -1,0 +1,25 @@
+DomiRuta - Rutas de domicilios para La Guajira
+================================================
+
+Cómo abrirlo
+  Abra DomiRuta.exe. No necesita instalar Java: viene incluido.
+
+Primeros pasos
+  1. En la pestaña Ruta, cambie el "Punto de salida" por la dirección del negocio.
+  2. Agregue las entregas escribiendo la dirección (Calle 15 # 10-20) o pegue una lista
+     de pedidos con el botón "Pegar lista de pedidos".
+  3. Escoja cuántas motos van a salir y pulse "Calcular ruta".
+  4. Mande la ruta al repartidor con "Copiar ruta para WhatsApp" o ábrala en Google Maps.
+
+Si una dirección no aparece
+  Márquela una vez en el mapa: el programa la recuerda para la próxima.
+
+Otros municipios
+  Haga clic en el nombre de la ciudad (arriba) y escoja otro municipio de La Guajira.
+  El mapa se descarga de OpenStreetMap (necesita internet la primera vez).
+
+Dónde quedan sus datos
+  Clientes, historial y novedades se guardan en %APPDATA%\DomiRuta.
+  Para hacer copia de seguridad, copie esa carpeta.
+
+Datos del mapa (c) colaboradores de OpenStreetMap, licencia ODbL.

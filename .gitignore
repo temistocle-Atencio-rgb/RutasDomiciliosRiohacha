@@ -1,0 +1,10 @@
+target/
+nbproject/private/
+nbactions.xml
+*.class
+osm_crudo/
+datos/base.txt
+datos/clientes.txt
+datos/novedades.txt
+datos/historial_rutas.txt
+dist/

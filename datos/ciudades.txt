@@ -1,0 +1,18 @@
+# Municipios de La Guajira que puede usar el programa.
+# clave;nombre;latitud del centro;longitud del centro;radio del area urbana en km
+# El mapa de cada uno se descarga de OpenStreetMap desde el programa (menu de la ciudad).
+riohacha;Riohacha;11.5400;-72.9025;7.0
+maicao;Maicao;11.3773;-72.2388;5.0
+uribia;Uribia;11.7149;-72.2658;3.0
+manaure;Manaure;11.7771;-72.4469;3.0
+fonseca;Fonseca;10.8862;-72.8380;3.0
+sanjuan;San Juan del Cesar;10.7735;-73.0019;3.5
+albania;Albania;11.1578;-72.5992;2.5
+dibulla;Dibulla;11.2722;-73.3114;2.5
+villanueva;Villanueva;10.6047;-72.9820;3.0
+barrancas;Barrancas;10.9542;-72.7889;2.5
+hatonuevo;Hatonuevo;11.0676;-72.7601;2.5
+distraccion;Distracción;10.8994;-72.8876;2.0
+elmolino;El Molino;10.6523;-72.9216;2.0
+urumita;Urumita;10.5556;-73.0125;2.0
+lajagua;La Jagua del Pilar;10.5102;-73.0710;1.5

@@ -1,0 +1,6 @@
+# Nombres populares de las vias de Riohacha.
+# Formato: nombre popular=nombre en el mapa
+# Se pueden agregar mas, por ejemplo: la avenida=Calle 15
+la ancha=Calle 7
+calle ancha=Calle 7
+la primera=Calle 1

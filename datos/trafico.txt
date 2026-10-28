@@ -1,0 +1,42 @@
+# Parametros del modelo de trafico de Riohacha (moto de domicilios).
+# Son valores de partida para calibrar con recorridos reales: se cambian aqui
+# sin tocar el codigo. Las lineas con # son comentarios.
+
+# Velocidad promedio en km/h segun el tipo de via (sin congestion)
+velocidad.trunk=45
+velocidad.primary=40
+velocidad.secondary=36
+velocidad.tertiary=32
+velocidad.unclassified=26
+velocidad.residential=24
+velocidad.living_street=12
+velocidad.service=15
+velocidad.road=22
+velocidad.track=14
+
+# Vias destapadas o en mal estado: la velocidad se multiplica por este factor
+factor.destapada=0.55
+
+# Espera promedio en segundos al pasar por cada control
+espera.semaforo=25
+espera.semaforo.pico=50
+espera.pare=6
+espera.reductor=4
+
+# Tiempo de entrega en cada parada (parquear, entregar, cobrar), en segundos
+tiempo.entrega=180
+
+# Franjas de hora pico (entrada a colegios y oficinas, almuerzo, salida)
+pico.1=06:30-08:30
+pico.2=11:30-14:00
+pico.3=17:00-19:30
+
+# En hora pico la velocidad se multiplica por estos factores
+factor.pico.principal=0.55
+factor.pico.barrio=0.85
+
+# Centro de Riohacha: zona con mas trancones en hora pico (alrededor del Parque Padilla)
+centro.lat=11.5513888
+centro.lon=-72.9096513
+centro.radio=900
+factor.pico.centro=0.75
