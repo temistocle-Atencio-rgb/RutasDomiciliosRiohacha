@@ -18,7 +18,7 @@ direcciones, calles, lugares y clientes.
   `Carrera 7 con Calle 15`, `Cl 14E 25-15` o el nombre de un lugar (`Uniguajira`).
   La dirección puede venir con más texto (`La Ancha, centro, calle 7# 10 - 02`) y
   también entiende nombres populares de las vías (`La Ancha` = Calle 7, `La Primera` = Calle 1),
-  que se configuran en `datos/alias.txt`.
+  que se configuran en `datos/riohacha/alias.txt`.
   "Calle 15 # 10-20" se ubica sobre la Calle 15, a 20 m de la esquina con la Carrera 10.
 - **Varias entregas**: escoge el mejor orden y arma la ruta completa por las calles,
   respetando las vías de una sola dirección. Se puede volver a la base al terminar.
@@ -42,7 +42,10 @@ direcciones, calles, lugares y clientes.
 - **Compartir**: abre la ruta en Google Maps para navegar en el celular o la copia
   como texto para mandarla por WhatsApp al repartidor.
 - **Clientes frecuentes** guardados con su dirección.
-- **Historial** de rutas en archivo de texto, se pueden ver otra vez y repetir.
+- **Base de datos SQLite**: clientes, historial de rutas (con sus paradas y horas de llegada),
+  novedades, direcciones corregidas y punto de salida. SQLite va dentro del programa: no hay
+  que instalar ningún servidor.
+- **Historial** de rutas: se pueden ver otra vez en el mapa y repetir.
 - **Matriz de adyacencia** entre las paradas de la ruta, para ver los costos.
 
 ## Estructuras de datos
@@ -60,6 +63,7 @@ direcciones, calles, lugares y clientes.
 | BFS inverso | `Grafo.bfsInverso`, `Grafo.idaYVuelta` | Zonas a las que se puede ir **y volver** desde la base |
 | AVL de direcciones corregidas | `Geocodificador` | Recordar direcciones marcadas a mano |
 | Analizador recursivo descendente | `osm/Json` | Leer el JSON de OpenStreetMap sin librerías externas |
+| Base de datos relacional (SQLite) | `logica/BaseDatos` | Guardar clientes, rutas, paradas y novedades; los clientes se cargan en un AVL |
 
 ### ¿Por qué lista de adyacencia para la ciudad y matriz para las paradas?
 
@@ -118,6 +122,26 @@ Solo se aplica a calles rectas de la ciudad (no a trochas ni carreteras con curv
 4. Se avanzan 20 m hacia la siguiente esquina y se pega el punto al nodo más cercano
    de la Calle 15 al que se pueda llegar desde la base.
 
+## Base de datos
+
+Cada ciudad tiene su archivo `domiruta.db` (SQLite) en la carpeta del usuario. Tablas:
+
+| Tabla | Contenido |
+|---|---|
+| `clientes` | nombre, teléfono, dirección, nota y coordenadas (el nombre normalizado es único) |
+| `rutas` | cada ruta guardada: fecha, moto, criterio, salida, distancia, tiempo, base y recorrido |
+| `paradas_ruta` | las entregas de cada ruta en orden, con su hora estimada de llegada |
+| `novedades` | trancones, huecos, obras y vías cerradas por tramo de vía |
+| `direcciones_corregidas` | direcciones que el usuario marcó a mano en el mapa |
+| `configuracion` | punto de salida y versión de la base de datos |
+
+Las rutas de varias motos se guardan en una sola transacción (si algo falla no queda
+nada a medias). Al abrir el programa, los clientes se leen de la base y se organizan en
+un árbol AVL para buscarlos por nombre mientras se escribe. Si hay archivos `.txt` de la
+versión anterior, se importan una sola vez.
+
+El conector es `lib/sqlite-jdbc-3.50.3.0.jar` (de Maven Central); en NetBeans lo trae el `pom.xml`.
+
 ## Modelo de tiempo
 
 El tiempo de cada arista es `metros / velocidad + espera en la esquina`. Los valores
@@ -144,12 +168,15 @@ y darle Run. La clase principal es `rutas.Main`.
 **Pruebas:** clic derecho sobre `Pruebas.java` > Run File. Prueban el AVL, el montículo,
 Dijkstra en un grafo pequeño y el mapa real (direcciones, BFS, rutas, hora pico).
 
-**Por consola** (desde la carpeta del proyecto):
+**Por consola** (desde la carpeta del proyecto, en Windows):
 
 ```
-mvn package
-java -jar target/RutasDomiciliosRiohacha-2.0.jar
+javac -encoding UTF-8 -cp lib\sqlite-jdbc-3.50.3.0.jar -d target\classes -sourcepath src\main\java src\main\java\rutas\Main.java src\main\java\rutas\Pruebas.java
+xcopy /e /i /q src\main\resources target\classes
+java -cp "target\classes;lib\sqlite-jdbc-3.50.3.0.jar" rutas.Main
 ```
+
+(En Linux o macOS se usa `:` en vez de `;` y `/` en vez de `\`.)
 
 El programa se ejecuta desde la carpeta del proyecto porque lee la carpeta `datos`.
 
@@ -185,11 +212,7 @@ DomiRuta/
   ciudad.txt                         última ciudad usada
   errores.log                        errores inesperados (para dar soporte)
   mapas/<ciudad>/                    mapas descargados o actualizados desde el programa
-  riohacha/base.txt                  punto de salida
-  riohacha/clientes.txt              clientes frecuentes
-  riohacha/novedades.txt             trancones, huecos, obras, vías cerradas
-  riohacha/historial_rutas.txt       rutas guardadas
-  riohacha/direcciones_corregidas.txt  direcciones marcadas a mano en el mapa
+  riohacha/domiruta.db               base de datos SQLite de la ciudad (ver "Base de datos")
 ```
 
 En la pestaña Historial está el botón "Abrir carpeta" para verlos.
@@ -202,11 +225,13 @@ src/main/java/rutas/
   estructuras/  ArbolAVL, NodoAVL, Grafo, Arista, MatrizAdyacencia, MonticuloMin, Cola
   modelo/       Via, Lugar, Parada, Ruta, Cliente, Ciudad, Incidente, Indicacion, Geo...
   logica/       CargadorMapa, Dijkstra, PlanificadorRutas, ModeloTrafico, Geocodificador,
-                InferenciaNombres, BuscadorLugares, GeneradorIndicaciones, ArchivosDatos, Ubicaciones
+                InferenciaNombres, BuscadorLugares, GeneradorIndicaciones, BaseDatos,
+                ArchivosDatos (lee los .txt de la versión anterior), Ubicaciones
   osm/          Json, ProcesadorOSM, DescargadorOSM (descarga de mapas de OpenStreetMap)
   vista/        VentanaPrincipal, PanelMapa, PanelPedidos, PanelExplorar, PanelClientes,
                 PanelNovedades, PanelHistorial, DialogoDescarga, Tema, Logo
 src/main/resources/fuentes/   Poppins e Inter (licencia SIL OFL)
+lib/                          conector SQLite para Java (sqlite-jdbc, licencia Apache 2.0)
 empaque/                      scripts para armar la versión con Java incluido, ícono y LEEME
 ```
 

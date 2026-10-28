@@ -20,12 +20,15 @@ echo [1/4] Compilando...
 if exist target\empaque rmdir /s /q target\empaque
 mkdir target\empaque\clases
 rem se compila desde Main y javac trae solas las clases que usa
-"%JDK%javac" -encoding UTF-8 --release 17 -d target\empaque\clases -sourcepath src\main\java src\main\java\rutas\Main.java || goto error
+"%JDK%javac" -encoding UTF-8 --release 17 -cp lib\sqlite-jdbc-3.50.3.0.jar -d target\empaque\clases -sourcepath src\main\java src\main\java\rutas\Main.java || goto error
 xcopy /e /i /q src\main\resources target\empaque\clases >nul
 
 echo [2/4] Armando DomiRuta.jar...
 mkdir target\empaque\entrada
-"%JDK%jar" --create --file target\empaque\entrada\DomiRuta.jar --main-class rutas.Main -C target\empaque\clases . || goto error
+rem el jar de SQLite va al lado y se enlaza desde el manifiesto
+> target\empaque\manifiesto.txt echo Class-Path: sqlite-jdbc-3.50.3.0.jar
+"%JDK%jar" --create --file target\empaque\entrada\DomiRuta.jar --main-class rutas.Main --manifest=target\empaque\manifiesto.txt -C target\empaque\clases . || goto error
+copy /y lib\sqlite-jdbc-3.50.3.0.jar target\empaque\entrada\ >nul
 xcopy /e /i /q datos target\empaque\entrada\datos >nul
 
 echo [3/4] Creando la aplicacion con Java incluido (jpackage)...
@@ -33,7 +36,7 @@ if exist dist rmdir /s /q dist
 "%JDK%jpackage" --type app-image --name DomiRuta --app-version %VERSION% --vendor "DomiRuta" ^
   --description "Rutas de domicilios para La Guajira" --icon empaque\domiruta.ico ^
   --input target\empaque\entrada --main-jar DomiRuta.jar --main-class rutas.Main ^
-  --add-modules java.base,java.desktop,java.net.http,jdk.crypto.ec,jdk.localedata ^
+  --add-modules java.base,java.desktop,java.sql,java.net.http,jdk.crypto.ec,jdk.localedata ^
   --jlink-options "--strip-debug --no-header-files --no-man-pages --include-locales=es,en" ^
   --java-options "-Dfile.encoding=UTF-8" --dest dist || goto error
 

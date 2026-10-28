@@ -33,7 +33,8 @@ public class PanelHistorial extends JPanel {
         setBorder(BorderFactory.createEmptyBorder(16, 16, 20, 16));
 
         add(Tema.tituloSeccion("Historial de rutas"));
-        add(Tema.parrafo("Las rutas, clientes y novedades se guardan en la carpeta de datos del usuario:", 272));
+        add(Tema.parrafo("Las rutas, clientes y novedades se guardan en una base de datos SQLite "
+                + "(domiruta.db) en la carpeta del usuario:", 272));
         Tema.Parrafo ruta = Tema.parrafo(app.getCarpetaUsuario().getAbsolutePath(), 272);
         ruta.setForeground(Tema.AZUL_PROFUNDO);
         add(ruta);

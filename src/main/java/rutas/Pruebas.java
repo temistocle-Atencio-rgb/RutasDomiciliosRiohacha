@@ -301,11 +301,52 @@ public class Pruebas {
         revisar(String.format("con 3 motos la ruta mas larga dura %s; con 1 moto, %s",
                 Geo.formatoTiempo(peor), Geo.formatoTiempo(sola.getSegundos())), peor < sola.getSegundos() * 0.6);
 
+        probarBaseDatos(mapa, geo, base, flota);
+
         System.out.println("\nIndicaciones:");
         for (Indicacion i : r.getIndicaciones()) {
             System.out.println("  - " + i.getTexto());
         }
         System.out.println("\n" + r.textoParaCompartir());
         System.out.println(r.enlaceGoogleMaps());
+    }
+
+    private static void probarBaseDatos(Mapa mapa, Geocodificador geo, Parada base, List<Ruta> flota) throws Exception {
+        System.out.println("--- Base de datos SQLite ---");
+        java.io.File carpeta = java.nio.file.Files.createTempDirectory("domiruta_prueba").toFile();
+        java.io.File archivo = new java.io.File(carpeta, "prueba.db");
+        try (rutas.logica.BaseDatos bd = new rutas.logica.BaseDatos(archivo)) {
+            bd.guardarCliente(new rutas.modelo.Cliente("José Pérez", "3001234567", "Calle 15 # 7-20", "", 11.5437, -72.9066));
+            bd.guardarCliente(new rutas.modelo.Cliente("Ana María", "", "Cra 15 # 14-30", "portón verde", 11.5427, -72.9159));
+            bd.guardarCliente(new rutas.modelo.Cliente("jose perez", "3009999999", "Calle 15 # 7-20", "", 11.5437, -72.9066));
+            ArbolAVL<String, rutas.modelo.Cliente> clientes = bd.cargarClientes();
+            revisar("clientes guardados y cargados en el AVL (el repetido se actualiza): " + clientes.getTamano(),
+                    clientes.getTamano() == 2 && clientes.buscar("jose perez").getTelefono().equals("3009999999"));
+            bd.eliminarCliente("Ana María");
+            revisar("eliminar cliente", bd.contarClientes() == 1);
+
+            bd.guardarBase(base);
+            revisar("punto de salida guardado", bd.cargarBase().getDireccion().equals(base.getDireccion()));
+
+            bd.guardarDireccion("Mz 4 Casa 12", 11.55, -72.90);
+            Geocodificador g2 = new Geocodificador(mapa, new BuscadorLugares(mapa.getLugares()));
+            bd.cargarDirecciones(g2);
+            revisar("direccion corregida a mano queda en la base", g2.ubicar("mz 4 casa 12").getPrecision().startsWith("Ubicación corregida"));
+
+            bd.guardarRutas(flota);
+            List<Ruta> leidas = bd.cargarHistorial(mapa);
+            revisar("historial: " + leidas.size() + " rutas de 3 motos con sus paradas y recorrido",
+                    leidas.size() == flota.size() && leidas.get(0).getParadas().size() == flota.get(0).getParadas().size()
+                    && leidas.get(0).getAristas().size() == flota.get(0).getAristas().size());
+        }
+        // datos de la version anterior en archivos .txt: se importan una vez
+        java.nio.file.Files.write(new java.io.File(carpeta, "clientes.txt").toPath(),
+                List.of("# nombre;telefono;direccion;nota;lat;lon", "Luis;300;Calle 38 # 7-10;;11.5262;-72.9035"));
+        try (rutas.logica.BaseDatos bd = new rutas.logica.BaseDatos(new java.io.File(carpeta, "otra.db"))) {
+            int n = bd.importarTextos(carpeta, mapa);
+            revisar("importa clientes.txt de la version anterior (" + n + " registro)",
+                    n == 1 && bd.cargarClientes().buscar("luis") != null
+                    && new java.io.File(carpeta, "clientes.txt.importado").exists());
+        }
     }
 }

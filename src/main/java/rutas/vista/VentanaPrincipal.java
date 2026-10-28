@@ -64,6 +64,12 @@ public class VentanaPrincipal extends JFrame {
         setSize(1440, 860);
         setLocationRelativeTo(null);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        addWindowListener(new java.awt.event.WindowAdapter() {
+            @Override
+            public void windowClosing(java.awt.event.WindowEvent e) {
+                app.cerrar(); // la base de datos se cierra bien antes de salir
+            }
+        });
 
         actualizarTrafico();
         app.alCambiar(this::actualizarTrafico);
@@ -161,6 +167,7 @@ public class VentanaPrincipal extends JFrame {
                 return;
             }
         }
+        app.cerrar();
         dispose();
         rutas.Main.abrir(c.getClave());
     }

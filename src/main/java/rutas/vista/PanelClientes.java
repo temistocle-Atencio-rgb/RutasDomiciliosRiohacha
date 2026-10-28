@@ -122,8 +122,7 @@ public class PanelClientes extends JPanel {
             Parada p = app.getGeo().ubicar(dir);
             Cliente c = new Cliente(nombre, campoTelefono.getText().trim(), dir, campoNota.getText().trim(),
                     p.getLat(), p.getLon());
-            app.getClientes().insertar(Geo.normalizar(nombre), c); // si ya existe se actualiza
-            app.guardarClientes();
+            app.guardarCliente(c); // si ya existe se actualiza
             app.getPanelMapa().resaltar(c.getLat(), c.getLon(), c.getNombre());
             JOptionPane.showMessageDialog(this, "Cliente guardado.\nUbicación: " + p.getPrecision()
                     + "\nRevise en el mapa que el punto quedó bien.");
@@ -141,9 +140,8 @@ public class PanelClientes extends JPanel {
         }
         if (JOptionPane.showConfirmDialog(this, "¿Eliminar a " + c.getNombre() + "?", "Eliminar cliente",
                 JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
-            app.getClientes().eliminar(Geo.normalizar(c.getNombre()));
             try {
-                app.guardarClientes();
+                app.eliminarCliente(c.getNombre());
             } catch (IOException e) {
                 JOptionPane.showMessageDialog(this, "No se pudo guardar: " + e.getMessage());
             }

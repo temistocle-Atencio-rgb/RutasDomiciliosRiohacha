@@ -9,7 +9,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import rutas.estructuras.ArbolAVL;
-import rutas.logica.ArchivosDatos;
+import java.sql.SQLException;
+import rutas.logica.BaseDatos;
+import rutas.logica.Ubicaciones;
 import rutas.logica.BuscadorLugares;
 import rutas.logica.CargadorMapa;
 import rutas.logica.Criterio;
@@ -38,7 +40,7 @@ public class Aplicacion {
     private final BuscadorLugares buscador;
     private final Geocodificador geo;
     private final PlanificadorRutas planificador;
-    private final ArchivosDatos archivos;
+    private final BaseDatos bd;
     private final ArbolAVL<String, Cliente> clientes;
     private final List<Ruta> historial;
     private final List<Parada> entregas = new ArrayList<>();
@@ -70,11 +72,17 @@ public class Aplicacion {
         geo = new Geocodificador(mapa, buscador);
         geo.cargarAlias(new File(new File(carpetaDatos, ciudad.getClave()), "alias.txt"));
         planificador = new PlanificadorRutas(mapa, trafico);
-        archivos = new ArchivosDatos(carpetaUsuario);
-        archivos.cargarIncidentes(mapa);
-        archivos.cargarDirecciones(geo);
-        clientes = archivos.cargarClientes();
-        historial = archivos.cargarHistorial(mapa);
+        bd = new BaseDatos(new File(carpetaUsuario, "domiruta.db"));
+        try {
+            bd.importarTextos(carpetaUsuario, mapa); // datos de la version anterior (archivos .txt)
+            bd.cargarIncidentes(mapa);
+            bd.cargarDirecciones(geo);
+            clientes = bd.cargarClientes();
+            historial = bd.cargarHistorial(mapa);
+        } catch (SQLException e) {
+            bd.close();
+            throw new IOException("Error leyendo la base de datos: " + e.getMessage(), e);
+        }
         base = cargarBase();
         actualizarAlcance();
     }
@@ -100,16 +108,14 @@ public class Aplicacion {
     // ---------------- base ----------------
 
     private Parada cargarBase() {
-        File f = new File(carpetaUsuario, "base.txt");
         try {
-            if (f.exists()) {
-                String[] c = Files.readAllLines(f.toPath(), StandardCharsets.UTF_8).get(0).split(";");
-                Parada p = new Parada(c[0], c[1], Double.parseDouble(c[2]), Double.parseDouble(c[3]));
+            Parada p = bd.cargarBase();
+            if (p != null) {
                 geo.asignarNodo(p, Geo.x(p.getLon()), Geo.y(p.getLat()), null);
                 p.setPrecision("Punto de salida guardado");
                 return p;
             }
-        } catch (IOException | RuntimeException e) {
+        } catch (SQLException | RuntimeException e) {
             // se usa la base por defecto
         }
         // base por defecto: el centro de la ciudad (en Riohacha, el Parque Padilla)
@@ -136,11 +142,9 @@ public class Aplicacion {
             }
         }
         try {
-            Files.write(new File(carpetaUsuario, "base.txt").toPath(), List.of(String.format(Locale.US, "%s;%s;%.7f;%.7f",
-                    nueva.getNombre().replace(";", ","), nueva.getDireccion().replace(";", ","),
-                    nueva.getLat(), nueva.getLon())), StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            // no es grave, solo no queda guardada
+            bd.guardarBase(nueva);
+        } catch (SQLException e) {
+            Ubicaciones.registrarError(e); // no es grave: solo no queda guardada para la proxima vez
         }
         limpiarRuta();
         avisar();
@@ -248,7 +252,7 @@ public class Aplicacion {
             return;
         }
         geo.aprender(correccionTexto, lat, lon);
-        archivos.guardarDirecciones(geo);
+        guardar(() -> bd.guardarDireccion(correccionTexto, lat, lon));
         Parada p = new Parada(correccionCliente == null || correccionCliente.isEmpty() ? correccionTexto : correccionCliente,
                 correccionTexto, lat, lon);
         geo.asignarNodo(p, Geo.x(lon), Geo.y(lat), null);
@@ -265,23 +269,53 @@ public class Aplicacion {
 
     // ---------------- persistencia ----------------
 
-    public void guardarRutaEnHistorial() throws IOException {
-        for (Ruta r : rutas) {
-            archivos.guardarRuta(r);
-            historial.add(r);
+    /** Una operacion con la base de datos que puede fallar. */
+    private interface OperacionBD {
+        void ejecutar() throws SQLException;
+    }
+
+    private void guardar(OperacionBD op) throws IOException {
+        try {
+            op.ejecutar();
+        } catch (SQLException e) {
+            Ubicaciones.registrarError(e);
+            throw new IOException("No se pudo guardar en la base de datos: " + e.getMessage(), e);
         }
+    }
+
+    public void guardarRutaEnHistorial() throws IOException {
+        List<Ruta> copia = new ArrayList<>(rutas);
+        guardar(() -> bd.guardarRutas(copia));
+        historial.addAll(copia);
         avisar();
     }
 
-    public void guardarClientes() throws IOException {
-        archivos.guardarClientes(clientes);
+    /** Guarda (o actualiza) un cliente en la base de datos y en el AVL. */
+    public void guardarCliente(Cliente c) throws IOException {
+        guardar(() -> bd.guardarCliente(c));
+        clientes.insertar(Geo.normalizar(c.getNombre()), c);
+        avisar();
+    }
+
+    public void eliminarCliente(String nombre) throws IOException {
+        guardar(() -> bd.eliminarCliente(nombre));
+        clientes.eliminar(Geo.normalizar(nombre));
         avisar();
     }
 
     public void guardarNovedades() throws IOException {
-        archivos.guardarIncidentes(mapa);
+        guardar(() -> bd.guardarIncidentes(mapa));
         limpiarRuta(); // los tiempos cambiaron
         avisar();
+    }
+
+    /** Cierra la base de datos (al cambiar de ciudad o salir). */
+    public void cerrar() {
+        bd.close();
+    }
+
+    public BaseDatos getBaseDatos() {
+        return bd;
     }
 
     // ---------------- oyentes ----------------
