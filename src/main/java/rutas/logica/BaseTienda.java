@@ -756,6 +756,31 @@ public class BaseTienda implements AutoCloseable {
     }
 
     private void bajarStock(Carrito c) throws SQLException {
+        // se suma por producto (puede estar en varias lineas) y se revisa contra lo que hay AHORA en la base:
+        // otra caja pudo vender lo ultimo mientras esta venta se armaba
+        java.util.Map<Long, Long> porProducto = new java.util.LinkedHashMap<>();
+        java.util.Map<Long, LineaVenta> ejemplo = new java.util.HashMap<>();
+        for (LineaVenta l : c.getLineas()) {
+            porProducto.merge(l.getProducto().getId(), l.getCantidad(), Long::sum);
+            ejemplo.putIfAbsent(l.getProducto().getId(), l);
+        }
+        try (PreparedStatement ps = con.prepareStatement("SELECT stock FROM productos WHERE id = ?")) {
+            for (java.util.Map.Entry<Long, Long> e : porProducto.entrySet()) {
+                ps.setLong(1, e.getKey());
+                try (ResultSet rs = ps.executeQuery()) {
+                    LineaVenta l = ejemplo.get(e.getKey());
+                    if (!rs.next()) {
+                        throw new IllegalStateException("«" + l.getProducto().getNombre() + "» ya no existe");
+                    }
+                    long hay = rs.getLong(1);
+                    if (hay < e.getValue()) {
+                        throw new IllegalStateException("Ya no hay suficiente «" + l.getProducto().getNombre()
+                                + "»: quedan " + ListadoProductos.cantidad(Math.max(0, hay)) + " "
+                                + l.getProducto().getUnidad().getCorto());
+                    }
+                }
+            }
+        }
         try (PreparedStatement ps = con.prepareStatement(
                 "UPDATE productos SET stock = stock - ?, actualizado = ? WHERE id = ?")) {
             for (LineaVenta l : c.getLineas()) {

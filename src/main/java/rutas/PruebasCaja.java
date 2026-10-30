@@ -47,6 +47,7 @@ public class PruebasCaja {
         probarImportarCategorias();
         probarListado();
         probarArchivos();
+        probarExistencias();
     }
 
     private static void probarSeguridad() {
@@ -415,7 +416,7 @@ public class PruebasCaja {
                     null, true, granos.getId()));
             Producto azucar = cat.crear(new Producto(0, null, "Azúcar", Unidad.KILO, 4400, 3600, 10_000, 0,
                     null, true, granos.getId()));
-            Producto chicle = cat.crear(new Producto(0, null, "Chicle", Unidad.UNIDAD, 200, 100, 0, 0,
+            Producto chicle = cat.crear(new Producto(0, null, "Chicle", Unidad.UNIDAD, 200, 100, 1000, 0,
                     null, true, dulces.getId()));
             revisar("productos por categoria", cat.porCategoria(granos.getId()).size() == 2
                     && cat.porCategoria(null).size() == 3);
@@ -439,8 +440,8 @@ public class PruebasCaja {
             Cobro.Resultado res2 = Cobro.calcular(c2.getTotal(), pagos(MetodoPago.EFECTIVO, 1000L));
             long n1 = bd.cobrar(null, cajero, null, c2, pagos(MetodoPago.EFECTIVO, 1000L), res2);
             cat.recargarProducto(chicle.getId());
-            revisar("vender sin existencias deja el stock en negativo", bd.buscarProductoPorId(chicle.getId()).getStock() == -1000
-                    && cat.buscarPorId(chicle.getId()).getStock() == -1000);
+            revisar("vender el ultimo chicle deja el stock en 0", bd.buscarProductoPorId(chicle.getId()).getStock() == 0
+                    && cat.buscarPorId(chicle.getId()).getStock() == 0);
 
             Carrito c1 = r.getCarrito();
             Cobro.Resultado res = Cobro.calcular(c1.getTotal(), pagos(MetodoPago.NEQUI, 2000L, MetodoPago.EFECTIVO, 10000L));
@@ -452,6 +453,26 @@ public class PruebasCaja {
             revisar("pagos guardados: Nequi 2.000 y efectivo neto 5.000 (recibio 10.000, vueltas 5.000)",
                     bd.pagosDeVenta(n2).equals(java.util.Map.of(MetodoPago.NEQUI, 2000L, MetodoPago.EFECTIVO, 5000L)));
             revisar("siguiente numero de venta", bd.siguienteNumero() == 3);
+
+            Carrito sinStock = new Carrito();
+            sinStock.agregar(cat.buscarPorId(chicle.getId()));
+            String[] msg = {null};
+            boolean rechazo = lanza(IllegalStateException.class, null, () -> {
+                try { bd.cobrar(null, cajero, null, sinStock, pagos(MetodoPago.EFECTIVO, 200L), Cobro.calcular(200, pagos(MetodoPago.EFECTIVO, 200L))); }
+                catch (IllegalStateException e) { msg[0] = e.getMessage(); throw e; }
+                catch (java.sql.SQLException e) { throw new RuntimeException(e); }
+            });
+            revisar("no se cobra lo que no hay (" + msg[0] + ")", rechazo && msg[0] != null && msg[0].startsWith("Ya no hay suficiente")
+                    && msg[0].contains("Chicle") && bd.siguienteNumero() == 3 && bd.buscarProductoPorId(chicle.getId()).getStock() == 0);
+            Carrito dosLineas = new Carrito();
+            dosLineas.agregar(cat.buscarPorId(arroz.getId()));
+            dosLineas.agregar(cat.buscarPorId(arroz.getId()), 1000);
+            dosLineas.agregar(new Producto(arroz.getId(), arroz.getCodigo(), arroz.getNombre(), Unidad.UNIDAD, 2500, 2000, 1000, 0, null, true));
+            long totalDos = dosLineas.getTotal();
+            revisar("la suma de varias lineas del mismo producto tambien se revisa", lanza(IllegalStateException.class, null, () -> {
+                try { bd.cobrar(null, cajero, null, dosLineas, pagos(MetodoPago.EFECTIVO, totalDos), Cobro.calcular(totalDos, pagos(MetodoPago.EFECTIVO, totalDos))); }
+                catch (java.sql.SQLException e) { throw new RuntimeException(e); }
+            }) && bd.buscarProductoPorId(arroz.getId()).getStock() == 1000);
 
             Carrito malo = new Carrito();
             malo.agregar(arroz);
@@ -597,5 +618,36 @@ public class PruebasCaja {
                 .getName().equals("Lista.CSV"));
         revisar("con otra extension se agrega .csv", rutas.vista.Archivos.conExtension(new File(d, "lista.txt"), "csv")
                 .getName().equals("lista.txt.csv"));
+    }
+
+    private static void probarExistencias() {
+        System.out.println("--- Existencias al vender ---");
+        Producto aceite = new Producto(7, "77", "Aceite", Unidad.UNIDAD, 5500, 4000, 2000, 1000, null, true);
+        rutas.logica.Existencias.Revision r1 = rutas.logica.Existencias.revisar(aceite, 1000);
+        revisar("1 de 2 con minimo 1: quedan pocas (" + r1.getMensaje() + ")",
+                r1.getEstado() == rutas.logica.Existencias.Estado.POCAS && r1.getMensaje().equals("Quedan 1 und de Aceite"));
+        rutas.logica.Existencias.Revision r2 = rutas.logica.Existencias.revisar(aceite, 2000);
+        revisar("2 de 2: se puede, y avisa que se acaba (" + r2.getMensaje() + ")",
+                r2.puedeVender() && r2.getEstado() == rutas.logica.Existencias.Estado.POCAS
+                && r2.getMensaje().equals("Con esta venta se acaba el Aceite"));
+        rutas.logica.Existencias.Revision r3 = rutas.logica.Existencias.revisar(aceite, 6000);
+        revisar("6 de 2: no alcanza (" + r3.getMensaje() + ")", !r3.puedeVender()
+                && r3.getEstado() == rutas.logica.Existencias.Estado.NO_ALCANZA && r3.getMensaje().equals("Solo quedan 2 und de Aceite"));
+        Producto agotado = new Producto(8, null, "Panela", Unidad.UNIDAD, 2000, 1500, 0, 0, null, true);
+        rutas.logica.Existencias.Revision r4 = rutas.logica.Existencias.revisar(agotado, 1000);
+        revisar("stock 0: agotado (" + r4.getMensaje() + ")", !r4.puedeVender()
+                && r4.getEstado() == rutas.logica.Existencias.Estado.AGOTADO && r4.getMensaje().equals("No hay Panela: está agotado"));
+        Producto mucho = new Producto(9, null, "Arroz", Unidad.UNIDAD, 2500, 2000, 50_000, 6000, null, true);
+        revisar("con bastante stock: bien", rutas.logica.Existencias.revisar(mucho, 3000).getEstado()
+                == rutas.logica.Existencias.Estado.BIEN);
+        Producto granel = new Producto(10, null, "Azúcar", Unidad.LIBRA, 2200, 1800, 1500, 0, null, true);
+        rutas.logica.Existencias.Revision r5 = rutas.logica.Existencias.revisar(granel, 2000);
+        revisar("granel: 2 lb de 1,5 lb no alcanza (" + r5.getMensaje() + ")", !r5.puedeVender()
+                && r5.getMensaje().equals("Solo quedan 1,5 lb de Azúcar"));
+        Carrito c = new Carrito();
+        c.agregar(aceite);
+        c.agregar(granel, 500);
+        c.agregar(aceite);
+        revisar("lo que ya hay en la venta de ese producto", rutas.logica.Existencias.enVenta(c, aceite.getId()) == 2000);
     }
 }

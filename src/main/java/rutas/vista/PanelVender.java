@@ -290,17 +290,48 @@ public class PanelVender extends JPanel {
         if (Capa.hayAbierta(this)) {
             return;
         }
-        if (p.getUnidad() != Unidad.UNIDAD) {
-            CuadroGranel.mostrar(this, p, (porValor, valor) -> {
-                LineaVenta l = porValor ? carrito.agregarPorValor(p, valor) : carrito.agregar(p, valor);
-                agregado(p, l);
+        Producto actual = cat.buscarPorId(p.getId()); // la tarjeta puede tener la cantidad de antes de la ultima venta
+        Producto pr = actual == null ? p : actual;
+        long yaEnVenta = rutas.logica.Existencias.enVenta(carrito, pr.getId());
+        if (pr.getUnidad() != Unidad.UNIDAD) {
+            if (permitir(pr, yaEnVenta + 1) == null) { // agotado: ni se abre el cuadro
+                return;
+            }
+            CuadroGranel.mostrar(this, pr, (porValor, valor) -> {
+                long cant = porValor ? rutas.logica.Granel.cantidadPorValor(valor, pr.getPrecioVenta()) : valor;
+                rutas.logica.Existencias.Revision rv = permitir(pr, yaEnVenta + cant);
+                if (rv == null) {
+                    return;
+                }
+                LineaVenta l = porValor ? carrito.agregarPorValor(pr, valor) : carrito.agregar(pr, valor);
+                agregado(pr, l, rv);
             });
             return;
         }
-        agregado(p, carrito.agregar(p));
+        rutas.logica.Existencias.Revision rv = permitir(pr, yaEnVenta + 1000);
+        if (rv == null) {
+            return;
+        }
+        agregado(pr, carrito.agregar(pr), rv);
     }
 
-    private void agregado(Producto p, LineaVenta l) {
+    /**
+     * No se vende mas de lo que hay: si no alcanza, alerta que detiene (con pitido) y devuelve null.
+     * Si alcanza, devuelve la revision (puede traer el aviso de que quedan pocas).
+     */
+    private rutas.logica.Existencias.Revision permitir(Producto p, long totalEnVenta) {
+        rutas.logica.Existencias.Revision r = rutas.logica.Existencias.revisar(p, totalEnVenta);
+        if (r.puedeVender()) {
+            return r;
+        }
+        Toolkit.getDefaultToolkit().beep();
+        Alerta.mostrar(this, Alerta.Tipo.AVISO,
+                r.getEstado() == rutas.logica.Existencias.Estado.AGOTADO ? "Producto agotado" : "No alcanza",
+                r.getMensaje() + ". Si llegó mercancía, regístrela en Productos.", null);
+        return null;
+    }
+
+    private void agregado(Producto p, LineaVenta l, rutas.logica.Existencias.Revision rv) {
         refrescarVenta();
         buscador.selectAll(); // lo siguiente que se escriba o escanee reemplaza la busqueda
         enfocar();
@@ -309,15 +340,9 @@ public class PanelVender extends JPanel {
             tabla.setRowSelectionInterval(fila, fila);
             tabla.scrollRectToVisible(tabla.getCellRect(fila, 0, true));
         }
-        long enVenta = 0;
-        for (LineaVenta x : carrito.getLineas()) {
-            if (x.getProducto().getId() == p.getId()) {
-                enVenta += x.getCantidad();
-            }
-        }
         JComponent zona = zonaProductos();
-        if (enVenta > p.getStock()) {
-            Aviso.mostrar(zona, Aviso.Tipo.AVISO, p.getNombre() + " agregado", "Según el inventario ya no hay");
+        if (rv != null && rv.getEstado() == rutas.logica.Existencias.Estado.POCAS) {
+            Aviso.mostrar(zona, Aviso.Tipo.AVISO, p.getNombre() + " agregado", rv.getMensaje());
         } else {
             Aviso.mostrar(zona, Aviso.Tipo.BIEN, "Producto agregado", p.getNombre());
         }
@@ -617,6 +642,13 @@ public class PanelVender extends JPanel {
                         throw new IllegalArgumentException("Este producto se vende por unidades enteras");
                     }
                     if (cant != l.getCantidad()) {
+                        Producto actual = cat.buscarPorId(l.getProducto().getId());
+                        long total = rutas.logica.Existencias.enVenta(carrito, l.getProducto().getId())
+                                - l.getCantidad() + cant;
+                        if (permitir(actual == null ? l.getProducto() : actual, total) == null) {
+                            refrescarVenta();
+                            return; // la cantidad no cambia
+                        }
                         carrito.cambiarCantidad(r, cant);
                     }
                 } else if (c == 2) {
@@ -793,8 +825,22 @@ public class PanelVender extends JPanel {
             nombreEspera = r.getNombre();
             refrescarVenta();
             refrescarEspera();
-            if (!r.getAvisos().isEmpty()) {
-                Aviso.mostrar(zonaProductos(), Aviso.Tipo.AVISO, "Revise la venta", String.join(" · ", r.getAvisos()));
+            java.util.List<String> avisos = new java.util.ArrayList<>(r.getAvisos());
+            java.util.Set<Long> vistos = new java.util.HashSet<>();
+            for (LineaVenta l : carrito.getLineas()) { // mientras estaba en espera pudo venderse lo ultimo
+                long pid = l.getProducto().getId();
+                Producto actual = cat.buscarPorId(pid);
+                if (actual != null && vistos.add(pid)) {
+                    rutas.logica.Existencias.Revision rv = rutas.logica.Existencias.revisar(actual,
+                            rutas.logica.Existencias.enVenta(carrito, pid));
+                    if (!rv.puedeVender()) {
+                        avisos.add(rv.getMensaje());
+                    }
+                }
+            }
+            if (!avisos.isEmpty()) {
+                Alerta.mostrar(this, Alerta.Tipo.AVISO, "Revise la venta",
+                        String.join(". ", avisos) + ". Cambie las cantidades antes de cobrar.", null);
             }
             enfocar();
         } catch (SQLException | RuntimeException e) {
