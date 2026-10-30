@@ -21,6 +21,7 @@ import rutas.modelo.Usuario;
 import rutas.modelo.Categoria;
 import rutas.modelo.MetodoPago;
 import rutas.modelo.Pago;
+import rutas.modelo.LineaVenta;
 import rutas.modelo.Producto;
 import rutas.modelo.Unidad;
 
@@ -48,6 +49,7 @@ public class PruebasCaja {
         probarListado();
         probarArchivos();
         probarExistencias();
+        probarPorcentajeYNota();
     }
 
     private static void probarSeguridad() {
@@ -650,4 +652,75 @@ public class PruebasCaja {
         c.agregar(aceite);
         revisar("lo que ya hay en la venta de ese producto", rutas.logica.Existencias.enVenta(c, aceite.getId()) == 2000);
     }
+    private static void probarPorcentajeYNota() throws Exception {
+        System.out.println("--- Descuento en % y nota de la venta ---");
+        revisar("leer porcentaje: 10 -> 1000", Carrito.leerPorcentaje("10") == 1000);
+        revisar("leer porcentaje: 12,5 % -> 1250", Carrito.leerPorcentaje(" 12,5 %") == 1250);
+        revisar("leer porcentaje: vacio -> 0", Carrito.leerPorcentaje("") == 0);
+        revisar("porcentaje de mas de 100 se rechaza", lanza(IllegalArgumentException.class, "El descuento va de 0 a 100 %",
+                () -> Carrito.leerPorcentaje("120")));
+        revisar("porcentaje con letras se rechaza", lanza(IllegalArgumentException.class, "Escriba el porcentaje con números, por ejemplo 10 o 12,5",
+                () -> Carrito.leerPorcentaje("diez")));
+        revisar("texto del porcentaje: 1250 -> 12,5", Carrito.textoPorcentaje(1250).equals("12,5"));
+        revisar("texto del porcentaje: 0 -> 0", Carrito.textoPorcentaje(0).equals("0"));
+
+        Producto jabon = new Producto(20, null, "Jabón", Unidad.UNIDAD, 4000, 3000, 50_000, 0, null, true);
+        Carrito c = new Carrito();
+        c.agregar(jabon);
+        c.cambiarPorcentaje(0, 1000);
+        LineaVenta l = c.getLineas().get(0);
+        revisar("10 % de 4.000 = 400 de descuento", l.getDescuento() == 400 && l.getSubtotal() == 3600);
+        c.cambiarCantidad(0, 3000);
+        revisar("al subir la cantidad el % se mantiene (1.200 de descuento)", l.getDescuento() == 1200
+                && l.getPorcentaje() == 1000 && c.getTotal() == 10_800);
+        c.cambiarPrecio(0, 5000);
+        revisar("al cambiar el precio el % se mantiene", l.getDescuento() == 1500);
+        c.cambiarPorcentaje(0, 0);
+        revisar("0 % quita el descuento", l.getDescuento() == 0 && c.getTotal() == 15_000);
+        revisar("porcentaje fuera de rango en el carrito se rechaza", lanza(IllegalArgumentException.class, "El descuento va de 0 a 100 %",
+                () -> c.cambiarPorcentaje(0, 10_001)));
+
+        c.setNota("  Paga el viernes  ");
+        revisar("la nota se guarda sin espacios de mas", c.getNota().equals("Paga el viernes"));
+        c.setNota("   ");
+        revisar("nota vacia queda en null", c.getNota() == null);
+        StringBuilder larga = new StringBuilder();
+        for (int i = 0; i < 300; i++) {
+            larga.append('x');
+        }
+        c.setNota(larga.toString());
+        revisar("la nota se corta en 200 letras", c.getNota().length() == 200);
+
+        try (BaseTienda bd = baseTemporal()) {
+            long cajero = bd.crearUsuario("caja", "Caja", Rol.CAJERO, "clave123".toCharArray()).getId();
+            Catalogo cat = new Catalogo(bd);
+            Producto p = cat.crear(new Producto(0, null, "Jabón", Unidad.UNIDAD, 4000, 3000, 50_000, 0, null, true));
+            Carrito e = new Carrito();
+            e.agregar(p);
+            e.agregar(p);
+            e.cambiarPorcentaje(0, 1000);
+            e.setNota("Lleva fiado el resto");
+            long id = bd.guardarEspera(null, "Rosa", cajero, e);
+            BaseTienda.Retomada r = bd.cargarEspera(id, cat);
+            revisar("la espera recuerda el % y la nota", r.getCarrito().getLineas().get(0).getPorcentaje() == 1000
+                    && r.getCarrito().getTotal() == 7200 && "Lleva fiado el resto".equals(r.getCarrito().getNota()));
+            Cobro.Resultado res = Cobro.calcular(e.getTotal(), pagos(MetodoPago.EFECTIVO, 7200L));
+            long numero = bd.cobrar(id, cajero, null, e, pagos(MetodoPago.EFECTIVO, 7200L), res);
+            revisar("la venta cobrada guarda la nota", "Lleva fiado el resto".equals(bd.notaDeVenta(numero)));
+            // descuento en pesos (ventas en espera de antes del %): al retomarla no cambia el total
+            Producto tv = cat.crear(new Producto(0, null, "Televisor", Unidad.UNIDAD, 100_000, 80_000, 5000, 0, null, true));
+            Carrito vieja = new Carrito();
+            vieja.agregar(tv);
+            vieja.cambiarDescuento(0, 123);
+            long idv = bd.guardarEspera(null, null, cajero, vieja);
+            Carrito vuelta = bd.cargarEspera(idv, cat).getCarrito();
+            revisar("descuento en pesos se retoma igual (99.877)", vuelta.getTotal() == 99_877
+                    && vuelta.getLineas().get(0).getPorcentajeGuardado() == 0);
+            long idv2 = bd.guardarEspera(idv, null, cajero, vuelta);
+            revisar("y sigue igual si se guarda otra vez en espera", bd.cargarEspera(idv2, cat).getCarrito().getTotal() == 99_877);
+            vuelta.cambiarPorcentaje(0, 0);
+            revisar("escribir 0 % quita un descuento que estaba en pesos", vuelta.getTotal() == 100_000);
+        }
+    }
+
 }

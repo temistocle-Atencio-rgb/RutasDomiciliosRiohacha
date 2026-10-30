@@ -484,6 +484,7 @@ final class CapaCobro {
             comp = new Comprobante(app.getNegocio(), numero, LocalDateTime.now(),
                     app.getSesion().getUsuario().getNombre(), nombreCliente, lineas, total,
                     Comprobante.pagosNetos(pagos, cuenta.getVueltas()), cuenta.getRecibidoEfectivo(), cuenta.getVueltas());
+            comp.nota = carrito.getNota();
         } catch (RuntimeException e) {
             rutas.logica.Ubicaciones.registrarError(e);
         }

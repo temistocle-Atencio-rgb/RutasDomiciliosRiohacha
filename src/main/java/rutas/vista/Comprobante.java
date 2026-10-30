@@ -34,6 +34,7 @@ class Comprobante implements Printable {
     final List<Pago> pagos;
     final long recibido;
     final long vueltas;
+    String nota; // la nota que el cajero escribio en la venta (puede ser null)
 
     Comprobante(String negocio, long numero, LocalDateTime fecha, String atendio, String cliente,
             List<LineaVenta> lineas, long total, List<Pago> pagos, long recibido, long vueltas) {
@@ -62,7 +63,10 @@ class Comprobante implements Printable {
                     : CuadroGranel.peso(l.getCantidad(), l.getProducto());
             f.add(new String[]{cant + " " + l.getProducto().getNombre(), Tarifa.pesos(l.getSubtotal())});
             if (l.getDescuento() > 0) {
-                f.add(new String[]{"   descuento", "-" + Tarifa.pesos(l.getDescuento())});
+                f.add(new String[]{l.getPorcentajeGuardado() > 0
+                    ? "   descuento " + rutas.logica.Carrito.textoPorcentaje(l.getPorcentajeGuardado()) + " %"
+                    : "   descuento",
+                    "-" + Tarifa.pesos(l.getDescuento())});
             }
         }
         return f;
@@ -94,6 +98,12 @@ class Comprobante implements Printable {
         if (cliente != null && !cliente.isBlank()) {
             y = izq(g, "Cliente: " + cliente, f, y + 13);
         }
+        if (nota != null && !nota.isBlank()) {
+            g.setFont(f);
+            for (String renglon : partir("Nota: " + nota, g.getFontMetrics(), ancho)) {
+                y = izq(g, renglon, f, y + 13);
+            }
+        }
         y = linea(g, ancho, y + 8);
         for (String[] fila : filas()) {
             y = par(g, fila[0], fila[1], f, ancho, y + 14);
@@ -121,6 +131,38 @@ class Comprobante implements Printable {
         FontMetrics fm = g.getFontMetrics();
         g.drawString(s, Math.max(0, (ancho - fm.stringWidth(s)) / 2), y);
         return y;
+    }
+
+    /** Parte un texto largo en renglones que quepan en el ancho del tiquete. */
+    static List<String> partir(String texto, FontMetrics fm, int ancho) {
+        List<String> r = new ArrayList<>();
+        StringBuilder actual = new StringBuilder();
+        for (String palabra : texto.split("\\s+")) {
+            // una palabra mas ancha que el tiquete (un numero de cuenta largo) se parte por letras
+            while (fm.stringWidth(palabra) > ancho && palabra.length() > 1) {
+                int n = palabra.length() - 1;
+                while (n > 1 && fm.stringWidth(palabra.substring(0, n)) > ancho) {
+                    n--;
+                }
+                if (actual.length() > 0) {
+                    r.add(actual.toString());
+                    actual = new StringBuilder();
+                }
+                r.add(palabra.substring(0, n));
+                palabra = palabra.substring(n);
+            }
+            String prueba = actual.length() == 0 ? palabra : actual + " " + palabra;
+            if (fm.stringWidth(prueba) <= ancho || actual.length() == 0) {
+                actual = new StringBuilder(prueba);
+            } else {
+                r.add(actual.toString());
+                actual = new StringBuilder(palabra);
+            }
+        }
+        if (actual.length() > 0) {
+            r.add(actual.toString());
+        }
+        return r;
     }
 
     private static int izq(Graphics2D g, String s, Font f, int y) {

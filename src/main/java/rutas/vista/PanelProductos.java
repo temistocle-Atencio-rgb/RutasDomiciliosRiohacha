@@ -508,9 +508,9 @@ public class PanelProductos extends JPanel {
         fila(grilla, g, 2, "Se vende por", comboUnidad, "Precio de venta", campoVenta);
         if (verCompra) {
             fila(grilla, g, 3, "Precio de compra (para la ganancia)", campoCompra, "Cantidad en la tienda", campoStock);
-            fila(grilla, g, 4, "Avisar cuando queden menos de", campoMinimo, null, null);
+            fila(grilla, g, 4, "Avisar cuando queden (o menos)", campoMinimo, null, null);
         } else {
-            fila(grilla, g, 3, "Cantidad en la tienda", campoStock, "Avisar cuando queden menos de", campoMinimo);
+            fila(grilla, g, 3, "Cantidad en la tienda", campoStock, "Avisar cuando queden (o menos)", campoMinimo);
         }
         g.gridx = 1;
         g.gridy = 4;

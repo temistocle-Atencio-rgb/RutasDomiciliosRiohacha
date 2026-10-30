@@ -236,6 +236,13 @@ public final class Tema {
         return new Boton(texto, BLANCO, AZUL, AZUL);
     }
 
+    /** Boton sin borde (icono y texto azul), para herramientas como "Notas". Al pasar el mouse se marca en azul suave. */
+    public static Boton botonPlano(String texto) {
+        Boton b = new Boton(texto, BLANCO, AZUL, null);
+        b.setBorder(BorderFactory.createEmptyBorder(6, 10, 6, 12)); // unos 34 px de alto
+        return b;
+    }
+
     public static Boton botonPequeno(String texto) {
         Boton b = new Boton(texto, BLANCO, AZUL, BORDE_CONTROL);
         b.setFont(textoFuerte(12.5f));

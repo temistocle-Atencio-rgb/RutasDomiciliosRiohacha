@@ -85,12 +85,37 @@ public class PanelVender extends JPanel {
     private final JLabel lblVenta = new JLabel();
     private final JLabel lblSubVenta = new JLabel();
     private final ModeloVenta modelo = new ModeloVenta();
-    private final JTable tabla = new JTable(modelo);
+    private final JTable tabla = new JTable(modelo) {
+        private final javax.swing.Icon carritoVacio = Iconos.de("carrito", 64, new Color(0xC3CBD5));
+
+        @Override
+        protected void paintComponent(Graphics g0) {
+            super.paintComponent(g0);
+            if (getRowCount() > 0) {
+                return;
+            }
+            // venta vacia: el carrito gris y que hacer
+            Graphics2D g = (Graphics2D) g0.create();
+            Tema.suavizar(g);
+            int y = Math.max(24, getParent().getHeight() / 2 - 70);
+            carritoVacio.paintIcon(this, g, (getWidth() - 64) / 2, y);
+            g.setFont(Tema.subtitulo(15));
+            g.setColor(Tema.GRIS_OSCURO);
+            String t1 = "La venta está vacía";
+            g.drawString(t1, (getWidth() - g.getFontMetrics().stringWidth(t1)) / 2, y + 92);
+            g.setFont(Tema.texto(13));
+            g.setColor(Tema.GRIS_TEXTO);
+            String t2 = "Escanee un producto o tóquelo para agregarlo";
+            g.drawString(t2, (getWidth() - g.getFontMetrics().stringWidth(t2)) / 2, y + 114);
+            g.dispose();
+        }
+    };
     private final JLabel lblCuantos = new JLabel();
     private final JLabel lblTotal = new JLabel();
     private final Tema.Boton btnPagar = Tema.botonAccion("Pagar   (F12)");
     private final Tema.Boton btnEspera = Tema.botonSecundario("En espera  (F8)");
     private final Tema.Boton btnCancelar = Tema.botonPequeno("Cancelar venta");
+    private final Tema.Boton btnNota = Tema.botonPlano("Notas");
 
     public PanelVender(Aplicacion app) {
         super(new BorderLayout());
@@ -143,7 +168,7 @@ public class PanelVender extends JPanel {
         arriba.setLayout(new BoxLayout(arriba, BoxLayout.Y_AXIS));
         buscador.setFont(Tema.texto(16));
         buscador.setBorder(BorderFactory.createCompoundBorder(new Tema.BordeRedondo(Tema.BORDE_CONTROL, Tema.RADIO),
-                BorderFactory.createEmptyBorder(11, 14, 11, 14)));
+                new BordeIconos(Iconos.de("lupa", 20, Tema.GRIS_TEXTO), Iconos.de("codigo", 22, Tema.GRIS_TEXTO))));
         Tema.anchoCompleto(buscador);
         arriba.add(buscador);
         arriba.add(Tema.espacio(14));
@@ -154,8 +179,11 @@ public class PanelVender extends JPanel {
         scCat.getViewport().setOpaque(false);
         scCat.setOpaque(false);
         scCat.setAlignmentX(LEFT_ALIGNMENT);
-        scCat.setPreferredSize(new Dimension(100, 104));
-        scCat.setMaximumSize(new Dimension(Integer.MAX_VALUE, 104));
+        // si no caben todas las categorias aparece una barra delgada debajo, sin tapar los nombres
+        scCat.getHorizontalScrollBar().setPreferredSize(new Dimension(10, 8));
+        scCat.getHorizontalScrollBar().setUnitIncrement(24);
+        scCat.setPreferredSize(new Dimension(100, 114));
+        scCat.setMaximumSize(new Dimension(Integer.MAX_VALUE, 114));
         arriba.add(scCat);
         arriba.add(Tema.espacio(6));
         lblResultados.setFont(Tema.texto(12.5f));
@@ -365,30 +393,48 @@ public class PanelVender extends JPanel {
         JPanel der = new JPanel(new BorderLayout()) {
             @Override
             public Dimension getPreferredSize() {
-                // un poco menos de la mitad del ancho, entre 450 y 580 px
+                // cerca de la mitad del ancho, entre 540 y 680 px (la tabla tiene 7 columnas)
                 int ancho = PanelVender.this.getWidth();
-                int w = ancho <= 0 ? 460 : Math.max(450, Math.min(580, (int) (ancho * 0.42)));
+                int w = ancho <= 0 ? 560 : Math.max(540, Math.min(680, (int) (ancho * 0.47)));
                 return new Dimension(w, 100);
             }
         };
         der.setBackground(Tema.BLANCO);
         der.setBorder(BorderFactory.createMatteBorder(0, 1, 0, 0, Tema.BORDE));
 
-        JPanel cab = new JPanel();
-        cab.setOpaque(false);
-        cab.setLayout(new BoxLayout(cab, BoxLayout.Y_AXIS));
-        cab.setBorder(BorderFactory.createEmptyBorder(20, 24, 12, 24));
-        lblVenta.setFont(Tema.titulo(21));
-        lblVenta.setForeground(Tema.GRIS_OSCURO);
-        cab.add(lblVenta);
+        // barra azul como la de "Atendiendo": carrito, numero de la venta y quien atiende
+        JPanel barra = new JPanel(new BorderLayout(10, 0));
+        barra.setBackground(Tema.AZUL);
+        barra.setBorder(BorderFactory.createEmptyBorder(12, 20, 12, 20));
+        lblVenta.setIcon(Iconos.de("carrito", 24, Tema.BLANCO));
+        lblVenta.setIconTextGap(10);
+        lblVenta.setFont(Tema.titulo(18));
+        lblVenta.setForeground(Tema.BLANCO);
+        barra.add(lblVenta, BorderLayout.WEST);
         lblSubVenta.setFont(Tema.texto(13));
-        lblSubVenta.setForeground(Tema.GRIS_TEXTO);
-        cab.add(lblSubVenta);
+        lblSubVenta.setForeground(new Color(255, 255, 255, 220));
+        barra.add(lblSubVenta, BorderLayout.EAST);
+
+        JPanel herramientas = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        herramientas.setOpaque(false);
+        herramientas.setBorder(BorderFactory.createEmptyBorder(8, 14, 6, 14));
+        btnNota.setIcon(Iconos.de("notas", 22, Tema.AZUL));
+        btnNota.setIconTextGap(8);
+        btnNota.setFont(Tema.subtitulo(13));
+        btnNota.setForeground(Tema.AZUL);
+        btnNota.setToolTipText("Escribir una nota para esta venta (sale en el comprobante)");
+        btnNota.addActionListener(e -> escribirNota());
+        herramientas.add(btnNota);
+
+        JPanel cab = new JPanel(new BorderLayout());
+        cab.setOpaque(false);
+        cab.add(barra, BorderLayout.NORTH);
+        cab.add(herramientas, BorderLayout.SOUTH);
         der.add(cab, BorderLayout.NORTH);
 
         configurarTabla();
         JScrollPane sc = new JScrollPane(tabla);
-        sc.setBorder(BorderFactory.createEmptyBorder(0, 16, 0, 16));
+        sc.setBorder(BorderFactory.createEmptyBorder(0, 12, 0, 12));
         sc.getViewport().setBackground(Tema.BLANCO);
         sc.setBackground(Tema.BLANCO);
         der.add(sc, BorderLayout.CENTER);
@@ -444,8 +490,16 @@ public class PanelVender extends JPanel {
         return der;
     }
 
+    // columnas de la tabla de la venta
+    private static final int COL_STOCK = 0, COL_PRODUCTO = 1, COL_CANT = 2, COL_VALOR = 3, COL_DESC = 4,
+            COL_SUBTOTAL = 5, COL_QUITAR = 6;
+
+    private static boolean esCajita(int c) {
+        return c == COL_CANT || c == COL_VALOR || c == COL_DESC;
+    }
+
     private void configurarTabla() {
-        tabla.setRowHeight(46);
+        tabla.setRowHeight(50);
         tabla.setFont(Tema.texto(14));
         tabla.setForeground(Tema.GRIS_OSCURO);
         tabla.setShowVerticalLines(false);
@@ -468,57 +522,37 @@ public class PanelVender extends JPanel {
             public Component getTableCellRendererComponent(JTable t, Object v, boolean s, boolean f, int r, int c) {
                 JLabel l = (JLabel) super.getTableCellRendererComponent(t, v, false, false, r, c);
                 l.setFont(Tema.textoFuerte(12.5f));
-                l.setForeground(Tema.GRIS_TEXTO);
-                l.setBackground(Tema.BLANCO);
-                l.setHorizontalAlignment(c == 0 ? LEFT : RIGHT);
+                l.setForeground(Tema.GRIS_OSCURO);
+                l.setBackground(Tema.GRIS_CLARO);
+                l.setHorizontalAlignment(c == COL_PRODUCTO ? LEFT : c == COL_SUBTOTAL ? RIGHT : CENTER);
                 l.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, Tema.BORDE),
-                        BorderFactory.createEmptyBorder(8, 8, 8, 8)));
+                        BorderFactory.createEmptyBorder(9, 6, 9, 6)));
                 return l;
             }
         });
-        DefaultTableCellRenderer celdas = new DefaultTableCellRenderer() {
-            @Override
-            public Component getTableCellRendererComponent(JTable t, Object v, boolean s, boolean f, int r, int c) {
-                JLabel l = (JLabel) super.getTableCellRendererComponent(t, v, s, false, r, c);
-                l.setBorder(BorderFactory.createEmptyBorder(0, 8, 0, 8));
-                l.setHorizontalAlignment(c == 0 ? LEFT : RIGHT);
-                l.setFont(c == 4 ? Tema.textoFuerte(14) : c == 0 ? Tema.textoFuerte(13.5f) : Tema.texto(14));
-                boolean editable = c >= 1 && c <= 3;
-                l.setForeground(Tema.GRIS_OSCURO);
-                l.setToolTipText(editable ? "Doble clic o escriba para cambiar" : null);
-                if (editable && !s) {
-                    l.setForeground(Tema.AZUL); // lo que se puede cambiar se ve en azul
-                }
-                return l;
-            }
-        };
-        tabla.setDefaultRenderer(Object.class, celdas);
+        tabla.setDefaultRenderer(Object.class, new Celda());
         TableColumnModel cm = tabla.getColumnModel();
-        // las columnas de numeros no se encogen: si falta espacio, se acorta el nombre del producto
-        int[] anchos = {150, 70, 74, 56, 82, 36};
+        // las columnas de numeros no se encogen: si falta espacio, el nombre del producto baja a dos renglones
+        int[] anchos = {50, 150, 74, 96, 62, 98, 34}; // caben "2,25 kg", "$125.000" y "$1.250.000"
         for (int i = 0; i < anchos.length; i++) {
             cm.getColumn(i).setPreferredWidth(anchos[i]);
-            if (i > 0) {
+            if (i != COL_PRODUCTO) {
                 cm.getColumn(i).setMinWidth(anchos[i]);
             }
         }
-        cm.getColumn(0).setMinWidth(90);
-        cm.getColumn(5).setMaxWidth(36);
-        cm.getColumn(5).setCellRenderer(new Quitar());
-        JTextField ed = new JTextField();
-        ed.setFont(Tema.texto(14));
-        ed.setHorizontalAlignment(JTextField.RIGHT);
-        ed.setBorder(BorderFactory.createLineBorder(Tema.AZUL, 2));
-        DefaultCellEditor editor = new DefaultCellEditor(ed);
+        cm.getColumn(COL_PRODUCTO).setMinWidth(90);
+        cm.getColumn(COL_QUITAR).setMaxWidth(34);
+        cm.getColumn(COL_QUITAR).setCellRenderer(new Quitar());
+        DefaultCellEditor editor = new DefaultCellEditor(new CampoCelda());
         editor.setClickCountToStart(1);
-        for (int i = 1; i <= 3; i++) {
+        for (int i = COL_CANT; i <= COL_DESC; i++) {
             cm.getColumn(i).setCellEditor(editor);
         }
         tabla.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
                 int fila = tabla.rowAtPoint(e.getPoint());
-                if (fila >= 0 && tabla.columnAtPoint(e.getPoint()) == 5) {
+                if (fila >= 0 && tabla.columnAtPoint(e.getPoint()) == COL_QUITAR) {
                     quitarFila(fila);
                 }
             }
@@ -561,6 +595,9 @@ public class PanelVender extends JPanel {
         int n = carrito.cantidadProductos();
         lblCuantos.setText(n == 0 ? "Sin productos" : n + (n == 1 ? " producto" : " productos"));
         lblTotal.setText(Tarifa.pesos(carrito.getTotal()));
+        String nota = carrito.getNota();
+        btnNota.setText(nota == null ? "Notas" : "Nota: " + (nota.length() > 38 ? nota.substring(0, 37) + "…" : nota));
+        btnNota.setToolTipText(nota == null ? "Escribir una nota para esta venta (sale en el comprobante)" : nota);
         btnPagar.setEnabled(n > 0);
         btnEspera.setEnabled(n > 0);
         btnCancelar.setEnabled(n > 0);
@@ -576,9 +613,20 @@ public class PanelVender extends JPanel {
         return CuadroGranel.peso(l.getCantidad(), p);
     }
 
+    /** Lo que hay en la tienda de ese producto ahora (no lo de la venta). */
+    private Producto actual(LineaVenta l) {
+        Producto p = cat.buscarPorId(l.getProducto().getId());
+        return p == null ? l.getProducto() : p;
+    }
+
+    /** "12", "-3" o "4,5 lb": lo que queda en la tienda. */
+    private static String textoStock(Producto p) {
+        return p.getUnidad() == Unidad.UNIDAD ? PanelProductos.cantidad(p.getStock()) : CuadroGranel.peso(p.getStock(), p);
+    }
+
     /** Las filas de la tabla salen del carrito. */
     private class ModeloVenta extends AbstractTableModel {
-        private final String[] columnas = {"Producto", "Cant.", "Precio", "Desc", "Total", ""};
+        private final String[] columnas = {"Stock", "Producto", "Cant", "Valor", "% Desc", "Subtotal", ""};
 
         @Override
         public int getRowCount() {
@@ -597,22 +645,24 @@ public class PanelVender extends JPanel {
 
         @Override
         public boolean isCellEditable(int r, int c) {
-            return c >= 1 && c <= 3;
+            return esCajita(c);
         }
 
         @Override
         public Object getValueAt(int r, int c) {
             LineaVenta l = carrito.getLineas().get(r);
             switch (c) {
-                case 0:
-                    return l.getProducto().getNombre() + (l.esPorValor() ? "  (por valor)" : "");
-                case 1:
+                case COL_STOCK:
+                    return textoStock(actual(l));
+                case COL_PRODUCTO:
+                    return l.getProducto().getNombre();
+                case COL_CANT:
                     return textoCantidad(l);
-                case 2:
+                case COL_VALOR:
                     return Tarifa.pesos(l.getPrecio());
-                case 3:
-                    return l.getDescuento() == 0 ? "—" : "-" + Tarifa.pesos(l.getDescuento());
-                case 4:
+                case COL_DESC:
+                    return Carrito.textoPorcentaje(l.getPorcentaje());
+                case COL_SUBTOTAL:
                     return Tarifa.pesos(l.getSubtotal());
                 default:
                     return "";
@@ -631,7 +681,7 @@ public class PanelVender extends JPanel {
                 return;
             }
             try {
-                if (c == 1) {
+                if (c == COL_CANT) {
                     String limpio = t.replaceAll("(?i)\\s*(kg|lb|g|und)$", "");
                     long cant = ImportadorProductos.leerCantidad(limpio);
                     if (t.toLowerCase().endsWith(" g") || (t.toLowerCase().endsWith("g")
@@ -642,24 +692,24 @@ public class PanelVender extends JPanel {
                         throw new IllegalArgumentException("Este producto se vende por unidades enteras");
                     }
                     if (cant != l.getCantidad()) {
-                        Producto actual = cat.buscarPorId(l.getProducto().getId());
                         long total = rutas.logica.Existencias.enVenta(carrito, l.getProducto().getId())
                                 - l.getCantidad() + cant;
-                        if (permitir(actual == null ? l.getProducto() : actual, total) == null) {
+                        if (permitir(actual(l), total) == null) {
                             refrescarVenta();
                             return; // la cantidad no cambia
                         }
                         carrito.cambiarCantidad(r, cant);
                     }
-                } else if (c == 2) {
+                } else if (c == COL_VALOR) {
                     long precio = ImportadorProductos.leerPesos(t);
                     if (precio != l.getPrecio()) {
                         carrito.cambiarPrecio(r, precio);
                     }
-                } else if (c == 3) {
-                    long desc = t.isEmpty() || t.equals("—") ? 0 : ImportadorProductos.leerPesos(t.replace("-", ""));
-                    if (desc != l.getDescuento()) {
-                        carrito.cambiarDescuento(r, desc);
+                } else if (c == COL_DESC) {
+                    long pct = Carrito.leerPorcentaje(t);
+                    // compara con el % escrito; asi un 0 tambien quita un descuento que estaba en pesos
+                    if (pct != l.getPorcentajeGuardado() || (pct == 0 && l.getDescuento() > 0)) {
+                        carrito.cambiarPorcentaje(r, pct);
                     }
                 }
             } catch (IllegalArgumentException e) {
@@ -670,7 +720,125 @@ public class PanelVender extends JPanel {
         }
     }
 
-    /** Columna para quitar el producto: una equis dibujada (sin emojis). */
+    /**
+     * Celdas de la venta. Cant, Valor y % Desc se ven como cajitas (como campos) para que
+     * se note que se pueden cambiar. El stock sale en rojo si no hay y en naranja oscuro si quedan pocas.
+     */
+    private class Celda extends DefaultTableCellRenderer {
+        private boolean cajita;
+
+        @Override
+        public Component getTableCellRendererComponent(JTable t, Object v, boolean s, boolean f, int r, int c) {
+            super.getTableCellRendererComponent(t, v, s, false, r, c);
+            cajita = esCajita(c);
+            setOpaque(true);
+            setToolTipText(cajita ? "Clic para cambiar" : null);
+            setForeground(Tema.GRIS_OSCURO);
+            setFont(Tema.texto(14));
+            setBorder(BorderFactory.createEmptyBorder(0, cajita ? 10 : 6, 0, cajita ? 10 : 6));
+            if (c == COL_STOCK) {
+                setHorizontalAlignment(CENTER);
+                setFont(Tema.texto(13));
+                Producto p = r < carrito.getLineas().size() ? actual(carrito.getLineas().get(r)) : null;
+                if (p != null && p.getStock() <= 0) {
+                    setForeground(Tema.ERROR_TEXTO);
+                } else if (p != null && p.getStock() <= p.getMinimo()) {
+                    setForeground(Tema.AVISO_TEXTO);
+                } else {
+                    setForeground(Tema.GRIS_TEXTO);
+                }
+            } else if (c == COL_PRODUCTO) {
+                setHorizontalAlignment(LEFT);
+                LineaVenta l = r < carrito.getLineas().size() ? carrito.getLineas().get(r) : null;
+                String extra = l != null && l.esPorValor() ? "<br><span style='color:#5B6670;font-size:90%'>por valor</span>" : "";
+                // en html el nombre puede bajar a dos renglones si es largo
+                setText("<html><b>" + escapar(String.valueOf(v)) + "</b>" + extra + "</html>");
+                setFont(Tema.texto(13));
+            } else if (c == COL_SUBTOTAL) {
+                setHorizontalAlignment(RIGHT);
+                setFont(Tema.textoFuerte(14));
+            } else {
+                setHorizontalAlignment(RIGHT);
+            }
+            return this;
+        }
+
+        @Override
+        protected void paintComponent(Graphics g0) {
+            if (!cajita) {
+                super.paintComponent(g0);
+                return;
+            }
+            // fondo de la fila y encima la cajita blanca con borde, radio de 5 px
+            Graphics2D g = (Graphics2D) g0.create();
+            Tema.suavizar(g);
+            g.setColor(getBackground());
+            g.fillRect(0, 0, getWidth(), getHeight());
+            int alto = Math.min(34, getHeight() - 12);
+            int y = (getHeight() - alto) / 2;
+            g.setColor(Tema.BLANCO);
+            g.fillRoundRect(4, y, getWidth() - 9, alto, Tema.ARCO, Tema.ARCO);
+            g.setColor(Tema.BORDE_CONTROL);
+            g.drawRoundRect(4, y, getWidth() - 9, alto, Tema.ARCO, Tema.ARCO);
+            g.dispose();
+            setOpaque(false);
+            super.paintComponent(g0);
+            setOpaque(true);
+        }
+    }
+
+    /** Relleno del buscador con la lupa a la izquierda y el codigo de barras a la derecha. */
+    private static class BordeIconos extends javax.swing.border.AbstractBorder {
+        private final javax.swing.Icon izq;
+        private final javax.swing.Icon der;
+
+        BordeIconos(javax.swing.Icon izq, javax.swing.Icon der) {
+            this.izq = izq;
+            this.der = der;
+        }
+
+        @Override
+        public void paintBorder(Component c, Graphics g, int x, int y, int w, int h) {
+            izq.paintIcon(c, g, x + 14, y + (h - izq.getIconHeight()) / 2);
+            der.paintIcon(c, g, x + w - 14 - der.getIconWidth(), y + (h - der.getIconHeight()) / 2);
+        }
+
+        @Override
+        public Insets getBorderInsets(Component c) {
+            return new Insets(11, 14 + izq.getIconWidth() + 10, 11, 14 + der.getIconWidth() + 10);
+        }
+    }
+
+    private static String escapar(String s) {
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+    }
+
+    /** Campo para cambiar Cant, Valor o % Desc dentro de la tabla: la misma cajita, con el borde azul de foco. */
+    private class CampoCelda extends JTextField {
+        CampoCelda() {
+            setFont(Tema.texto(14));
+            setHorizontalAlignment(JTextField.RIGHT);
+            setOpaque(false);
+            setBorder(BorderFactory.createCompoundBorder(BorderFactory.createEmptyBorder(6, 4, 6, 5),
+                    BorderFactory.createCompoundBorder(new Tema.BordeRedondo(Tema.BORDE_CONTROL, Tema.RADIO),
+                            BorderFactory.createEmptyBorder(0, 5, 0, 5))));
+        }
+
+        @Override
+        protected void paintComponent(Graphics g0) {
+            Graphics2D g = (Graphics2D) g0.create();
+            Tema.suavizar(g);
+            int fila = tabla.getEditingRow();
+            g.setColor(fila >= 0 && tabla.isRowSelected(fila) ? tabla.getSelectionBackground() : Tema.BLANCO);
+            g.fillRect(0, 0, getWidth(), getHeight());
+            g.setColor(Tema.BLANCO);
+            g.fillRoundRect(4, 6, getWidth() - 9, getHeight() - 12, Tema.ARCO, Tema.ARCO);
+            g.dispose();
+            super.paintComponent(g0);
+        }
+    }
+
+    /** Columna para quitar el producto: una caneca dibujada en rojo (sin emojis). */
     private static class Quitar extends DefaultTableCellRenderer {
         Quitar() {
             setToolTipText("Quitar de la venta (Supr)");
@@ -688,11 +856,14 @@ public class PanelVender extends JPanel {
             super.paintComponent(g0);
             Graphics2D g = (Graphics2D) g0.create();
             Tema.suavizar(g);
-            g.setColor(Tema.GRIS_TEXTO);
+            g.setColor(Tema.ERROR);
             g.setStroke(new BasicStroke(1.8f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
             int cx = getWidth() / 2, cy = getHeight() / 2;
-            g.drawLine(cx - 5, cy - 5, cx + 5, cy + 5);
-            g.drawLine(cx + 5, cy - 5, cx - 5, cy + 5);
+            g.drawLine(cx - 7, cy - 6, cx + 7, cy - 6);           // tapa
+            g.drawLine(cx - 2, cy - 8, cx + 2, cy - 8);           // agarradera
+            g.drawRoundRect(cx - 5, cy - 4, 10, 12, 2, 2);        // cuerpo
+            g.drawLine(cx - 2, cy - 1, cx - 2, cy + 5);           // rayitas
+            g.drawLine(cx + 2, cy - 1, cx + 2, cy + 5);
             g.dispose();
         }
     }
@@ -729,6 +900,58 @@ public class PanelVender extends JPanel {
         buscador.setText(""); // la venta nueva arranca con todos los productos a la vista
         refrescarVenta();
         enfocar();
+    }
+
+    /** Nota corta de la venta ("paga el viernes", "lleva fiado"). Sale en el comprobante. */
+    private void escribirNota() {
+        if (tabla.isEditing()) {
+            tabla.getCellEditor().stopCellEditing();
+        }
+        if (Capa.hayAbierta(this)) {
+            return;
+        }
+        JPanel t = Capa.tarjeta(460, 24, 28);
+        t.add(Tema.tituloPantalla("Nota de la venta"));
+        t.add(Tema.parrafo("Sale en el comprobante y queda guardada con la venta. Máximo "
+                + Carrito.MAX_NOTA + " letras.", 380));
+        t.add(Tema.espacio(12));
+        JTextField nota = Tema.campo("Ej. Paga el resto el viernes");
+        nota.setDocument(new javax.swing.text.PlainDocument() {
+            @Override
+            public void insertString(int off, String str, javax.swing.text.AttributeSet a)
+                    throws javax.swing.text.BadLocationException {
+                int cabe = Carrito.MAX_NOTA - getLength();
+                if (str != null && cabe > 0) {
+                    super.insertString(off, str.length() > cabe ? str.substring(0, cabe) : str, a); // lo que sobra se corta
+                }
+            }
+        });
+        if (carrito.getNota() != null) {
+            nota.setText(carrito.getNota());
+        }
+        Tema.anchoCompleto(nota);
+        t.add(nota);
+        t.add(Tema.espacio(16));
+        Tema.Boton guardar = Tema.botonPrimario("Guardar nota");
+        Tema.Boton quitar = Tema.botonSecundario("Quitar nota");
+        Tema.Boton volver = Tema.botonSecundario("Volver");
+        quitar.setVisible(carrito.getNota() != null);
+        t.add(Tema.fila(8, guardar, quitar, volver));
+        Capa capa = new Capa(this, t, true);
+        Runnable hacer = () -> {
+            carrito.setNota(nota.getText());
+            capa.cerrar();
+            refrescarVenta();
+        };
+        guardar.addActionListener(e -> hacer.run());
+        nota.addActionListener(e -> hacer.run());
+        quitar.addActionListener(e -> {
+            carrito.setNota(null);
+            capa.cerrar();
+            refrescarVenta();
+        });
+        volver.addActionListener(e -> capa.cerrar());
+        capa.mostrar(nota);
     }
 
     /** Guarda la venta en espera (pide un nombre opcional) y deja la pantalla limpia. */

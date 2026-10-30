@@ -118,6 +118,12 @@ public class BaseTienda implements AutoCloseable {
                     + " venta_id INTEGER NOT NULL REFERENCES ventas(id) ON DELETE CASCADE,"
                     + " metodo TEXT NOT NULL CHECK (metodo IN ('EFECTIVO','NEQUI','DAVIPLATA','TRANSFERENCIA')),"
                     + " valor INTEGER NOT NULL)");
+            if (!tieneColumna(st, "ventas", "nota")) { // bases de antes de la nota y el descuento en %
+                st.execute("ALTER TABLE ventas ADD COLUMN nota TEXT");
+            }
+            if (!tieneColumna(st, "venta_lineas", "porcentaje")) {
+                st.execute("ALTER TABLE venta_lineas ADD COLUMN porcentaje INTEGER NOT NULL DEFAULT 0");
+            }
             st.execute("CREATE INDEX IF NOT EXISTS idx_lineas_venta ON venta_lineas(venta_id)");
             st.execute("CREATE INDEX IF NOT EXISTS idx_pagos_venta ON venta_pagos(venta_id)");
             st.execute("CREATE INDEX IF NOT EXISTS idx_ventas_estado ON ventas(estado)");
@@ -521,11 +527,12 @@ public class BaseTienda implements AutoCloseable {
                 long ventaId;
                 if (id == null) {
                     try (PreparedStatement ps = con.prepareStatement("INSERT INTO ventas(estado, nombre_espera, usuario_id,"
-                            + " creada, total) VALUES('ESPERA',?,?,?,?)", Statement.RETURN_GENERATED_KEYS)) {
+                            + " creada, total, nota) VALUES('ESPERA',?,?,?,?,?)", Statement.RETURN_GENERATED_KEYS)) {
                         ps.setString(1, vacioANull(nombre));
                         ps.setLong(2, usuarioId);
                         ps.setString(3, ahora());
                         ps.setLong(4, c.getTotal());
+                        ps.setString(5, c.getNota());
                         ps.executeUpdate();
                         try (ResultSet rs = ps.getGeneratedKeys()) {
                             rs.next();
@@ -535,10 +542,11 @@ public class BaseTienda implements AutoCloseable {
                 } else {
                     ventaId = id;
                     try (PreparedStatement ps = con.prepareStatement(
-                            "UPDATE ventas SET nombre_espera = ?, total = ? WHERE id = ? AND estado = 'ESPERA'")) {
+                            "UPDATE ventas SET nombre_espera = ?, total = ?, nota = ? WHERE id = ? AND estado = 'ESPERA'")) {
                         ps.setString(1, vacioANull(nombre));
                         ps.setLong(2, c.getTotal());
-                        ps.setLong(3, ventaId);
+                        ps.setString(3, c.getNota());
+                        ps.setLong(4, ventaId);
                         if (ps.executeUpdate() == 0) {
                             throw new IllegalStateException("Esa venta ya no está en espera");
                         }
@@ -571,20 +579,23 @@ public class BaseTienda implements AutoCloseable {
     /** Vuelve a armar una venta en espera con el precio y la cantidad que tenia. */
     public Retomada cargarEspera(long id, Catalogo cat) throws SQLException {
         String nombre = null;
+        String nota = null;
         try (PreparedStatement ps = con.prepareStatement(
-                "SELECT nombre_espera FROM ventas WHERE id = ? AND estado = 'ESPERA'")) {
+                "SELECT nombre_espera, nota FROM ventas WHERE id = ? AND estado = 'ESPERA'")) {
             ps.setLong(1, id);
             try (ResultSet rs = ps.executeQuery()) {
                 if (!rs.next()) {
                     throw new IllegalArgumentException("Esa venta ya no está en espera");
                 }
                 nombre = rs.getString(1);
+                nota = rs.getString(2);
             }
         }
         Carrito c = new Carrito();
+        c.setNota(nota);
         List<String> avisos = new ArrayList<>();
         try (PreparedStatement ps = con.prepareStatement("SELECT producto_id, nombre, cantidad, precio, descuento,"
-                + " subtotal, por_valor FROM venta_lineas WHERE venta_id = ? ORDER BY id")) {
+                + " subtotal, por_valor, porcentaje FROM venta_lineas WHERE venta_id = ? ORDER BY id")) {
             ps.setLong(1, id);
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
@@ -599,8 +610,12 @@ public class BaseTienda implements AutoCloseable {
                         avisos.add("«" + p.getNombre() + "» está desactivado");
                     }
                     boolean porValor = rs.getInt(7) == 1;
-                    c.agregarLinea(new LineaVenta(p, rs.getLong(3), rs.getLong(4), rs.getLong(5),
-                            porValor ? rs.getLong(6) + rs.getLong(5) : null));
+                    LineaVenta l = new LineaVenta(p, rs.getLong(3), rs.getLong(4), rs.getLong(5),
+                            porValor ? rs.getLong(6) + rs.getLong(5) : null);
+                    if (rs.getLong(8) > 0) {
+                        l.setPorcentaje(rs.getLong(8));
+                    }
+                    c.agregarLinea(l);
                 }
             }
         }
@@ -642,7 +657,7 @@ public class BaseTienda implements AutoCloseable {
                 long ventaId;
                 if (idEspera == null) {
                     try (PreparedStatement ps = con.prepareStatement("INSERT INTO ventas(numero, estado, usuario_id,"
-                            + " cliente, creada, pagada, total, recibido, vueltas) VALUES(?,'PAGADA',?,?,?,?,?,?,?)",
+                            + " cliente, creada, pagada, total, recibido, vueltas, nota) VALUES(?,'PAGADA',?,?,?,?,?,?,?,?)",
                             Statement.RETURN_GENERATED_KEYS)) {
                         String hoy = ahora();
                         ps.setLong(1, numero);
@@ -653,6 +668,7 @@ public class BaseTienda implements AutoCloseable {
                         ps.setLong(6, c.getTotal());
                         ps.setLong(7, comprobado.getRecibidoEfectivo());
                         ps.setLong(8, comprobado.getVueltas());
+                        ps.setString(9, c.getNota());
                         ps.executeUpdate();
                         try (ResultSet rs = ps.getGeneratedKeys()) {
                             rs.next();
@@ -662,7 +678,7 @@ public class BaseTienda implements AutoCloseable {
                 } else {
                     ventaId = idEspera;
                     try (PreparedStatement ps = con.prepareStatement("UPDATE ventas SET numero = ?, estado = 'PAGADA',"
-                            + " usuario_id = ?, cliente = ?, pagada = ?, total = ?, recibido = ?, vueltas = ?"
+                            + " usuario_id = ?, cliente = ?, pagada = ?, total = ?, recibido = ?, vueltas = ?, nota = ?"
                             + " WHERE id = ? AND estado = 'ESPERA'")) {
                         ps.setLong(1, numero);
                         ps.setLong(2, usuarioId);
@@ -671,7 +687,8 @@ public class BaseTienda implements AutoCloseable {
                         ps.setLong(5, c.getTotal());
                         ps.setLong(6, comprobado.getRecibidoEfectivo());
                         ps.setLong(7, comprobado.getVueltas());
-                        ps.setLong(8, ventaId);
+                        ps.setString(8, c.getNota());
+                        ps.setLong(9, ventaId);
                         if (ps.executeUpdate() == 0) {
                             throw new IllegalStateException("Esa venta ya no está en espera");
                         }
@@ -687,6 +704,16 @@ public class BaseTienda implements AutoCloseable {
             throw e;
         } catch (Exception e) {
             throw new SQLException(e.getMessage(), e);
+        }
+    }
+
+    /** La nota que se escribio en una venta cobrada (null si no tiene). */
+    public String notaDeVenta(long numero) throws SQLException {
+        try (PreparedStatement ps = con.prepareStatement("SELECT nota FROM ventas WHERE numero = ?")) {
+            ps.setLong(1, numero);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getString(1) : null;
+            }
         }
     }
 
@@ -716,7 +743,7 @@ public class BaseTienda implements AutoCloseable {
 
     private void guardarLineas(long ventaId, Carrito c) throws SQLException {
         try (PreparedStatement ps = con.prepareStatement("INSERT INTO venta_lineas(venta_id, producto_id, nombre,"
-                + " cantidad, precio, costo, descuento, subtotal, por_valor) VALUES(?,?,?,?,?,?,?,?,?)")) {
+                + " cantidad, precio, costo, descuento, subtotal, por_valor, porcentaje) VALUES(?,?,?,?,?,?,?,?,?,?)")) {
             for (LineaVenta l : c.getLineas()) {
                 ps.setLong(1, ventaId);
                 ps.setLong(2, l.getProducto().getId());
@@ -727,6 +754,7 @@ public class BaseTienda implements AutoCloseable {
                 ps.setLong(7, l.getDescuento());
                 ps.setLong(8, l.getSubtotal());
                 ps.setInt(9, l.esPorValor() ? 1 : 0);
+                ps.setLong(10, l.getPorcentajeGuardado()); // el derivado de pesos no se guarda: al retomarla se redondearia
                 ps.addBatch();
             }
             ps.executeBatch();
