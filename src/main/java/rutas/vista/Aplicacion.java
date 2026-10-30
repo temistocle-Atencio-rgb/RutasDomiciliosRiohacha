@@ -493,6 +493,11 @@ public class Aplicacion {
 
     // ---------------- oyentes ----------------
 
+    /** Al cerrar la ventana (por ejemplo al salir de la sesion) sus paneles dejan de escuchar. */
+    public void quitarOyentes() {
+        oyentes.clear();
+    }
+
     public void alCambiar(Runnable r) {
         oyentes.add(r);
     }
@@ -527,4 +532,22 @@ public class Aplicacion {
     public boolean[] getAlcanzable() { return alcanzable; }
     public PanelMapa getPanelMapa() { return panelMapa; }
     public void setPanelMapa(PanelMapa panelMapa) { this.panelMapa = panelMapa; }
+
+    // ---------------- tienda (no cambia al cambiar de municipio) ----------------
+
+    private rutas.logica.BaseTienda tienda;
+    private rutas.logica.Catalogo catalogo;
+    private rutas.logica.Sesion sesion;
+
+    public void setTienda(rutas.logica.BaseTienda tienda, rutas.logica.Catalogo catalogo, rutas.logica.Sesion sesion) {
+        this.tienda = tienda;
+        this.catalogo = catalogo;
+        this.sesion = sesion;
+    }
+
+    public rutas.logica.BaseTienda getTienda() { return tienda; }
+
+    public rutas.logica.Catalogo getCatalogo() { return catalogo; }
+
+    public rutas.logica.Sesion getSesion() { return sesion; }
 }

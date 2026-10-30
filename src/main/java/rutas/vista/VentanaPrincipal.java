@@ -41,6 +41,8 @@ public class VentanaPrincipal extends JFrame {
     private final List<Pestana> pestanas = new ArrayList<>();
     private final JLabel lblTrafico = new JLabel();
     private PanelNovedades panelNovedades;
+    private int inicioTienda = -1; // indice de la primera pestaña del grupo Tienda
+    private final Timer reloj = new Timer(30_000, e -> actualizarTrafico());
 
     private final List<rutas.modelo.Ciudad> ciudades;
 
@@ -95,7 +97,14 @@ public class VentanaPrincipal extends JFrame {
 
         actualizarTrafico();
         app.alCambiar(this::actualizarTrafico);
-        new Timer(30_000, e -> actualizarTrafico()).start();
+        reloj.start();
+    }
+
+    /** Al cerrar la ventana se detiene el reloj (si no, la ventana vieja nunca se libera). */
+    @Override
+    public void dispose() {
+        reloj.stop();
+        super.dispose();
     }
 
     // ------------------------------------------------------------------
@@ -120,7 +129,25 @@ public class VentanaPrincipal extends JFrame {
         // el estado va como texto, sin cuadro de color detras (regla del manual)
         lblTrafico.setFont(Tema.textoFuerte(13.5f));
         lblTrafico.setForeground(Color.WHITE);
-        h.add(lblTrafico, BorderLayout.EAST);
+        JPanel der = new JPanel();
+        der.setOpaque(false);
+        der.setLayout(new BoxLayout(der, BoxLayout.X_AXIS));
+        der.add(lblTrafico);
+        rutas.logica.Sesion sesion = app.getSesion();
+        if (sesion != null) {
+            der.add(Box.createHorizontalStrut(18));
+            JLabel quien = new JLabel(sesion.getUsuario().getNombre() + " · " + sesion.getUsuario().getRol().getTexto());
+            quien.setFont(Tema.texto(13.5f));
+            quien.setForeground(Color.WHITE);
+            der.add(quien);
+            der.add(Box.createHorizontalStrut(10));
+            Tema.Boton salir = Tema.botonPequeno("Salir");
+            salir.setToolTipText("Cerrar la sesión y volver al ingreso");
+            // la aplicacion (mapa y pedidos en cola) sigue igual: solo cambia quien la usa
+            salir.addActionListener(e -> rutas.Main.cerrarSesion(this, app, ciudades));
+            der.add(salir);
+        }
+        h.add(der, BorderLayout.EAST);
         return h;
     }
 
@@ -213,6 +240,9 @@ public class VentanaPrincipal extends JFrame {
         arriba.add(logo);
         arriba.add(Box.createVerticalStrut(24)); // espacio libre de una cara del cubo
         for (Pestana p : pestanas) {
+            if (p.indice == 0 || p.indice == inicioTienda) {
+                arriba.add(tituloGrupo(p.indice == 0 ? "Domicilios" : "Tienda"));
+            }
             p.setAlignmentX(LEFT_ALIGNMENT);
             arriba.add(p);
             arriba.add(Box.createVerticalStrut(4));
@@ -228,7 +258,7 @@ public class VentanaPrincipal extends JFrame {
         tit.setForeground(Color.WHITE);
         atajos.add(tit);
         atajos.add(Box.createVerticalStrut(4));
-        for (String[] a : new String[][]{{"Ctrl+Enter", "calcular"}, {"Ctrl+1 a 5", "secciones"},
+        for (String[] a : new String[][]{{"Ctrl+Enter", "calcular"}, {"Ctrl+1 a " + pestanas.size(), "secciones"},
             {"Esc", "cancelar"}}) {
             JLabel l = new JLabel(a[0] + "  " + a[1]);
             l.setFont(Tema.texto(12.5f));
@@ -238,6 +268,16 @@ public class VentanaPrincipal extends JFrame {
         }
         lat.add(atajos, BorderLayout.SOUTH);
         return lat;
+    }
+
+    /** Titulo pequeño de un grupo del menu lateral. */
+    private static JComponent tituloGrupo(String texto) {
+        JLabel l = new JLabel(texto.toUpperCase());
+        l.setFont(Tema.textoFuerte(11.5f));
+        l.setForeground(TEXTO_LATERAL);
+        l.setBorder(BorderFactory.createEmptyBorder(10, 12, 6, 0));
+        l.setAlignmentX(LEFT_ALIGNMENT);
+        return l;
     }
 
     /** Texto secundario sobre el azul: 6.3:1. */
@@ -252,6 +292,17 @@ public class VentanaPrincipal extends JFrame {
         agregarPestana("Clientes", new PanelClientes(app));
         agregarPestana("Novedades", panelNovedades);
         agregarPestana("Historial", new PanelHistorial(app));
+        rutas.logica.Sesion sesion = app.getSesion();
+        if (sesion != null && sesion.puede(rutas.logica.Permiso.EDITAR_PRODUCTOS)) {
+            inicioTienda = pestanas.size();
+            agregarPestana("Productos", new PanelProductos(app));
+        }
+        if (sesion != null && sesion.puede(rutas.logica.Permiso.ADMIN_USUARIOS)) {
+            if (inicioTienda < 0) {
+                inicioTienda = pestanas.size();
+            }
+            agregarPestana("Usuarios", new PanelUsuarios(app));
+        }
         contenido.setPreferredSize(new Dimension(412, 100));
         contenido.setBackground(Tema.GRIS_CLARO);
         contenido.setBorder(BorderFactory.createMatteBorder(0, 0, 0, 1, Tema.BORDE));

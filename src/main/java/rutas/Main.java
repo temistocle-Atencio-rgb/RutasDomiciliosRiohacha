@@ -5,10 +5,15 @@ import java.util.List;
 import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
+import rutas.logica.BaseTienda;
+import rutas.logica.Catalogo;
+import rutas.logica.Ingreso;
+import rutas.logica.Sesion;
 import rutas.logica.Ubicaciones;
 import rutas.modelo.Ciudad;
 import rutas.vista.Aplicacion;
 import rutas.vista.DialogoDescarga;
+import rutas.vista.DialogoIngreso;
 import rutas.vista.Tema;
 import rutas.vista.VentanaPrincipal;
 
@@ -19,6 +24,12 @@ import rutas.vista.VentanaPrincipal;
 public class Main {
 
     private static long ultimoAvisoError;
+
+    // la tienda se abre una sola vez: cambiar de municipio no vuelve a pedir ingreso
+    private static BaseTienda tienda;
+    private static Catalogo catalogo;
+    private static Ingreso ingreso;
+    private static Sesion sesion;
 
     public static void main(String[] args) {
         System.setProperty("awt.useSystemAAFontSettings", "on");
@@ -39,7 +50,56 @@ public class Main {
             }
         });
         Tema.cargarFuentes();
-        SwingUtilities.invokeLater(() -> abrir(Ubicaciones.ultimaCiudad()));
+        SwingUtilities.invokeLater(() -> {
+            abrirTienda();
+            pedirIngreso();
+            abrir(Ubicaciones.ultimaCiudad());
+        });
+    }
+
+    /** Abre la base de la tienda; sin ella no hay ingreso, asi que el programa se cierra. */
+    private static void abrirTienda() {
+        File archivo = new File(Ubicaciones.carpetaUsuario(), "tienda.db");
+        try {
+            tienda = new BaseTienda(archivo);
+            catalogo = new Catalogo(tienda);
+            ingreso = new Ingreso(tienda);
+            Runtime.getRuntime().addShutdownHook(new Thread(tienda::close));
+        } catch (Exception e) {
+            Ubicaciones.registrarError(e);
+            JOptionPane.showMessageDialog(null, "No se pudo abrir la base de la tienda:\n" + archivo
+                    + "\n\n" + e.getMessage() + "\n\nRevise que DomiRuta no esté abierto dos veces.",
+                    "DomiRuta", JOptionPane.ERROR_MESSAGE);
+            System.exit(1);
+        }
+    }
+
+    /** Pide usuario y contraseña; si la persona cierra la ventana, el programa termina. */
+    private static void pedirIngreso() {
+        try {
+            sesion = DialogoIngreso.pedir(null, tienda, ingreso);
+        } catch (Exception e) {
+            Ubicaciones.registrarError(e);
+            JOptionPane.showMessageDialog(null, "No se pudo leer la base de la tienda:\n" + e.getMessage(),
+                    "DomiRuta", JOptionPane.ERROR_MESSAGE);
+            System.exit(1);
+        }
+        if (sesion == null) {
+            System.exit(0);
+        }
+    }
+
+    /**
+     * Boton "Salir": cierra la ventana y pide ingreso otra vez. La aplicacion no se vuelve a
+     * cargar: el mapa y los pedidos en cola siguen ahi para el siguiente turno.
+     */
+    public static void cerrarSesion(java.awt.Window ventana, Aplicacion app, List<Ciudad> ciudades) {
+        ventana.dispose();
+        app.quitarOyentes();
+        sesion = null;
+        pedirIngreso();
+        app.setTienda(tienda, catalogo, sesion);
+        new VentanaPrincipal(app, ciudades).setVisible(true);
     }
 
     /** Abre la ventana con la ciudad indicada (la descarga si todavia no esta). */
@@ -62,6 +122,7 @@ public class Main {
                 System.exit(1);
             }
             Aplicacion app = new Aplicacion(datos, ciudad, usuario);
+            app.setTienda(tienda, catalogo, sesion);
             Ubicaciones.guardarCiudad(ciudad.getClave());
             new VentanaPrincipal(app, ciudades).setVisible(true);
         } catch (Exception e) {

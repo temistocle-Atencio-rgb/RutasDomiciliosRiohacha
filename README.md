@@ -64,6 +64,34 @@ direcciones, calles, lugares y clientes.
 - **Historial** de rutas: se pueden ver otra vez en el mapa y repetir.
 - **Matriz de adyacencia** entre las paradas de la ruta, para ver los costos.
 
+## Caja de la tienda
+
+**Entrar la primera vez.** Al abrir DomiRuta sin usuarios, el programa pide crear el
+administrador (nombre, usuario y contraseña de al menos 6 letras). Después siempre pide
+usuario y contraseña. Si se equivoca 5 veces seguidas, hay que esperar 30 segundos.
+
+**Quién ve qué.** El administrador ve Domicilios y además Productos y Usuarios. El cajero
+ve solo Domicilios (y la venta, cuando esté). El botón "Salir" de arriba vuelve al ingreso.
+
+**Productos.** Se buscan por nombre o pasando el producto por el escáner (el escáner
+escribe el código y oprime Enter). Si el código no está, se abre el formulario para
+crearlo con ese código ya puesto. Los precios se escriben como en Colombia: `2.500`.
+Las cantidades a granel aceptan coma: `10,5` libras.
+
+**Importar la lista desde Excel.** En Excel: Archivo > Guardar como > CSV. La primera
+fila debe tener los nombres de las columnas (en cualquier orden):
+
+```
+nombre;codigo;unidad;precio_venta;precio_compra;stock;minimo
+Arroz Diana 500g;7702511000014;und;$2.500;$2.000;24;6
+Azúcar;;lb;2.200;1.800;10,5;2
+```
+
+Solo `nombre` y `precio_venta` son obligatorias. Unidad: `und`, `lb` o `kg`. Si un
+código ya existe, ese producto se actualiza. Las filas con error no detienen a las demás:
+al final se dice cuáles fallaron y por qué. Si Excel muestra el código como `7,70E+12`,
+la columna del código debe formatearse como texto antes de guardar.
+
 ## Estructuras de datos
 
 | Estructura | Clase | Uso en el proyecto |
@@ -80,6 +108,7 @@ direcciones, calles, lugares y clientes.
 | AVL de direcciones corregidas | `Geocodificador` | Recordar direcciones marcadas a mano |
 | Analizador recursivo descendente | `osm/Json` | Leer el JSON de OpenStreetMap sin librerías externas |
 | Base de datos relacional (SQLite) | `logica/BaseDatos` | Guardar clientes, rutas, paradas y novedades; los clientes se cargan en un AVL |
+| Dos **árboles AVL** de productos | `logica/Catalogo` | Uno por código de barras (búsqueda exacta para el escáner) y otro por nombre sin tildes (búsqueda por lo que se va escribiendo: "arr" → arroz). La clave por nombre lleva el id para que dos productos iguales no se pisen |
 
 ### ¿Por qué lista de adyacencia para la ciudad y matriz para las paradas?
 
@@ -155,6 +184,18 @@ Las rutas de varias motos se guardan en una sola transacción (si algo falla no 
 nada a medias). Al abrir el programa, los clientes se leen de la base y se organizan en
 un árbol AVL para buscarlos por nombre mientras se escribe. Si hay archivos `.txt` de la
 versión anterior, se importan una sola vez.
+
+### Base de la tienda (caja)
+
+Los usuarios y productos van aparte, en `tienda.db` en la carpeta del usuario, para que
+no se pierdan al cambiar de municipio.
+
+| Tabla | Contenido |
+|---|---|
+| `usuarios` | usuario, nombre, rol (administrador o cajero), contraseña cifrada con PBKDF2 (sal y resultado, nunca la contraseña), activo |
+| `productos` | código de barras (opcional), nombre, unidad (unidad, libra o kilo), precio de venta y de compra en pesos, cantidad y mínimo en milésimas, foto, activo |
+
+Los productos no se borran: se desactivan, porque las ventas los van a nombrar.
 
 El conector es `lib/sqlite-jdbc-3.50.3.0.jar` (de Maven Central); en NetBeans lo trae el `pom.xml`.
 

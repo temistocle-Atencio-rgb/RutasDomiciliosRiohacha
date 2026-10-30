@@ -34,6 +34,7 @@ public class Pruebas {
     private static int mal = 0;
 
     public static void main(String[] args) throws Exception {
+        PruebasCaja.correr();
         probarAvl();
         probarMonticulo();
         probarGrafoPequeno();
@@ -41,13 +42,18 @@ public class Pruebas {
         probarPlata();
         probarCasas();
         probarMapaReal();
+        resumen();
+    }
+
+    /** Muestra cuantas pruebas pasaron y sale con error si alguna fallo. */
+    static void resumen() {
         System.out.println("\nResultado: " + bien + " pruebas bien, " + mal + " mal");
         if (mal > 0) {
             System.exit(1);
         }
     }
 
-    private static void revisar(String nombre, boolean ok) {
+    static void revisar(String nombre, boolean ok) {
         System.out.println((ok ? "[OK]    " : "[FALLA] ") + nombre);
         if (ok) {
             bien++;

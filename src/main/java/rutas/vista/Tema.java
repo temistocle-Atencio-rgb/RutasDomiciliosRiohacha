@@ -252,6 +252,83 @@ public final class Tema {
         return t;
     }
 
+    /** Lista desplegable con el borde redondeado de los campos (en vez del gris del sistema). */
+    public static <T> void estiloCombo(javax.swing.JComboBox<T> c, java.util.function.Function<T, String> texto) {
+        c.setRenderer(new javax.swing.DefaultListCellRenderer() {
+            @Override
+            @SuppressWarnings("unchecked")
+            public Component getListCellRendererComponent(javax.swing.JList<?> l, Object v, int i, boolean sel,
+                    boolean foco) {
+                super.getListCellRendererComponent(l, v == null ? "" : texto.apply((T) v), i, sel, foco);
+                if (i < 0) { // el valor que se ve en la caja cerrada va sobre blanco
+                    setBackground(BLANCO);
+                    setForeground(GRIS_OSCURO);
+                }
+                setBorder(BorderFactory.createEmptyBorder(4, 6, 4, 6));
+                return this;
+            }
+        });
+        c.setFont(texto(14));
+        c.setForeground(GRIS_OSCURO);
+        c.setBackground(BLANCO);
+        c.setBorder(BorderFactory.createCompoundBorder(new BordeRedondo(BORDE_CONTROL, RADIO),
+                BorderFactory.createEmptyBorder(4, 6, 4, 4)));
+        c.setUI(new javax.swing.plaf.basic.BasicComboBoxUI() {
+            @Override
+            public void paintCurrentValueBackground(Graphics g, java.awt.Rectangle r, boolean foco) {
+                // el dibujo normal rellena con el gris del sistema ("ComboBox.background")
+                g.setColor(BLANCO);
+                g.fillRect(r.x, r.y, r.width, r.height);
+            }
+
+            @Override
+            protected javax.swing.JButton createArrowButton() {
+                javax.swing.JButton b = new javax.swing.JButton() {
+                    @Override
+                    protected void paintComponent(Graphics g0) {
+                        Graphics2D g = (Graphics2D) g0.create();
+                        suavizar(g);
+                        g.setColor(GRIS_OSCURO);
+                        int x = getWidth() / 2 - 5, y = getHeight() / 2 - 3;
+                        g.fillPolygon(new int[]{x, x + 10, x + 5}, new int[]{y, y, y + 6}, 3);
+                        g.dispose();
+                    }
+                };
+                b.setBorder(BorderFactory.createEmptyBorder());
+                b.setContentAreaFilled(false);
+                b.setFocusable(false);
+                b.setPreferredSize(new java.awt.Dimension(28, 28));
+                return b;
+            }
+        });
+    }
+
+    /** Campo de contraseña con el mismo estilo de los demas campos. */
+    public static javax.swing.JPasswordField campoClave(String ayuda) {
+        javax.swing.JPasswordField t = new javax.swing.JPasswordField() {
+            @Override
+            protected void paintComponent(Graphics g0) {
+                super.paintComponent(g0);
+                if (getPassword().length == 0 && ayuda != null) {
+                    Graphics2D g = (Graphics2D) g0.create();
+                    suavizar(g);
+                    g.setColor(AYUDA);
+                    g.setFont(getFont());
+                    Insets in = getInsets();
+                    g.drawString(ayuda, in.left, in.top + g.getFontMetrics().getAscent());
+                    g.dispose();
+                }
+            }
+        };
+        t.getAccessibleContext().setAccessibleName(ayuda);
+        t.setToolTipText(ayuda);
+        t.setFont(texto(14));
+        t.setForeground(GRIS_OSCURO);
+        t.setBorder(BorderFactory.createCompoundBorder(new BordeRedondo(BORDE_CONTROL, RADIO),
+                BorderFactory.createEmptyBorder(8, 10, 8, 10)));
+        return t;
+    }
+
     /** Campo de texto que muestra un texto de ayuda gris cuando esta vacio. */
     public static class CampoConAyuda extends JTextField {
         private final String ayuda;
