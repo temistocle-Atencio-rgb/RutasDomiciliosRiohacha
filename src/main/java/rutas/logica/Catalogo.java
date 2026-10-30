@@ -22,6 +22,7 @@ public class Catalogo {
     private final BaseTienda bd;
     private ArbolAVL<String, Producto> porCodigo;
     private ArbolAVL<String, Producto> porNombre;
+    private ArbolAVL<Long, Producto> porId; // para encontrar rapido el producto de una linea de venta
 
     public Catalogo(BaseTienda bd) throws SQLException {
         this.bd = bd;
@@ -32,6 +33,7 @@ public class Catalogo {
     public final void recargar() throws SQLException {
         porCodigo = new ArbolAVL<>();
         porNombre = new ArbolAVL<>();
+        porId = new ArbolAVL<>();
         for (Producto p : bd.listarProductos(false)) {
             poner(p);
         }
@@ -51,6 +53,7 @@ public class Catalogo {
             porCodigo.insertar(p.getCodigo(), p);
         }
         porNombre.insertar(claveNombre(p), p);
+        porId.insertar(p.getId(), p);
     }
 
     private void quitar(Producto p) {
@@ -58,6 +61,7 @@ public class Catalogo {
             porCodigo.eliminar(p.getCodigo());
         }
         porNombre.eliminar(claveNombre(p));
+        porId.eliminar(p.getId());
     }
 
     // ---------------- buscar ----------------
@@ -84,6 +88,37 @@ public class Catalogo {
         return buscarNombre(texto, LIMITE_BUSQUEDA);
     }
 
+    /** Producto activo por su id (null si no esta o esta desactivado). */
+    public Producto buscarPorId(long id) {
+        return porId.buscar(id);
+    }
+
+    /** Productos de una categoria, en orden por nombre. Con null devuelve todos. */
+    public List<Producto> porCategoria(Long categoriaId) {
+        if (categoriaId == null) {
+            return todos();
+        }
+        List<Producto> lista = new ArrayList<>();
+        for (Producto p : todos()) {
+            if (categoriaId.equals(p.getCategoriaId())) {
+                lista.add(p);
+            }
+        }
+        return lista;
+    }
+
+    /** Vuelve a leer un producto de la base (por ejemplo, despues de vender y bajar su stock). */
+    public void recargarProducto(long id) throws SQLException {
+        Producto viejo = porId.buscar(id);
+        if (viejo != null) {
+            quitar(viejo);
+        }
+        Producto nuevo = bd.buscarProductoPorId(id);
+        if (nuevo != null && nuevo.isActivo()) {
+            poner(nuevo);
+        }
+    }
+
     public List<Producto> todos() {
         return porNombre.enOrden();
     }
@@ -103,7 +138,7 @@ public class Catalogo {
     }
 
     public boolean balanceado() {
-        return porNombre.estaBalanceado() && porCodigo.estaBalanceado();
+        return porNombre.estaBalanceado() && porCodigo.estaBalanceado() && porId.estaBalanceado();
     }
 
     // ---------------- cambiar ----------------

@@ -23,7 +23,7 @@ import rutas.modelo.Unidad;
  * Lee una lista de productos en CSV (lo que guarda Excel con "Guardar como CSV").
  *
  * Columnas (por el nombre del encabezado, en cualquier orden):
- * nombre; codigo; unidad; precio_venta; precio_compra; stock; minimo.
+ * nombre; codigo; unidad; precio_venta; precio_compra; stock; minimo; categoria.
  * Obligatorias: nombre y precio_venta. Si el codigo ya existe, se actualiza ese producto.
  * Las filas con error no detienen a las demas: al final se dice cuales fallaron y por que.
  */
@@ -63,6 +63,14 @@ public final class ImportadorProductos {
         }
 
         Resultado r = new Resultado();
+        Map<String, Long> categorias = new HashMap<>();
+        try {
+            for (rutas.modelo.Categoria c : cat.base().listarCategorias(true)) {
+                categorias.put(Geo.normalizar(c.getNombre()), c.getId());
+            }
+        } catch (SQLException e) {
+            throw new IOException("No se pudieron leer las categorías: " + e.getMessage(), e);
+        }
         try {
             cat.base().enTransaccion(() -> {
                 for (int i = 1; i < lineas.size(); i++) {
@@ -70,7 +78,7 @@ public final class ImportadorProductos {
                         continue;
                     }
                     try {
-                        importarFila(partir(lineas.get(i), sep), col, cat, r);
+                        importarFila(partir(lineas.get(i), sep), col, cat, r, categorias);
                     } catch (IllegalArgumentException e) {
                         r.errores.add("Fila " + (i + 1) + ": " + e.getMessage());
                     }
@@ -88,8 +96,8 @@ public final class ImportadorProductos {
         return r;
     }
 
-    private static void importarFila(List<String> f, Map<String, Integer> col, Catalogo cat, Resultado r)
-            throws SQLException {
+    private static void importarFila(List<String> f, Map<String, Integer> col, Catalogo cat, Resultado r,
+            Map<String, Long> categorias) throws SQLException {
         String nombre = celda(f, col, "nombre");
         if (nombre.isEmpty()) {
             throw new IllegalArgumentException("Falta el nombre");
@@ -109,12 +117,22 @@ public final class ImportadorProductos {
         long stock = valor(celda(f, col, "stock"), viejo == null ? 0 : viejo.getStock(), false);
         long minimo = valor(celda(f, col, "minimo"), viejo == null ? 0 : viejo.getMinimo(), false);
 
+        String textoCategoria = celda(f, col, "categoria");
+        Long categoriaId = viejo == null ? null : viejo.getCategoriaId();
+        if (!textoCategoria.isEmpty()) { // si no existe la categoria, se crea
+            String clave = Geo.normalizar(textoCategoria);
+            categoriaId = categorias.get(clave);
+            if (categoriaId == null) {
+                categoriaId = cat.base().crearCategoria(textoCategoria, null, categorias.size()).getId();
+                categorias.put(clave, categoriaId);
+            }
+        }
         if (viejo == null) {
-            cat.crear(new Producto(0, codigo, nombre, unidad, venta, compra, stock, minimo, null, true));
+            cat.crear(new Producto(0, codigo, nombre, unidad, venta, compra, stock, minimo, null, true, categoriaId));
             r.creados++;
         } else {
             cat.editar(new Producto(viejo.getId(), codigo, nombre, unidad, venta, compra, stock, minimo,
-                    viejo.getFoto(), true));
+                    viejo.getFoto(), true, categoriaId));
             r.actualizados++;
         }
     }

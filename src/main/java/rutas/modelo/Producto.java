@@ -17,9 +17,16 @@ public class Producto {
     private final long minimo;
     private final String foto;
     private final boolean activo;
+    private final Long categoriaId; // puede no tener categoria
 
     public Producto(long id, String codigo, String nombre, Unidad unidad, long precioVenta, long precioCompra,
             long stock, long minimo, String foto, boolean activo) {
+        this(id, codigo, nombre, unidad, precioVenta, precioCompra, stock, minimo, foto, activo, null);
+    }
+
+    public Producto(long id, String codigo, String nombre, Unidad unidad, long precioVenta, long precioCompra,
+            long stock, long minimo, String foto, boolean activo, Long categoriaId) {
+        this.categoriaId = categoriaId;
         this.id = id;
         this.codigo = codigo == null || codigo.isBlank() ? null : codigo.trim();
         this.nombre = nombre == null ? "" : nombre.trim();
@@ -34,11 +41,12 @@ public class Producto {
 
     /** Copia con otro id (se usa cuando la base asigna el id). */
     public Producto conId(long nuevoId) {
-        return new Producto(nuevoId, codigo, nombre, unidad, precioVenta, precioCompra, stock, minimo, foto, activo);
+        return new Producto(nuevoId, codigo, nombre, unidad, precioVenta, precioCompra, stock, minimo, foto, activo,
+                categoriaId);
     }
 
     public Producto conActivo(boolean a) {
-        return new Producto(id, codigo, nombre, unidad, precioVenta, precioCompra, stock, minimo, foto, a);
+        return new Producto(id, codigo, nombre, unidad, precioVenta, precioCompra, stock, minimo, foto, a, categoriaId);
     }
 
     public long getId() {
@@ -80,6 +88,10 @@ public class Producto {
 
     public String getFoto() {
         return foto;
+    }
+
+    public Long getCategoriaId() {
+        return categoriaId;
     }
 
     public boolean isActivo() {

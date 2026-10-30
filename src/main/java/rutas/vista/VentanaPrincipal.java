@@ -41,7 +41,14 @@ public class VentanaPrincipal extends JFrame {
     private final List<Pestana> pestanas = new ArrayList<>();
     private final JLabel lblTrafico = new JLabel();
     private PanelNovedades panelNovedades;
-    private int inicioTienda = -1; // indice de la primera pestaña del grupo Tienda
+    private int inicioDomicilios = -1; // indice de la primera pestaña del grupo Domicilios
+    // dos modos: pantalla completa (Vender) o columna + mapa (las de domicilios y la tienda)
+    private final CardLayout modos = new CardLayout();
+    private final JPanel centro = new JPanel(modos);
+    private final CardLayout completas = new CardLayout();
+    private final JPanel panelCompleto = new JPanel(completas);
+    private PanelVender panelVender;
+    private final JLabel lblSeccion = new JLabel();
     private final Timer reloj = new Timer(30_000, e -> actualizarTrafico());
 
     private final List<rutas.modelo.Ciudad> ciudades;
@@ -55,10 +62,15 @@ public class VentanaPrincipal extends JFrame {
         app.setPanelMapa(panelMapa);
         panelMapa.setOyente(this::clicEnMapa);
 
+        JPanel conMapa = new JPanel(new BorderLayout());
         JPanel derecha = new JPanel(new BorderLayout());
         derecha.add(barraTitulo(), BorderLayout.NORTH);
-        derecha.add(panelContenido(), BorderLayout.WEST);
-        derecha.add(panelMapa, BorderLayout.CENTER);
+        conMapa.add(panelContenido(), BorderLayout.WEST);
+        conMapa.add(panelMapa, BorderLayout.CENTER);
+        centro.add(conMapa, "mapa");
+        centro.add(panelCompleto, "completo");
+        derecha.add(centro, BorderLayout.CENTER);
+        seleccionar(0);
         JPanel raiz = new JPanel(new BorderLayout());
         raiz.add(barraLateral(), BorderLayout.WEST);
         raiz.add(derecha, BorderLayout.CENTER);
@@ -83,7 +95,11 @@ public class VentanaPrincipal extends JFrame {
                             ((JScrollPane) c).getViewport().setViewPosition(new java.awt.Point(0, 0));
                         }
                     }
-                    pestanas.get(0).requestFocusInWindow();
+                    if (panelVender != null && pestanas.get(0).completa) {
+                        panelVender.enfocar(); // la caja abre lista para escanear
+                    } else {
+                        pestanas.get(0).requestFocusInWindow();
+                    }
                 });
             }
         });
@@ -118,10 +134,9 @@ public class VentanaPrincipal extends JFrame {
         JPanel izq = new JPanel();
         izq.setOpaque(false);
         izq.setLayout(new BoxLayout(izq, BoxLayout.X_AXIS));
-        JLabel sub = new JLabel("Rutas de domicilios  ·");
-        sub.setFont(Tema.texto(14));
-        sub.setForeground(Color.WHITE);
-        izq.add(sub);
+        lblSeccion.setFont(Tema.texto(14));
+        lblSeccion.setForeground(Color.WHITE);
+        izq.add(lblSeccion);
         izq.add(Box.createHorizontalStrut(6));
         izq.add(selectorCiudad());
         h.add(izq, BorderLayout.WEST);
@@ -240,8 +255,8 @@ public class VentanaPrincipal extends JFrame {
         arriba.add(logo);
         arriba.add(Box.createVerticalStrut(24)); // espacio libre de una cara del cubo
         for (Pestana p : pestanas) {
-            if (p.indice == 0 || p.indice == inicioTienda) {
-                arriba.add(tituloGrupo(p.indice == 0 ? "Domicilios" : "Tienda"));
+            if (p.indice == 0 || p.indice == inicioDomicilios) {
+                arriba.add(tituloGrupo(p.indice == 0 ? "Tienda" : "Domicilios"));
             }
             p.setAlignmentX(LEFT_ALIGNMENT);
             arriba.add(p);
@@ -258,8 +273,8 @@ public class VentanaPrincipal extends JFrame {
         tit.setForeground(Color.WHITE);
         atajos.add(tit);
         atajos.add(Box.createVerticalStrut(4));
-        for (String[] a : new String[][]{{"Ctrl+Enter", "calcular"}, {"Ctrl+1 a " + pestanas.size(), "secciones"},
-            {"Esc", "cancelar"}}) {
+        for (String[] a : new String[][]{{"F12", "cobrar"}, {"F8", "venta en espera"}, {"Ctrl+Enter", "calcular ruta"},
+            {"Ctrl+1 a " + pestanas.size(), "secciones"}, {"Esc", "cancelar"}}) {
             JLabel l = new JLabel(a[0] + "  " + a[1]);
             l.setFont(Tema.texto(12.5f));
             l.setForeground(TEXTO_LATERAL);
@@ -285,24 +300,27 @@ public class VentanaPrincipal extends JFrame {
 
     /** Panel de contenido sobre gris claro, con las tarjetas blancas. */
     private JComponent panelContenido() {
+        // Tienda: Vender (todos) y, para el administrador, Productos y Usuarios
+        rutas.logica.Sesion sesion = app.getSesion();
+        if (app.getTienda() != null && sesion != null) {
+            panelVender = new PanelVender(app);
+            agregarCompleta("Vender", panelVender);
+        }
+        if (sesion != null && sesion.puede(rutas.logica.Permiso.EDITAR_PRODUCTOS)) {
+            agregarCompleta("Productos", new PanelProductos(app));
+        }
+        if (sesion != null && sesion.puede(rutas.logica.Permiso.ADMIN_USUARIOS)) {
+            agregarPestana("Usuarios", new PanelUsuarios(app));
+        }
+        // Domicilios
         PanelPedidos pedidos = new PanelPedidos(app);
         panelNovedades = new PanelNovedades(app);
+        inicioDomicilios = pestanas.size();
         agregarPestana("Ruta", pedidos);
         agregarPestana("Buscar", new PanelExplorar(app));
         agregarPestana("Clientes", new PanelClientes(app));
         agregarPestana("Novedades", panelNovedades);
         agregarPestana("Historial", new PanelHistorial(app));
-        rutas.logica.Sesion sesion = app.getSesion();
-        if (sesion != null && sesion.puede(rutas.logica.Permiso.EDITAR_PRODUCTOS)) {
-            inicioTienda = pestanas.size();
-            agregarPestana("Productos", new PanelProductos(app));
-        }
-        if (sesion != null && sesion.puede(rutas.logica.Permiso.ADMIN_USUARIOS)) {
-            if (inicioTienda < 0) {
-                inicioTienda = pestanas.size();
-            }
-            agregarPestana("Usuarios", new PanelUsuarios(app));
-        }
         contenido.setPreferredSize(new Dimension(412, 100));
         contenido.setBackground(Tema.GRIS_CLARO);
         contenido.setBorder(BorderFactory.createMatteBorder(0, 0, 0, 1, Tema.BORDE));
@@ -318,8 +336,13 @@ public class VentanaPrincipal extends JFrame {
                 }
             });
         }
-        seleccionar(0);
         return contenido;
+    }
+
+    /** Pestaña que ocupa todo el ancho, sin el mapa (Vender). */
+    private void agregarCompleta(String nombre, JPanel panel) {
+        panelCompleto.add(panel, nombre);
+        pestanas.add(new Pestana(nombre, pestanas.size(), true));
     }
 
     private void agregarPestana(String nombre, JPanel panel) {
@@ -329,7 +352,7 @@ public class VentanaPrincipal extends JFrame {
         JScrollPane sc = Tema.scrollSinBorde(envoltura);
         sc.getViewport().setBackground(Tema.GRIS_CLARO);
         contenido.add(sc, nombre);
-        pestanas.add(new Pestana(nombre, pestanas.size()));
+        pestanas.add(new Pestana(nombre, pestanas.size(), false));
     }
 
     private void seleccionar(int i) {
@@ -338,7 +361,16 @@ public class VentanaPrincipal extends JFrame {
             p.getAccessibleContext().setAccessibleDescription(p.activa ? "sección actual" : null);
             p.repaint();
         }
-        tarjetas.show(contenido, pestanas.get(i).nombre);
+        Pestana p = pestanas.get(i);
+        if (p.completa) {
+            completas.show(panelCompleto, p.nombre);
+            modos.show(centro, "completo");
+        } else {
+            tarjetas.show(contenido, p.nombre);
+            modos.show(centro, "mapa");
+        }
+        boolean tienda = inicioDomicilios < 0 || i < inicioDomicilios;
+        lblSeccion.setText((tienda ? "Caja" : "Rutas de domicilios") + "  ·");
     }
 
     /** Panel que toma el ancho del scroll (asi no aparece barra horizontal). */
@@ -361,12 +393,14 @@ public class VentanaPrincipal extends JFrame {
     private class Pestana extends javax.swing.JButton {
         final int indice;
         final String nombre;
+        final boolean completa;
         boolean activa;
 
-        Pestana(String nombre, int indice) {
+        Pestana(String nombre, int indice, boolean completa) {
             super(nombre);
             this.nombre = nombre;
             this.indice = indice;
+            this.completa = completa;
             setFont(Tema.textoFuerte(14));
             setHorizontalAlignment(LEFT);
             setContentAreaFilled(false);
