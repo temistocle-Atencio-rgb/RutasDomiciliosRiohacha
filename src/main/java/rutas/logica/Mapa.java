@@ -31,6 +31,11 @@ public class Mapa {
     public List<Lugar> getLugares() { return lugares; }
     public List<double[][]> getCosta() { return costa; }
 
+    private List<double[][]> casas = new ArrayList<>(); // forma de cada construccion: esquinas {lat, lon}
+
+    public List<double[][]> getCasas() { return casas; }
+    public void setCasas(List<double[][]> casas) { this.casas = casas == null ? new ArrayList<>() : casas; }
+
     public Incidente getIncidente(int via) {
         return incidentes.get(via);
     }

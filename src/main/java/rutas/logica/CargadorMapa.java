@@ -79,7 +79,31 @@ public class CargadorMapa {
                 costa.add(linea);
             }
         }
-        return new Mapa(grafo, vias, lugares, costa);
+        Mapa mapa = new Mapa(grafo, vias, lugares, costa);
+        mapa.setCasas(leerCasas(new File(carpeta, "casas.txt")));
+        return mapa;
+    }
+
+    /** Formas de las casas: cada una es un arreglo de esquinas {lat, lon}. Vacio si no hay archivo. */
+    public static List<double[][]> leerCasas(File archivo) throws IOException {
+        List<double[][]> casas = new ArrayList<>();
+        if (!archivo.exists()) {
+            return casas;
+        }
+        for (String l : leer(archivo)) {
+            String[] pts = l.trim().split(" ");
+            if (pts.length < 3) {
+                continue;
+            }
+            double[][] casa = new double[pts.length][2];
+            for (int i = 0; i < pts.length; i++) {
+                int coma = pts[i].indexOf(',');
+                casa[i][0] = Double.parseDouble(pts[i].substring(0, coma));
+                casa[i][1] = Double.parseDouble(pts[i].substring(coma + 1));
+            }
+            casas.add(casa);
+        }
+        return casas;
     }
 
     /** Lineas del archivo sin comentarios ni lineas vacias. */

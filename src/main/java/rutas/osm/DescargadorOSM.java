@@ -60,20 +60,41 @@ public final class DescargadorOSM {
             costa = null; // sin costa el mapa igual sirve
         }
 
+        String casas;
+        progreso.accept("Descargando las casas y edificios...");
+        try {
+            casas = consultar("[out:json][timeout:170];way[\"building\"]" + caja + ";out geom;", 180, 1);
+        } catch (IOException e) {
+            casas = null; // sin casas el mapa igual sirve
+        }
+
         progreso.accept("Armando el grafo de " + c.getNombre() + "...");
         File temporal = new File(carpeta.getParentFile(), carpeta.getName() + ".nuevo");
         ProcesadorOSM.Resumen r = ProcesadorOSM.procesar(vias, lugares, costa, temporal);
+        if (casas != null) {
+            ProcesadorOSM.procesarCasas(casas, temporal);
+        }
         if (r.nodos < 50) {
             throw new IOException("OpenStreetMap devolvió muy pocas calles para " + c.getNombre() + " (" + r.nodos + " nodos).");
         }
         // se reemplaza la carpeta solo cuando todo salio bien
         carpeta.mkdirs();
-        for (String f : new String[]{"nodos.txt", "vias.txt", "lugares.txt", "costa.txt"}) {
+        for (String f : new String[]{"nodos.txt", "vias.txt", "lugares.txt", "costa.txt", "casas.txt"}) {
+            if (!new File(temporal, f).exists()) {
+                continue;
+            }
             java.nio.file.Files.move(new File(temporal, f).toPath(), new File(carpeta, f).toPath(),
                     java.nio.file.StandardCopyOption.REPLACE_EXISTING);
         }
         temporal.delete();
         return r;
+    }
+
+    /** Descarga solo las casas de una ciudad que ya tiene mapa. Devuelve cuantas se guardaron. */
+    public static int descargarCasas(Ciudad c, File carpeta) throws IOException, InterruptedException {
+        String caja = String.format(Locale.US, "(%.5f,%.5f,%.5f,%.5f)", c.sur(), c.oeste(), c.norte(), c.este());
+        String json = consultar("[out:json][timeout:170];way[\"building\"]" + caja + ";out geom;", 180, 2);
+        return ProcesadorOSM.procesarCasas(json, carpeta);
     }
 
     static String consultar(String consulta) throws IOException, InterruptedException {

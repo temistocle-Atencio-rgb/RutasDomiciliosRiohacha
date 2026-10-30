@@ -20,7 +20,8 @@ import rutas.modelo.Via;
  *  - si la via es destapada,
  *  - semaforos, pares y reductores de velocidad al llegar al nodo,
  *  - la hora pico (mas fuerte en vias principales y en el centro),
- *  - las novedades reportadas (trancon, huecos, obra, via cerrada).
+ *  - las novedades reportadas (trancon, huecos, obra, via cerrada),
+ *  - la lluvia: en Riohacha las calles destapadas se vuelven barro y casi no se puede pasar.
  * Los numeros se leen de datos/trafico.txt para poder calibrarlos.
  */
 public class ModeloTrafico {
@@ -29,6 +30,7 @@ public class ModeloTrafico {
     private final List<LocalTime[]> franjasPico = new ArrayList<>();
     private final Mapa mapa;
     private double centroX, centroY, centroRadio;
+    private boolean lluvia;
 
     public ModeloTrafico(Mapa mapa, File archivo) throws IOException {
         this.mapa = mapa;
@@ -64,6 +66,14 @@ public class ModeloTrafico {
         centroRadio = radioMetros;
     }
 
+    public void setLluvia(boolean lluvia) {
+        this.lluvia = lluvia;
+    }
+
+    public boolean isLluvia() {
+        return lluvia;
+    }
+
     public boolean esHoraPico(LocalTime hora) {
         for (LocalTime[] f : franjasPico) {
             if (!hora.isBefore(f[0]) && hora.isBefore(f[1])) {
@@ -86,6 +96,12 @@ public class ModeloTrafico {
         }
         if (v.esDestapada()) {
             vel *= num("factor.destapada", 0.55);
+            if (lluvia) {
+                vel *= num("factor.lluvia.destapada", 0.25);
+            }
+        }
+        if (lluvia) {
+            vel *= num("factor.lluvia", 0.85);
         }
         if (esHoraPico(hora)) {
             vel *= v.esPrincipal() ? num("factor.pico.principal", 0.55) : num("factor.pico.barrio", 0.85);
@@ -121,6 +137,17 @@ public class ModeloTrafico {
             return Double.POSITIVE_INFINITY;
         }
         return a.getMetros() / (vel / 3.6) + espera(g.getMarca(a.getDestino()), hora);
+    }
+
+    /**
+     * Peso de una arista cuando se busca la ruta mas corta. Son los metros, pero con lluvia
+     * una calle destapada cuenta como si fuera varias veces mas larga para que se evite.
+     */
+    public double pesoDistancia(Arista a) {
+        if (lluvia && mapa.getVia(a.getVia()).esDestapada()) {
+            return a.getMetros() * num("lluvia.castigo.metros", 4);
+        }
+        return a.getMetros();
     }
 
     public boolean estaCerrada(Arista a) {

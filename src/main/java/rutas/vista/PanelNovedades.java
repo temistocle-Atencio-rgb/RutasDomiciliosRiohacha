@@ -22,7 +22,8 @@ public class PanelNovedades extends JPanel {
 
     private final Aplicacion app;
     private final DefaultListModel<Incidente> modelo = new DefaultListModel<>();
-    private final JList<Incidente> lista = new JList<>(modelo);
+    private final JList<Incidente> lista = new Tema.Lista<>(modelo,
+            "Sin novedades: las vías están como siempre. Si hay un trancón o una calle cerrada, repórtela en el mapa.");
 
     public PanelNovedades(Aplicacion app) {
         this.app = app;
@@ -30,7 +31,7 @@ public class PanelNovedades extends JPanel {
         setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
         setBorder(BorderFactory.createEmptyBorder(16, 16, 20, 16));
 
-        add(Tema.tituloSeccion("Novedades en las vías"));
+        add(Tema.tituloPantalla("Novedades en las vías"));
         add(Tema.parrafo("Reporte trancones, huecos, obras o calles cerradas. La ruta más rápida los evita: "
                 + "un trancón baja la velocidad del tramo y una vía cerrada se saca del grafo.", 272));
         add(Tema.espacio(10));
@@ -41,7 +42,7 @@ public class PanelNovedades extends JPanel {
         reportar.addActionListener(e -> app.getPanelMapa().setModo(PanelMapa.Modo.REPORTAR_NOVEDAD));
         t.add(reportar);
         t.add(Tema.espacio(8));
-        t.add(Tema.etiqueta("Novedades activas"));
+        t.add(Tema.seccion("Novedades activas"));
         lista.setCellRenderer(new Render(app));
         lista.addListSelectionListener(e -> {
             Incidente i = lista.getSelectedValue();
@@ -83,7 +84,7 @@ public class PanelNovedades extends JPanel {
     private JPanel tarjetaModelo() {
         ModeloTrafico tr = app.getTrafico();
         Tema.Tarjeta t = new Tema.Tarjeta();
-        t.add(Tema.etiqueta("Cómo se calcula el tiempo"));
+        t.add(Tema.seccion("Cómo se calcula el tiempo"));
         String[] filas = {
             "Velocidad según el tipo de vía (troncal, secundaria, calle de barrio) y su límite.",
             "Vías destapadas: más lentas.",
@@ -147,7 +148,7 @@ public class PanelNovedades extends JPanel {
         public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean sel, boolean foco) {
             Incidente i = (Incidente) value;
             return Tema.celda(list, i.getTipo() + " · " + app.getMapa().getVia(i.getVia()).nombreVisible(),
-                    Tema.textoFuerte(12), Tema.ERROR,
+                    Tema.textoFuerte(14), Tema.ERROR_TEXTO,
                     i.getFecha().format(Ruta.FORMATO_FECHA) + (i.getNota().isEmpty() ? "" : " · " + i.getNota()),
                     sel, java.awt.Color.WHITE);
         }

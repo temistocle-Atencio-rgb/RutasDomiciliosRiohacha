@@ -29,7 +29,7 @@ public class PanelExplorar extends JPanel {
     private final JTextField campo = Tema.campo("Calle, carrera, barrio o negocio");
     private final JComboBox<Object> cbCategoria = new JComboBox<>();
     private final DefaultListModel<Object> modelo = new DefaultListModel<>();
-    private final JList<Object> lista = new JList<>(modelo);
+    private final JList<Object> lista = new Tema.Lista<>(modelo, "Nada coincide con esa búsqueda. Pruebe con otra palabra.");
     private final JLabel lblConteo = new JLabel();
     private final Tema.Parrafo lblCobertura = Tema.parrafo("", 262);
 
@@ -39,7 +39,7 @@ public class PanelExplorar extends JPanel {
         setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
         setBorder(BorderFactory.createEmptyBorder(16, 16, 20, 16));
 
-        add(Tema.tituloSeccion("Buscar en Riohacha"));
+        add(Tema.tituloPantalla("Buscar en Riohacha"));
         add(Tema.parrafo("La búsqueda usa árboles AVL: encuentra por cualquier palabra del nombre y "
                 + "sin importar tildes ni mayúsculas.", 272));
         add(Tema.espacio(10));
@@ -48,16 +48,17 @@ public class PanelExplorar extends JPanel {
         Tema.anchoCompleto(campo);
         t.add(campo);
         t.add(Tema.espacio(6));
+        Tema.nombreAccesible(cbCategoria, "Categoría de lugar");
         cbCategoria.addItem("Todas las categorías");
         cbCategoria.addItem("Solo calles y carreras");
         for (CategoriaLugar c : CategoriaLugar.values()) {
             cbCategoria.addItem(c);
         }
-        cbCategoria.setFont(Tema.texto(12.5f));
+        cbCategoria.setFont(Tema.texto(14));
         Tema.anchoCompleto(cbCategoria);
         t.add(cbCategoria);
         t.add(Tema.espacio(6));
-        lblConteo.setFont(Tema.texto(11));
+        lblConteo.setFont(Tema.texto(12.5f));
         lblConteo.setForeground(Tema.GRIS_TEXTO);
         lblConteo.setAlignmentX(LEFT_ALIGNMENT);
         t.add(lblConteo);
@@ -77,10 +78,15 @@ public class PanelExplorar extends JPanel {
         t.add(sc);
         t.add(Tema.espacio(8));
         Tema.Boton entrega = Tema.botonPrimario("Agregar como entrega");
-        Tema.Boton salida = Tema.botonSecundario("Usar como salida");
+        Tema.Boton salida = Tema.botonSecundario("Usar de salida");
         entrega.addActionListener(e -> usar(false));
         salida.addActionListener(e -> usar(true));
-        t.add(Tema.fila(8, entrega, salida));
+        // uno debajo del otro: lado a lado no caben con la letra del manual
+        Tema.anchoCompleto(entrega);
+        Tema.anchoCompleto(salida);
+        t.add(entrega);
+        t.add(Tema.espacio(8));
+        t.add(salida);
         add(t);
         add(Tema.espacio(12));
 
@@ -97,7 +103,7 @@ public class PanelExplorar extends JPanel {
 
     private JPanel tarjetaDatos() {
         Tema.Tarjeta t = new Tema.Tarjeta();
-        t.add(Tema.etiqueta("Datos del mapa y estructuras"));
+        t.add(Tema.seccion("Datos del mapa y estructuras"));
         Grafo g = app.getMapa().getGrafo();
         int semaforos = 0, pares = 0;
         for (int i = 0; i < g.getCantidadNodos(); i++) {
@@ -229,10 +235,10 @@ public class PanelExplorar extends JPanel {
         public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean sel, boolean foco) {
             if (value instanceof Lugar) {
                 Lugar l = (Lugar) value;
-                return Tema.celda(list, l.getNombre(), Tema.texto(12), Tema.GRIS_OSCURO,
+                return Tema.celda(list, l.getNombre(), Tema.texto(14), Tema.GRIS_OSCURO,
                         l.getCategoria().toString(), sel, java.awt.Color.WHITE);
             }
-            return Tema.celda(list, String.valueOf(value), Tema.textoFuerte(12), Tema.AZUL_PROFUNDO, "Vía", sel,
+            return Tema.celda(list, String.valueOf(value), Tema.textoFuerte(14), Tema.AZUL_PROFUNDO, "Vía", sel,
                     java.awt.Color.WHITE);
         }
     }

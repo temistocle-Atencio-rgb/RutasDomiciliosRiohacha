@@ -91,6 +91,46 @@ public final class ProcesadorOSM {
         return null;
     }
 
+    /**
+     * Guarda la forma de cada construccion (casas, edificios, colegios...) en casas.txt:
+     * una por linea, sus esquinas como "lat,lon" separadas por espacio.
+     * Devuelve cuantas se guardaron.
+     */
+    @SuppressWarnings("unchecked")
+    public static int procesarCasas(String json, File salida) throws IOException {
+        List<String> lineas = new ArrayList<>();
+        lineas.add("# Construcciones (forma vista desde arriba). " + FUENTE);
+        int n = 0;
+        for (Map<String, Object> e : elementos(json)) {
+            List<Object> geom = (List<Object>) e.get("geometry");
+            if (geom == null || geom.size() < 3) {
+                continue;
+            }
+            StringBuilder sb = new StringBuilder();
+            int puntos = geom.size();
+            Map<String, Object> primero = (Map<String, Object>) geom.get(0);
+            Map<String, Object> ultimo = (Map<String, Object>) geom.get(puntos - 1);
+            if (primero.get("lat").equals(ultimo.get("lat")) && primero.get("lon").equals(ultimo.get("lon"))) {
+                puntos--; // el poligono viene cerrado: no se repite la primera esquina
+            }
+            if (puntos < 3) {
+                continue;
+            }
+            for (int k = 0; k < puntos; k++) {
+                Map<String, Object> p = (Map<String, Object>) geom.get(k);
+                if (k > 0) {
+                    sb.append(' ');
+                }
+                sb.append(String.format(java.util.Locale.US, "%.6f,%.6f", (Double) p.get("lat"), (Double) p.get("lon")));
+            }
+            lineas.add(sb.toString());
+            n++;
+        }
+        salida.mkdirs();
+        Files.write(new File(salida, "casas.txt").toPath(), lineas, StandardCharsets.UTF_8);
+        return n;
+    }
+
     @SuppressWarnings("unchecked")
     public static Resumen procesar(String jsonVias, String jsonLugares, String jsonCosta, File salida) throws IOException {
         salida.mkdirs();

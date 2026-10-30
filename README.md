@@ -39,6 +39,22 @@ direcciones, calles, lugares y clientes.
   en la calle. La ruta más rápida las evita.
 - **Indicaciones paso a paso** ("Gire a la derecha en Calle 15 y siga 300 m") y hora
   estimada de llegada a cada entrega.
+- **Hora prometida y aviso al cliente**: al agregar un pedido dice a qué hora le llega
+  ("entre 7:40 y 7:55 p.m."), contando la cola de pedidos, la hora pico y las motos. Con el
+  botón **Avisar** se abre WhatsApp con el mensaje escrito para el cliente (enlace `wa.me`,
+  no usa ninguna API ni tiene costo). El celular sale del cliente guardado o de la lista pegada.
+- **Está lloviendo**: con lluvia las calles destapadas se vuelven barro. Al marcar la casilla
+  la ruta busca calles pavimentadas y el mapa pinta las destapadas color barro.
+- **La plata del domicilio**: el valor del domicilio sale de la distancia real por las
+  calles desde el punto de salida (tarifa base + valor por km adicional, editable). Cada
+  entrega puede llevar el valor del pedido y si ya pagó por transferencia. La ruta muestra
+  cuánto cobrar en cada puerta y el cuadre de la moto: domicilios, pedidos, lo pagado por
+  transferencia y el efectivo que el repartidor debe entregar. El cuadre se copia como texto.
+- **Animación de la ruta**: primero se ve cómo Dijkstra va revisando las esquinas y después la
+  ruta se traza desde el punto de salida hasta la última entrega. El mapa se mueve solo: muestra
+  la búsqueda, con una moto se acerca y la va siguiendo por las calles, y al final se aleja para
+  ver la ruta completa (con varias motos encuadra todas las rutas). Esc la salta y muestra la ruta
+  completa; si se toca el mapa, la animación termina y la vista queda donde se dejó.
 - **Compartir**: abre la ruta en Google Maps para navegar en el celular o la copia
   como texto para mandarla por WhatsApp al repartidor.
 - **Clientes frecuentes** guardados con su dirección.
@@ -153,6 +169,8 @@ están en `datos/trafico.txt` y se pueden ajustar con recorridos reales sin toca
 - Hora pico (6:30-8:30, 11:30-14:00, 17:00-19:30): vías principales × 0,55,
   calles de barrio × 0,85 y el centro (900 m alrededor del Parque Padilla) × 0,75 adicional.
 - Novedades reportadas: trancón × 0,35, huecos × 0,5, obra × 0,4, vía cerrada no se usa.
+- Lluvia: todas las vías × 0,85 y las destapadas × 0,25 adicional. En la ruta más corta una
+  calle destapada cuenta como 4 veces más larga para que se evite.
 - 3 minutos por entrega.
 
 Son estimaciones: no hay datos públicos de tráfico en vivo para Riohacha. Para un
@@ -226,6 +244,7 @@ src/main/java/rutas/
   modelo/       Via, Lugar, Parada, Ruta, Cliente, Ciudad, Incidente, Indicacion, Geo...
   logica/       CargadorMapa, Dijkstra, PlanificadorRutas, ModeloTrafico, Geocodificador,
                 InferenciaNombres, BuscadorLugares, GeneradorIndicaciones, BaseDatos,
+                Avisos (hora prometida y WhatsApp), Tarifa, Cuadre,
                 ArchivosDatos (lee los .txt de la versión anterior), Ubicaciones
   osm/          Json, ProcesadorOSM, DescargadorOSM (descarga de mapas de OpenStreetMap)
   vista/        VentanaPrincipal, PanelMapa, PanelPedidos, PanelExplorar, PanelClientes,
@@ -244,6 +263,8 @@ empaque/                      scripts para armar la versión con Java incluido, 
   más cercana (el punto exacto se conserva para Google Maps).
 - El tráfico es un modelo con valores promedio, no información en vivo.
 - La hora de llegada usa el tráfico de la hora de salida para toda la ruta.
+- El valor del pedido y si pagó por transferencia se usan para el cuadre del día, pero
+  todavía no se guardan en el historial.
 
 ## Modelo de negocio
 

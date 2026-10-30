@@ -40,3 +40,11 @@ centro.lat=11.5513888
 centro.lon=-72.9096513
 centro.radio=900
 factor.pico.centro=0.75
+
+# Lluvia (se activa con la casilla "Esta lloviendo"). Las calles destapadas se
+# vuelven barro: su velocidad se multiplica otra vez por este factor, y todas las
+# vias van un poco mas lento. En la ruta mas corta una destapada cuenta como si
+# fuera varias veces mas larga para que se evite.
+factor.lluvia.destapada=0.25
+factor.lluvia=0.85
+lluvia.castigo.metros=4

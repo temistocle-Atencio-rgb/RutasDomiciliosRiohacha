@@ -13,6 +13,9 @@ public class Parada {
     private int nodo = -1;
     private String precision = "";
     private boolean urgente; // se entrega antes que las demas
+    private String telefono = ""; // celular del cliente, para avisarle
+    private int valorPedido;      // pesos; 0 si no se sabe
+    private boolean pagado;       // ya pago por transferencia
 
     public Parada(String nombre, String direccion, double lat, double lon) {
         this.nombre = nombre;
@@ -29,6 +32,21 @@ public class Parada {
     public void setNodo(int nodo) { this.nodo = nodo; }
     public boolean isUrgente() { return urgente; }
     public void setUrgente(boolean urgente) { this.urgente = urgente; }
+    public int getValorPedido() { return valorPedido; }
+    public void setValorPedido(int valorPedido) { this.valorPedido = Math.max(0, valorPedido); }
+    public boolean isPagado() { return pagado; }
+    public void setPagado(boolean pagado) { this.pagado = pagado; }
+
+    /** Copia lo que el negocio escribio del pedido (urgente, celular, valor, pago) a otra parada. */
+    public void copiarDatosDe(Parada otra) {
+        urgente = otra.urgente;
+        telefono = otra.telefono;
+        valorPedido = otra.valorPedido;
+        pagado = otra.pagado;
+    }
+
+    public String getTelefono() { return telefono; }
+    public void setTelefono(String telefono) { this.telefono = telefono == null ? "" : telefono; }
     public String getPrecision() { return precision; }
     public void setPrecision(String precision) { this.precision = precision; }
 

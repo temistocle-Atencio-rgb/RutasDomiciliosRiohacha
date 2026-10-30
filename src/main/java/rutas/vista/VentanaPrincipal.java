@@ -29,8 +29,8 @@ import rutas.modelo.Parada;
 import rutas.modelo.Ruta;
 
 /**
- * Ventana principal: encabezado azul con la marca, panel lateral con pestanas
- * y el mapa de Riohacha a la derecha.
+ * Ventana principal segun el manual para programas de escritorio: barra lateral azul con el cubo
+ * y el menu, barra de titulo azul profundo, contenido sobre gris claro y el mapa a la derecha.
  */
 public class VentanaPrincipal extends JFrame {
 
@@ -53,16 +53,38 @@ public class VentanaPrincipal extends JFrame {
         app.setPanelMapa(panelMapa);
         panelMapa.setOyente(this::clicEnMapa);
 
+        JPanel derecha = new JPanel(new BorderLayout());
+        derecha.add(barraTitulo(), BorderLayout.NORTH);
+        derecha.add(panelContenido(), BorderLayout.WEST);
+        derecha.add(panelMapa, BorderLayout.CENTER);
         JPanel raiz = new JPanel(new BorderLayout());
-        raiz.add(encabezado(), BorderLayout.NORTH);
-        raiz.add(lateral(), BorderLayout.WEST);
-        raiz.add(panelMapa, BorderLayout.CENTER);
+        raiz.add(barraLateral(), BorderLayout.WEST);
+        raiz.add(derecha, BorderLayout.CENTER);
         setContentPane(raiz);
 
         app.avisar();
-        setMinimumSize(new Dimension(1100, 680));
-        setSize(1440, 860);
+        // la ventana se ajusta a la pantalla (con la escala de Windows al 125 % la pantalla "mide" menos)
+        java.awt.Rectangle util = java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
+        setMinimumSize(new Dimension(Math.min(1100, util.width), Math.min(640, util.height)));
+        setSize(Math.min(1440, util.width), Math.min(860, util.height));
         setLocationRelativeTo(null);
+        if (util.width < 1500) {
+            setExtendedState(MAXIMIZED_BOTH);
+        }
+        // al abrir, cada seccion empieza desde arriba
+        addWindowListener(new java.awt.event.WindowAdapter() {
+            @Override
+            public void windowOpened(java.awt.event.WindowEvent e) {
+                javax.swing.SwingUtilities.invokeLater(() -> {
+                    for (java.awt.Component c : contenido.getComponents()) {
+                        if (c instanceof JScrollPane) {
+                            ((JScrollPane) c).getViewport().setViewPosition(new java.awt.Point(0, 0));
+                        }
+                    }
+                    pestanas.get(0).requestFocusInWindow();
+                });
+            }
+        });
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         addWindowListener(new java.awt.event.WindowAdapter() {
             @Override
@@ -78,31 +100,27 @@ public class VentanaPrincipal extends JFrame {
 
     // ------------------------------------------------------------------
 
-    private JComponent encabezado() {
+    /** Barra de titulo azul profundo: municipio a la izquierda y estado del trafico a la derecha. */
+    private JComponent barraTitulo() {
         JPanel h = new JPanel(new BorderLayout());
-        h.setBackground(Tema.AZUL);
-        h.setBorder(BorderFactory.createEmptyBorder(10, 20, 10, 20));
+        h.setBackground(Tema.AZUL_PROFUNDO);
+        h.setBorder(BorderFactory.createEmptyBorder(12, 20, 12, 20));
 
         JPanel izq = new JPanel();
         izq.setOpaque(false);
         izq.setLayout(new BoxLayout(izq, BoxLayout.X_AXIS));
-        izq.add(new Logo(Logo.Version.BLANCO, 34));
-        izq.add(Box.createHorizontalStrut(18));
         JLabel sub = new JLabel("Rutas de domicilios  ·");
-        sub.setFont(Tema.texto(13));
-        sub.setForeground(new Color(255, 255, 255, 215));
+        sub.setFont(Tema.texto(14));
+        sub.setForeground(Color.WHITE);
         izq.add(sub);
         izq.add(Box.createHorizontalStrut(6));
         izq.add(selectorCiudad());
         h.add(izq, BorderLayout.WEST);
 
-        JPanel der = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 6));
-        der.setOpaque(false);
-        lblTrafico.setFont(Tema.textoFuerte(12));
-        lblTrafico.setOpaque(true);
-        lblTrafico.setBorder(BorderFactory.createEmptyBorder(5, 12, 5, 12));
-        der.add(lblTrafico);
-        h.add(der, BorderLayout.EAST);
+        // el estado va como texto, sin cuadro de color detras (regla del manual)
+        lblTrafico.setFont(Tema.textoFuerte(13.5f));
+        lblTrafico.setForeground(Color.WHITE);
+        h.add(lblTrafico, BorderLayout.EAST);
         return h;
     }
 
@@ -137,14 +155,14 @@ public class VentanaPrincipal extends JFrame {
                     javax.swing.JMenuItem it = new javax.swing.JMenuItem(c.getNombre()
                             + (lista ? "" : "   (descargar mapa)"));
                     it.setFont(c == app.getCiudad() || c.getClave().equals(app.getCiudad().getClave())
-                            ? Tema.textoFuerte(12.5f) : Tema.texto(12.5f));
+                            ? Tema.textoFuerte(14) : Tema.texto(14));
                     it.addActionListener(ev -> cambiarCiudad(c, false));
                     menu.add(it);
                 }
                 menu.addSeparator();
                 javax.swing.JMenuItem act = new javax.swing.JMenuItem("Actualizar el mapa de "
                         + app.getCiudad().getNombre() + " desde OpenStreetMap");
-                act.setFont(Tema.texto(12.5f));
+                act.setFont(Tema.texto(14));
                 act.addActionListener(ev -> cambiarCiudad(app.getCiudad(), true));
                 menu.add(act);
                 menu.show(l, 0, l.getHeight() + 4);
@@ -175,56 +193,101 @@ public class VentanaPrincipal extends JFrame {
     private void actualizarTrafico() {
         LocalTime ahora = LocalTime.now();
         boolean pico = app.getTrafico().esHoraPico(ahora);
-        lblTrafico.setText((pico ? "Hora pico" : "Tráfico normal") + "  ·  " + ahora.format(Ruta.FORMATO_HORA)
-                + "  ·  " + app.getMapa().getIncidentes().size() + " novedades");
-        // naranja con texto oscuro en hora pico (regla de contraste), blanco con texto azul si no
-        lblTrafico.setBackground(pico ? Tema.NARANJA : Color.WHITE);
-        lblTrafico.setForeground(pico ? Tema.GRIS_OSCURO : Tema.AZUL);
+        lblTrafico.setText((pico ? "Hora pico: más trancones" : "Tráfico normal")
+                + (app.getTrafico().isLluvia() ? "  ·  Lloviendo" : "") + "  ·  "
+                + ahora.format(Ruta.FORMATO_HORA) + "  ·  " + app.getMapa().getIncidentes().size() + " novedades");
     }
 
-    private JComponent lateral() {
+    /** Barra lateral azul del manual: el cubo arriba, el menu en blanco y los atajos visibles abajo. */
+    private JComponent barraLateral() {
         JPanel lat = new JPanel(new BorderLayout());
-        lat.setBackground(Color.WHITE);
-        lat.setPreferredSize(new Dimension(420, 100));
-        lat.setBorder(BorderFactory.createMatteBorder(0, 0, 0, 1, Tema.BORDE));
+        lat.setBackground(Tema.AZUL);
+        lat.setPreferredSize(new Dimension(184, 100));
 
-        JPanel barra = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
-        barra.setBackground(Color.WHITE);
-        barra.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, Tema.BORDE),
-                BorderFactory.createEmptyBorder(0, 8, 0, 8)));
+        JPanel arriba = new JPanel();
+        arriba.setOpaque(false);
+        arriba.setLayout(new BoxLayout(arriba, BoxLayout.Y_AXIS));
+        arriba.setBorder(BorderFactory.createEmptyBorder(20, 16, 12, 12));
+        Logo logo = new Logo(Logo.Version.BLANCO, 30);
+        logo.setAlignmentX(LEFT_ALIGNMENT);
+        arriba.add(logo);
+        arriba.add(Box.createVerticalStrut(24)); // espacio libre de una cara del cubo
+        for (Pestana p : pestanas) {
+            p.setAlignmentX(LEFT_ALIGNMENT);
+            arriba.add(p);
+            arriba.add(Box.createVerticalStrut(4));
+        }
+        lat.add(arriba, BorderLayout.NORTH);
 
-        PanelPedidos pedidos = new PanelPedidos(app);
-        panelNovedades = new PanelNovedades(app);
-        agregarPestana(barra, "Ruta", pedidos);
-        agregarPestana(barra, "Buscar", new PanelExplorar(app));
-        agregarPestana(barra, "Clientes", new PanelClientes(app));
-        agregarPestana(barra, "Novedades", panelNovedades);
-        agregarPestana(barra, "Historial", new PanelHistorial(app));
-        seleccionar(0);
-
-        lat.add(barra, BorderLayout.NORTH);
-        lat.add(contenido, BorderLayout.CENTER);
+        JPanel atajos = new JPanel();
+        atajos.setOpaque(false);
+        atajos.setLayout(new BoxLayout(atajos, BoxLayout.Y_AXIS));
+        atajos.setBorder(BorderFactory.createEmptyBorder(12, 20, 20, 12));
+        JLabel tit = new JLabel("Atajos");
+        tit.setFont(Tema.textoFuerte(12.5f));
+        tit.setForeground(Color.WHITE);
+        atajos.add(tit);
+        atajos.add(Box.createVerticalStrut(4));
+        for (String[] a : new String[][]{{"Ctrl+Enter", "calcular"}, {"Ctrl+1 a 5", "secciones"},
+            {"Esc", "cancelar"}}) {
+            JLabel l = new JLabel(a[0] + "  " + a[1]);
+            l.setFont(Tema.texto(12.5f));
+            l.setForeground(TEXTO_LATERAL);
+            atajos.add(l);
+            atajos.add(Box.createVerticalStrut(2));
+        }
+        lat.add(atajos, BorderLayout.SOUTH);
         return lat;
     }
 
-    private void agregarPestana(JPanel barra, String nombre, JPanel panel) {
+    /** Texto secundario sobre el azul: 6.3:1. */
+    private static final Color TEXTO_LATERAL = new Color(0xDCE6F2);
+
+    /** Panel de contenido sobre gris claro, con las tarjetas blancas. */
+    private JComponent panelContenido() {
+        PanelPedidos pedidos = new PanelPedidos(app);
+        panelNovedades = new PanelNovedades(app);
+        agregarPestana("Ruta", pedidos);
+        agregarPestana("Buscar", new PanelExplorar(app));
+        agregarPestana("Clientes", new PanelClientes(app));
+        agregarPestana("Novedades", panelNovedades);
+        agregarPestana("Historial", new PanelHistorial(app));
+        contenido.setPreferredSize(new Dimension(412, 100));
+        contenido.setBackground(Tema.GRIS_CLARO);
+        contenido.setBorder(BorderFactory.createMatteBorder(0, 0, 0, 1, Tema.BORDE));
+        // Ctrl+1 a Ctrl+5 cambian de seccion
+        for (int i = 0; i < pestanas.size(); i++) {
+            final int indice = i;
+            getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(javax.swing.KeyStroke.getKeyStroke(
+                    java.awt.event.KeyEvent.VK_1 + i, java.awt.event.InputEvent.CTRL_DOWN_MASK), "seccion" + i);
+            getRootPane().getActionMap().put("seccion" + i, new javax.swing.AbstractAction() {
+                @Override
+                public void actionPerformed(java.awt.event.ActionEvent e) {
+                    seleccionar(indice);
+                }
+            });
+        }
+        seleccionar(0);
+        return contenido;
+    }
+
+    private void agregarPestana(String nombre, JPanel panel) {
         JPanel envoltura = new PanelAjustado();
-        envoltura.setBackground(Color.WHITE);
+        envoltura.setBackground(Tema.GRIS_CLARO);
         envoltura.add(panel, BorderLayout.NORTH);
         JScrollPane sc = Tema.scrollSinBorde(envoltura);
-        sc.getViewport().setBackground(Color.WHITE);
+        sc.getViewport().setBackground(Tema.GRIS_CLARO);
         contenido.add(sc, nombre);
-        Pestana p = new Pestana(nombre, pestanas.size());
-        pestanas.add(p);
-        barra.add(p);
+        pestanas.add(new Pestana(nombre, pestanas.size()));
     }
 
     private void seleccionar(int i) {
         for (Pestana p : pestanas) {
             p.activa = p.indice == i;
+            p.getAccessibleContext().setAccessibleDescription(p.activa ? "sección actual" : null);
             p.repaint();
         }
-        tarjetas.show(contenido, pestanas.get(i).getText());
+        tarjetas.show(contenido, pestanas.get(i).nombre);
     }
 
     /** Panel que toma el ancho del scroll (asi no aparece barra horizontal). */
@@ -240,36 +303,83 @@ public class VentanaPrincipal extends JFrame {
         public boolean getScrollableTracksViewportHeight() { return false; }
     }
 
-    /** Pestana de texto con subrayado naranja cuando esta activa (acento del manual). */
-    private class Pestana extends JLabel {
+    /**
+     * Opcion del menu lateral. Activa: fondo blanco con texto azul profundo. Al pasar el raton: azul profundo.
+     * Con el teclado (Tab, flechas, Enter) se marca con un aro de 2 px.
+     */
+    private class Pestana extends javax.swing.JButton {
         final int indice;
+        final String nombre;
         boolean activa;
 
-        Pestana(String texto, int indice) {
-            super(texto);
+        Pestana(String nombre, int indice) {
+            super(nombre);
+            this.nombre = nombre;
             this.indice = indice;
-            setFont(Tema.textoFuerte(13));
-            setBorder(BorderFactory.createEmptyBorder(13, 10, 12, 10));
+            setFont(Tema.textoFuerte(14));
+            setHorizontalAlignment(LEFT);
+            setContentAreaFilled(false);
+            setBorderPainted(false);
+            setFocusPainted(false);
+            setOpaque(false);
+            setRolloverEnabled(true);
             setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-            addMouseListener(new MouseAdapter() {
+            setBorder(BorderFactory.createEmptyBorder(0, 12, 0, 12));
+            setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
+            setPreferredSize(new Dimension(150, 40));
+            setToolTipText(nombre + " (Ctrl+" + (indice + 1) + ")");
+            addActionListener(e -> seleccionar(indice));
+            addFocusListener(new java.awt.event.FocusAdapter() {
                 @Override
-                public void mouseClicked(MouseEvent e) {
-                    seleccionar(Pestana.this.indice);
+                public void focusGained(java.awt.event.FocusEvent e) { repaint(); }
+
+                @Override
+                public void focusLost(java.awt.event.FocusEvent e) { repaint(); }
+            });
+            // flechas arriba y abajo para moverse por el menu
+            getInputMap().put(javax.swing.KeyStroke.getKeyStroke("DOWN"), "bajar");
+            getInputMap().put(javax.swing.KeyStroke.getKeyStroke("UP"), "subir");
+            getActionMap().put("bajar", new javax.swing.AbstractAction() {
+                @Override
+                public void actionPerformed(java.awt.event.ActionEvent e) {
+                    pestanas.get((indice + 1) % pestanas.size()).requestFocusInWindow();
+                }
+            });
+            getActionMap().put("subir", new javax.swing.AbstractAction() {
+                @Override
+                public void actionPerformed(java.awt.event.ActionEvent e) {
+                    pestanas.get((indice + pestanas.size() - 1) % pestanas.size()).requestFocusInWindow();
                 }
             });
         }
 
         @Override
         protected void paintComponent(Graphics g0) {
-            setForeground(activa ? Tema.AZUL_PROFUNDO : Tema.GRIS_TEXTO);
-            super.paintComponent(g0);
+            Graphics2D g = (Graphics2D) g0.create();
+            Tema.suavizar(g);
+            int w = getWidth() - 1, h = getHeight() - 1;
             if (activa) {
-                Graphics2D g = (Graphics2D) g0.create();
-                g.setColor(Tema.NARANJA);
-                g.setStroke(new BasicStroke(3));
-                g.drawLine(10, getHeight() - 2, getWidth() - 10, getHeight() - 2);
-                g.dispose();
+                g.setColor(Color.WHITE);
+                g.fillRoundRect(0, 0, w, h, Tema.ARCO, Tema.ARCO);
+            } else if (getModel().isRollover()) {
+                g.setColor(Tema.AZUL_PROFUNDO);
+                g.fillRoundRect(0, 0, w, h, Tema.ARCO, Tema.ARCO);
             }
+            if (isFocusOwner()) {
+                // sobre el azul ni el azul ni el gris oscuro se ven: el aro va en blanco, o en azul si el fondo es blanco
+                g.setColor(activa ? Tema.AZUL : Color.WHITE);
+                g.setStroke(new BasicStroke(2f));
+                g.drawRoundRect(1, 1, w - 2, h - 2, Tema.ARCO, Tema.ARCO);
+            }
+            // atajo a la derecha
+            g.setFont(Tema.texto(12.5f));
+            String atajo = "Ctrl+" + (indice + 1);
+            g.setColor(activa ? Tema.GRIS_TEXTO : TEXTO_LATERAL);
+            java.awt.FontMetrics fm = g.getFontMetrics();
+            g.drawString(atajo, w - 10 - fm.stringWidth(atajo), (getHeight() + fm.getAscent() - fm.getDescent()) / 2);
+            g.dispose();
+            setForeground(activa ? Tema.AZUL_PROFUNDO : Color.WHITE);
+            super.paintComponent(g0);
         }
     }
 

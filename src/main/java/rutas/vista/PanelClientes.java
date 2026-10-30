@@ -26,7 +26,8 @@ public class PanelClientes extends JPanel {
     private final Aplicacion app;
     private final JTextField campoBuscar = Tema.campo("Buscar cliente por nombre");
     private final DefaultListModel<Cliente> modelo = new DefaultListModel<>();
-    private final JList<Cliente> lista = new JList<>(modelo);
+    private final JList<Cliente> lista = new Tema.Lista<>(modelo,
+            "Aún no hay clientes guardados. Regístrelos abajo y después búsquelos por nombre.");
     private final JTextField campoNombre = Tema.campo("Nombre");
     private final JTextField campoTelefono = Tema.campo("Teléfono");
     private final JTextField campoDireccion = Tema.campo("Dirección: Calle 15 # 10-20");
@@ -38,7 +39,7 @@ public class PanelClientes extends JPanel {
         setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
         setBorder(BorderFactory.createEmptyBorder(16, 16, 20, 16));
 
-        add(Tema.tituloSeccion("Clientes frecuentes"));
+        add(Tema.tituloPantalla("Clientes frecuentes"));
         add(Tema.parrafo("Guarde una vez la dirección del cliente y después agréguelo a la ruta "
                 + "escribiendo su nombre. Se guardan ordenados en un árbol AVL.", 272));
         add(Tema.espacio(10));
@@ -75,7 +76,7 @@ public class PanelClientes extends JPanel {
         add(Tema.espacio(12));
 
         Tema.Tarjeta form = new Tema.Tarjeta();
-        form.add(Tema.etiqueta("Registrar o actualizar cliente"));
+        form.add(Tema.seccion("Registrar o actualizar cliente"));
         for (JTextField f : new JTextField[]{campoNombre, campoTelefono, campoDireccion, campoNota}) {
             Tema.anchoCompleto(f);
             form.add(f);
@@ -165,7 +166,7 @@ public class PanelClientes extends JPanel {
         @Override
         public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean sel, boolean foco) {
             Cliente c = (Cliente) value;
-            return Tema.celda(list, c.getNombre(), Tema.textoFuerte(12), Tema.GRIS_OSCURO,
+            return Tema.celda(list, c.getNombre(), Tema.textoFuerte(14), Tema.GRIS_OSCURO,
                     c.getDireccion() + (c.getTelefono().isEmpty() ? "" : " · " + c.getTelefono()), sel, java.awt.Color.WHITE);
         }
     }

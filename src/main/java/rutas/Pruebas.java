@@ -37,6 +37,9 @@ public class Pruebas {
         probarAvl();
         probarMonticulo();
         probarGrafoPequeno();
+        probarLluvia();
+        probarPlata();
+        probarCasas();
         probarMapaReal();
         System.out.println("\nResultado: " + bien + " pruebas bien, " + mal + " mal");
         if (mal > 0) {
@@ -139,6 +142,18 @@ public class Pruebas {
         revisar("D no tiene camino", !d.hayCamino(3));
         revisar("C->A usa la de una via (50 m)", new Dijkstra(g, 2, t, Criterio.MAS_CORTA, hora).getMetros(0) == 50);
         revisar("BFS desde A no llega a D", !g.bfs(0)[3]);
+        // hora prometida y aviso por WhatsApp
+        LocalTime[] v = rutas.logica.Avisos.ventana(LocalTime.of(19, 43));
+        revisar("ventana 7:43 pm -> 7:35 a 7:55", v[0].equals(LocalTime.of(19, 35)) && v[1].equals(LocalTime.of(19, 55)));
+        revisar("celular dentro del texto", rutas.logica.Avisos.extraerCelular("Ana 300 123-4567, Calle 15 # 10-20").equals("3001234567"));
+        revisar("+57 se reconoce", rutas.logica.Avisos.numeroWhatsApp("+57 3015556677").equals("573015556677"));
+        revisar("fijo no es celular", rutas.logica.Avisos.numeroWhatsApp("7271234").isEmpty());
+        revisar("direccion no se confunde con celular", rutas.logica.Avisos.extraerCelular("Calle 15 # 10-20").isEmpty());
+        String enlace = rutas.logica.Avisos.enlaceWhatsApp("3001234567",
+                rutas.logica.Avisos.mensaje("Ana María", "Tienda Lupe", LocalTime.of(19, 43)));
+        revisar("enlace wa.me con mensaje", enlace.startsWith("https://wa.me/573001234567?text=Hola%20Ana%2C"));
+        int[] orden = d.ordenDeVisitaHasta(2);
+        revisar("orden de visita va de A hasta C", orden.length >= 2 && orden[0] == 0 && orden[orden.length - 1] == 2);
 
         // matriz de adyacencia no simetrica por la calle de una via
         MatrizAdyacencia m = new MatrizAdyacencia(2);
@@ -146,6 +161,109 @@ public class Pruebas {
         m.set(1, 0, 50);
         revisar("matriz: ida 200 y vuelta 50", m.get(0, 1) == 200 && m.get(1, 0) == 50
                 && m.costoRecorrido(new int[]{0, 1}, true) == 250);
+    }
+
+    /** Con lluvia la ruta debe dejar la calle destapada aunque sea mas corta. */
+    private static void probarLluvia() throws Exception {
+        System.out.println("--- Lluvia ---");
+        Grafo g = new Grafo(3);
+        g.setNodo(0, 11.540, -72.900, '-');
+        g.setNodo(1, 11.541, -72.900, '-');
+        g.setNodo(2, 11.542, -72.900, '-');
+        List<Via> vias = new ArrayList<>();
+        vias.add(new Via(0, "Calle pavimentada", "residential", 0, "asphalt", 0, new int[]{0, 1, 2}));
+        vias.add(new Via(1, "Calle destapada", "residential", 0, "unpaved", 0, new int[]{0, 2}));
+        g.agregarArista(0, 1, 300, 0);
+        g.agregarArista(1, 2, 300, 0);
+        g.agregarArista(0, 2, 250, 1); // mas corta pero destapada
+        Mapa mapa = new Mapa(g, vias, new ArrayList<>(), new ArrayList<>());
+        ModeloTrafico t = new ModeloTrafico(mapa, null);
+        LocalTime hora = LocalTime.of(10, 0);
+
+        revisar("sin lluvia la mas rapida usa la destapada (250 m)",
+                new Dijkstra(g, 0, t, Criterio.MAS_RAPIDA, hora).getMetros(2) == 250);
+        t.setLluvia(true);
+        revisar("con lluvia la mas rapida se va por la pavimentada (600 m)",
+                new Dijkstra(g, 0, t, Criterio.MAS_RAPIDA, hora).getMetros(2) == 600);
+        revisar("con lluvia la mas corta tambien evita la destapada",
+                new Dijkstra(g, 0, t, Criterio.MAS_CORTA, hora).getMetros(2) == 600);
+        Dijkstra pav = new Dijkstra(g, 0, t, Criterio.MAS_RAPIDA, hora);
+        t.setLluvia(false);
+        Dijkstra seco = new Dijkstra(g, 1, t, Criterio.MAS_RAPIDA, hora);
+        t.setLluvia(true);
+        Dijkstra mojado = new Dijkstra(g, 1, t, Criterio.MAS_RAPIDA, hora);
+        revisar("con lluvia todo va un poco mas lento", mojado.getCosto(2) > seco.getCosto(2) && pav.hayCamino(2));
+        t.setLluvia(false);
+        revisar("al quitar la lluvia vuelve a la destapada",
+                new Dijkstra(g, 0, t, Criterio.MAS_RAPIDA, hora).getMetros(2) == 250);
+    }
+
+    /** Tarifa por distancia, formato de pesos y cuadre de caja por moto. */
+    private static void probarPlata() {
+        System.out.println("--- La plata del domicilio ---");
+        rutas.logica.Tarifa t = new rutas.logica.Tarifa(3000, 2, 700);
+        revisar("1.5 km cuesta la tarifa base ($3.000)", t.calcular(1500) == 3000);
+        revisar("2 km justos siguen en la base", t.calcular(2000) == 3000);
+        revisar("6 km: 3.000 + 4 x 700 = 5.800, se sube a 6.000", t.calcular(6000) == 6000);
+        revisar("2.1 km: 3.070 se sube a 3.500", t.calcular(2100) == 3500);
+        revisar("formato de pesos $25.500", rutas.logica.Tarifa.pesos(25500).equals("$25.500"));
+        revisar("formato de pesos $1.250.000", rutas.logica.Tarifa.pesos(1250000).equals("$1.250.000"));
+        revisar("valor escrito con signo: \"$25.000\" -> 25000", rutas.logica.Tarifa.leerPesos("pedido $25.000 Calle 15") == 25000);
+        revisar("sin signo de pesos no se lee (podria ser una direccion)", rutas.logica.Tarifa.leerPesos("Calle 15 # 10-20") == 0);
+
+        rutas.logica.Cuadre c = new rutas.logica.Cuadre();
+        c.agregar(20000, 3000, false); // paga en efectivo: el repartidor cobra 23.000
+        c.agregar(15000, 4000, true);  // ya pago por transferencia
+        c.agregar(0, 3500, false);     // sin valor del pedido: solo el domicilio
+        revisar("cuadre: domicilios 10.500", c.getDomicilios() == 10500);
+        revisar("cuadre: pedidos 35.000", c.getPedidos() == 35000);
+        revisar("cuadre: efectivo que debe entregar 26.500", c.getEfectivo() == 26500);
+        revisar("cuadre: por transferencia 19.000", c.getTransferido() == 19000);
+        revisar("cuadre: todo suma igual", c.getEfectivo() + c.getTransferido() == c.getDomicilios() + c.getPedidos());
+
+        // una linea pegada de WhatsApp
+        rutas.logica.LineaPedido lp = rutas.logica.LineaPedido.leer("Ana 300 123 4567, Calle 15 # 10-20 ya pagó $25.000 URGENTE");
+        revisar("linea pegada: ya pagó con tilde", lp.isPagado());
+        revisar("linea pegada: urgente, celular y valor", lp.isUrgente() && lp.getCelular().equals("3001234567")
+                && lp.getValor() == 25000);
+        revisar("linea pegada: queda solo nombre y direccion", lp.getTexto().equals("Ana, Calle 15 # 10-20"));
+        revisar("YA PAGÓ en mayusculas", rutas.logica.LineaPedido.leer("Luis - Cra 7 con Calle 12 YA PAGÓ").isPagado());
+        revisar("PAGADO y transferencia", rutas.logica.LineaPedido.leer("Cra 7 # 10-20 PAGADO").isPagado()
+                && rutas.logica.LineaPedido.leer("Cra 7 # 10-20 pagó por transferencia").isPagado());
+        revisar("sin marca de pago queda en efectivo", !rutas.logica.LineaPedido.leer("Ana, Calle 15 # 10-20 $25.000").isPagado());
+        revisar("celular pegado a otros numeros no se toma", rutas.logica.Avisos.extraerCelular("casa 13001234567").isEmpty());
+
+        String msg = rutas.logica.Avisos.mensaje("Ana María", "Tienda Lupe", LocalTime.of(19, 43), 3000, 23000);
+        revisar("el mensaje al cliente dice cuanto pagar", msg.contains("Domicilio: $3.000") && msg.contains("Total a pagar: $23.000"));
+        String pagado = rutas.logica.Avisos.mensaje("Ana", "", LocalTime.of(19, 43), 3000, 0);
+        revisar("si ya pago no se le cobra", !pagado.contains("Total a pagar"));
+    }
+
+    /** Las casas de OpenStreetMap se guardan en casas.txt y se vuelven a leer igual. */
+    private static void probarCasas() throws Exception {
+        System.out.println("--- Casas ---");
+        String json = "{\"elements\":[{\"type\":\"way\",\"id\":1,\"geometry\":["
+                + "{\"lat\":11.5401,\"lon\":-72.9001},{\"lat\":11.5401,\"lon\":-72.9000},"
+                + "{\"lat\":11.5400,\"lon\":-72.9000},{\"lat\":11.5400,\"lon\":-72.9001},"
+                + "{\"lat\":11.5401,\"lon\":-72.9001}]},"
+                + "{\"type\":\"way\",\"id\":2,\"geometry\":[{\"lat\":11.5,\"lon\":-72.9}]}]}";
+        File carpeta = java.nio.file.Files.createTempDirectory("casas").toFile();
+        int n = rutas.osm.ProcesadorOSM.procesarCasas(json, carpeta);
+        revisar("se guarda 1 casa (la de un solo punto se descarta)", n == 1);
+        List<double[][]> casas = CargadorMapa.leerCasas(new File(carpeta, "casas.txt"));
+        revisar("la casa tiene 4 esquinas (sin repetir la primera)", casas.size() == 1 && casas.get(0).length == 4
+                && Math.abs(casas.get(0)[0][0] - 11.5401) < 1e-6 && Math.abs(casas.get(0)[0][1] + 72.9001) < 1e-6);
+        revisar("sin archivo de casas el mapa igual carga", CargadorMapa.leerCasas(new File(carpeta, "no_existe.txt")).isEmpty());
+    }
+
+    private static double metrosDestapados(Mapa mapa, List<rutas.estructuras.Arista> camino) {
+        double total = 0;
+        for (rutas.estructuras.Arista a : camino) {
+            if (mapa.getVia(a.getVia()).esDestapada()) {
+                total += a.getMetros();
+            }
+        }
+        return total;
     }
 
     private static void probarMapaReal() throws Exception {
@@ -232,6 +350,29 @@ public class Pruebas {
         revisar(String.format("Parque Padilla -> Uniguajira: %.2f km por calles (%.2f km en linea recta)",
                 d.getMetros(uni.getNodo()) / 1000, recta / 1000),
                 d.getMetros(uni.getNodo()) > recta && d.getMetros(uni.getNodo()) < recta * 1.8);
+
+        // lluvia en el mapa real: se busca un destino al que, en seco, la ruta mas rapida
+        // pase por mas de 300 m de calle destapada, y se mira que con lluvia use menos
+        trafico.setLluvia(false);
+        Dijkstra seco = new Dijkstra(g, base.getNodo(), trafico, Criterio.MAS_RAPIDA, LocalTime.of(10, 0));
+        trafico.setLluvia(true);
+        Dijkstra mojado = new Dijkstra(g, base.getNodo(), trafico, Criterio.MAS_RAPIDA, LocalTime.of(10, 0));
+        trafico.setLluvia(false);
+        int destino = -1;
+        double enSeco = 0, conLluvia = 0;
+        for (int n = 0; n < g.getCantidadNodos() && destino < 0; n += 7) {
+            if (!seco.hayCamino(n)) {
+                continue;
+            }
+            double dd = metrosDestapados(mapa, seco.camino(n));
+            if (dd > 300) {
+                destino = n;
+                enSeco = dd;
+                conLluvia = metrosDestapados(mapa, mojado.camino(n));
+            }
+        }
+        revisar(String.format("con lluvia, hacia %s la destapada baja de %.0f m a %.0f m",
+                geo.describir(destino), enSeco, conLluvia), destino >= 0 && conLluvia < enSeco);
 
         Dijkstra normal = new Dijkstra(g, base.getNodo(), trafico, Criterio.MAS_RAPIDA, LocalTime.of(10, 0));
         Dijkstra pico = new Dijkstra(g, base.getNodo(), trafico, Criterio.MAS_RAPIDA, LocalTime.of(12, 15));

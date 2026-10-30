@@ -32,13 +32,13 @@ public final class DialogoDescarga {
         titulo.setFont(Tema.subtitulo(16));
         titulo.setForeground(Tema.AZUL_PROFUNDO);
         JLabel estado = new JLabel("Conectando con OpenStreetMap...");
-        estado.setFont(Tema.texto(12.5f));
+        estado.setFont(Tema.texto(14));
         estado.setForeground(Tema.GRIS_OSCURO);
         JProgressBar barra = new JProgressBar();
         barra.setIndeterminate(true);
         Tema.Parrafo nota = Tema.parrafo("Se descargan las calles, sentidos, semáforos y lugares. Puede tardar "
                 + "de 1 a 3 minutos. Datos © colaboradores de OpenStreetMap.", 330);
-        nota.setFont(Tema.texto(11.5f));
+        nota.setFont(Tema.texto(12.5f));
         JPanel centro = new JPanel(new BorderLayout(0, 8));
         centro.setOpaque(false);
         centro.add(estado, BorderLayout.NORTH);

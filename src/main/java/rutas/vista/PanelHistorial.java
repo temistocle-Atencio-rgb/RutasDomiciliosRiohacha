@@ -22,7 +22,8 @@ public class PanelHistorial extends JPanel {
 
     private final Aplicacion app;
     private final DefaultListModel<Ruta> modelo = new DefaultListModel<>();
-    private final JList<Ruta> lista = new JList<>(modelo);
+    private final JList<Ruta> lista = new Tema.Lista<>(modelo,
+            "Aún no hay rutas guardadas. Cada ruta que mande al repartidor por WhatsApp o Google Maps queda aquí.");
     private final Tema.Parrafo detalle = Tema.parrafo("", 262);
     private final Tema.Parrafo resumen = Tema.parrafo("", 262);
 
@@ -32,7 +33,7 @@ public class PanelHistorial extends JPanel {
         setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
         setBorder(BorderFactory.createEmptyBorder(16, 16, 20, 16));
 
-        add(Tema.tituloSeccion("Historial de rutas"));
+        add(Tema.tituloPantalla("Historial de rutas"));
         add(Tema.parrafo("Las rutas, clientes y novedades se guardan en una base de datos SQLite "
                 + "(domiruta.db) en la carpeta del usuario:", 272));
         Tema.Parrafo ruta = Tema.parrafo(app.getCarpetaUsuario().getAbsolutePath(), 272);
@@ -80,6 +81,9 @@ public class PanelHistorial extends JPanel {
         t.add(Tema.espacio(8));
         Tema.Boton repetir = Tema.botonPrimario("Repetir con estas entregas");
         repetir.addActionListener(e -> repetir());
+        repetir.setEnabled(false);
+        repetir.setToolTipText("Seleccione una ruta de la lista");
+        lista.addListSelectionListener(e -> repetir.setEnabled(lista.getSelectedIndex() >= 0));
         t.add(repetir);
         add(t);
 
@@ -127,7 +131,7 @@ public class PanelHistorial extends JPanel {
         @Override
         public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean sel, boolean foco) {
             Ruta r = (Ruta) value;
-            return Tema.celda(list, r.getFecha().format(Ruta.FORMATO_FECHA), Tema.textoFuerte(12), Tema.GRIS_OSCURO,
+            return Tema.celda(list, r.getFecha().format(Ruta.FORMATO_FECHA), Tema.textoFuerte(14), Tema.GRIS_OSCURO,
                     r.getParadas().size() + " entregas · " + Geo.formatoDistancia(r.getMetros()) + " · "
                     + Geo.formatoTiempo(r.getSegundos()), sel, java.awt.Color.WHITE);
         }

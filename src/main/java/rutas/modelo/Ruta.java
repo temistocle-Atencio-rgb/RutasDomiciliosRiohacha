@@ -11,7 +11,14 @@ import rutas.estructuras.Arista;
 public class Ruta {
 
     public static final DateTimeFormatter FORMATO_FECHA = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
-    public static final DateTimeFormatter FORMATO_HORA = DateTimeFormatter.ofPattern("h:mm a");
+    /**
+     * "9:44 p.m." igual en cualquier computador. Con el patron "h:mm a" cada Windows
+     * escribe distinto ("PM", "p. m." con espacios raros) y a veces no cabe en su cuadro.
+     */
+    public static final DateTimeFormatter FORMATO_HORA = new java.time.format.DateTimeFormatterBuilder()
+            .appendPattern("h:mm ")
+            .appendText(java.time.temporal.ChronoField.AMPM_OF_DAY, java.util.Map.of(0L, "a.m.", 1L, "p.m."))
+            .toFormatter();
 
     private final Parada base;
     private final List<Parada> paradas;      // entregas en el orden en que se hacen

@@ -17,7 +17,7 @@ import javax.swing.JComponent;
 /**
  * Isotipo (cubo isometrico: el paquete del domicilio) y logotipo "DomiRuta"
  * siguiendo las reglas del manual: tres rombos iguales a 30 grados,
- * nombre en Poppins Bold con espaciado de -2 %, en dos tonos.
+ * nombre en Poppins SemiBold con espaciado de -2 %.
  */
 public class Logo extends JComponent {
 
@@ -37,7 +37,7 @@ public class Logo extends JComponent {
     }
 
     private Font fuenteNombre() {
-        return Tema.titulo(alturaCubo * 0.62f).deriveFont(Map.of(TextAttribute.TRACKING, -0.02f));
+        return Tema.subtitulo(alturaCubo * 0.62f).deriveFont(Map.of(TextAttribute.TRACKING, -0.02f));
     }
 
     /** Dibuja el cubo con la esquina superior izquierda en (x, y). */
@@ -57,9 +57,10 @@ public class Logo extends JComponent {
             izquierda = Tema.AZUL;
             derecha = Tema.AZUL_PROFUNDO;
         } else {
+            // version blanca del manual: tres caras blancas con opacidad 1, 0.8 y 0.6
             arriba = Color.WHITE;
-            izquierda = new Color(0xD6E2EE);
-            derecha = new Color(0xA9C1DB);
+            izquierda = new Color(255, 255, 255, 204);
+            derecha = new Color(255, 255, 255, 153);
         }
         g.setColor(arriba);
         g.fillPolygon(poly(xy, 0, 2, 3, 1));
@@ -67,6 +68,17 @@ public class Logo extends JComponent {
         g.fillPolygon(poly(xy, 1, 3, 4, 5));
         g.setColor(derecha);
         g.fillPolygon(poly(xy, 3, 2, 6, 4));
+    }
+
+    /** Silueta del cubo (hexagono), para dibujarle un borde blanco encima del mapa. */
+    public static Polygon silueta(double x, double y, double alto) {
+        double ancho = alto * 0.866;
+        double[][] p = {{0.5, 0}, {1, 0.25}, {1, 0.75}, {0.5, 1}, {0, 0.75}, {0, 0.25}};
+        Polygon s = new Polygon();
+        for (double[] q : p) {
+            s.addPoint((int) Math.round(x + q[0] * ancho), (int) Math.round(y + q[1] * alto));
+        }
+        return s;
     }
 
     private static Polygon poly(int[][] xy, int... idx) {

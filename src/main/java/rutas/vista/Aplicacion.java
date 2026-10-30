@@ -14,6 +14,9 @@ import rutas.logica.BaseDatos;
 import rutas.logica.Ubicaciones;
 import rutas.logica.BuscadorLugares;
 import rutas.logica.CargadorMapa;
+import rutas.logica.Cuadre;
+import rutas.logica.Dijkstra;
+import rutas.logica.Tarifa;
 import rutas.logica.Criterio;
 import rutas.logica.Geocodificador;
 import rutas.logica.Mapa;
@@ -128,11 +131,12 @@ public class Aplicacion {
         }
         Parada b = new Parada("Base", nombre, lat, lon);
         geo.asignarNodo(b, Geo.x(lon), Geo.y(lat), null);
-        b.setPrecision("Base por defecto: cámbiela por la dirección del negocio");
+        b.setPrecision("Ponga aquí la dirección de su negocio");
         return b;
     }
 
     public void setBase(Parada nueva) {
+        invalidarDistancias();
         base = nueva;
         actualizarAlcance();
         // las entregas se vuelven a pegar a nodos alcanzables desde la nueva base
@@ -163,6 +167,12 @@ public class Aplicacion {
 
     public void agregarEntrega(Parada p) {
         entregas.add(p);
+        limpiarRuta();
+        avisar();
+    }
+
+    public void reemplazarEntrega(int i, Parada p) {
+        entregas.set(i, p);
         limpiarRuta();
         avisar();
     }
@@ -198,12 +208,168 @@ public class Aplicacion {
     public List<Ruta> calcular(Criterio criterio, LocalTime salida, boolean volver, int repartidores) {
         rutas = planificador.planificarFlota(base, new ArrayList<>(entregas), repartidores, volver, criterio, salida);
         rutaActiva = 0;
+        ultimoCriterio = criterio;
+        rutaGuardada = false;
+        ultimaSalida = salida;
         if (panelMapa != null) {
             panelMapa.setRutas(rutas, 0);
-            panelMapa.encuadrarRutas(rutas);
+            animarRutas(); // la animacion lleva la camara hasta la ruta (ya no salta de una)
         }
         avisar();
         return rutas;
+    }
+
+    // ---------------- animacion ----------------
+
+    private Criterio ultimoCriterio = Criterio.MAS_RAPIDA;
+    private LocalTime ultimaSalida;
+    private boolean rutaGuardada;
+
+    // ---------------- la plata del domicilio ----------------
+
+    private Dijkstra distanciasBase; // distancia real por las calles desde la base, para la tarifa
+    private int distanciasNodo = -1;
+    private boolean distanciasLluvia;
+
+    /** Se calcula una sola vez y se repite solo si cambia la base o la lluvia. */
+    private Dijkstra distancias() {
+        if (base == null || base.getNodo() < 0) {
+            return null;
+        }
+        if (distanciasBase == null || distanciasNodo != base.getNodo() || distanciasLluvia != trafico.isLluvia()) {
+            distanciasBase = new Dijkstra(mapa.getGrafo(), base.getNodo(), trafico, Criterio.MAS_CORTA, LocalTime.now());
+            distanciasNodo = base.getNodo();
+            distanciasLluvia = trafico.isLluvia();
+        }
+        return distanciasBase;
+    }
+
+    private Tarifa tarifa; // se lee de la base de datos una sola vez
+
+    public Tarifa getTarifa() {
+        if (tarifa == null) {
+            tarifa = new Tarifa((int) leerNumero("tarifa.base", 3000), leerNumero("tarifa.km_incluidos", 2),
+                    (int) leerNumero("tarifa.por_km", 700));
+        }
+        return tarifa;
+    }
+
+    /** Hay que volver a medir las distancias desde la base (cambio la base, la lluvia o una via se cerro). */
+    private void invalidarDistancias() {
+        distanciasBase = null;
+    }
+
+    public void setTarifa(Tarifa t) {
+        tarifa = t;
+        try {
+            bd.guardarConfig("tarifa.base", String.valueOf(t.getBase()));
+            bd.guardarConfig("tarifa.km_incluidos", String.valueOf(t.getKmIncluidos()));
+            bd.guardarConfig("tarifa.por_km", String.valueOf(t.getPorKm()));
+        } catch (SQLException e) {
+            Ubicaciones.registrarError(e);
+        }
+    }
+
+    private double leerNumero(String clave, double porDefecto) {
+        try {
+            String v = bd.leerConfig(clave);
+            return v == null ? porDefecto : Double.parseDouble(v);
+        } catch (SQLException | NumberFormatException e) {
+            return porDefecto;
+        }
+    }
+
+    /** Valor del domicilio: segun los metros por las calles desde la base hasta la entrega. */
+    public int domicilioDe(Parada p) {
+        Dijkstra d = distancias();
+        if (d == null || p.getNodo() < 0 || !d.hayCamino(p.getNodo())) {
+            return 0;
+        }
+        return getTarifa().calcular(d.getMetros(p.getNodo()));
+    }
+
+    /** Lo que el repartidor le cobra al cliente en la puerta (0 si ya pago). */
+    public int cobrarEnPuerta(Parada p) {
+        return p.isPagado() ? 0 : p.getValorPedido() + domicilioDe(p);
+    }
+
+    public Cuadre cuadreDe(Ruta r) {
+        Cuadre c = new Cuadre();
+        for (Parada p : r.getParadas()) {
+            c.agregar(p.getValorPedido(), domicilioDe(p), p.isPagado());
+        }
+        return c;
+    }
+
+    /** Nombre del negocio para el mensaje al cliente ("" si no se ha dicho). */
+    public String getNegocio() {
+        try {
+            String n = bd.leerConfig("nombre_negocio");
+            return n == null ? "" : n;
+        } catch (SQLException e) {
+            return "";
+        }
+    }
+
+    /** Con lluvia las destapadas casi no se usan; se borra la ruta para volver a calcularla. */
+    public void setLluvia(boolean lluvia) {
+        trafico.setLluvia(lluvia);
+        if (panelMapa != null) {
+            panelMapa.setLluvia(lluvia);
+        }
+        limpiarRuta();
+        avisar();
+    }
+
+    public void setNegocio(String nombre) {
+        try {
+            bd.guardarConfig("nombre_negocio", nombre.trim());
+        } catch (SQLException e) {
+            Ubicaciones.registrarError(e);
+        }
+    }
+
+    /** Busca un cliente guardado por nombre en el AVL (null si no esta). */
+    public Cliente buscarCliente(String nombre) {
+        return nombre == null || nombre.isBlank() ? null : clientes.buscar(Geo.normalizar(nombre));
+    }
+
+    /**
+     * Hora estimada de llegada a una entrega si las motos salieran ahora con las entregas actuales.
+     * Sirve para prometerle una hora al cliente apenas hace el pedido.
+     */
+    public LocalTime estimarLlegada(Parada entrega, Criterio criterio, LocalTime salida, boolean volver, int motos) {
+        if (entregas.isEmpty()) {
+            return null;
+        }
+        List<Ruta> plan = planificador.planificarFlota(base, new ArrayList<>(entregas), motos, volver, criterio, salida);
+        for (Ruta r : plan) {
+            int i = r.getParadas().indexOf(entrega);
+            if (i >= 0) {
+                return r.getLlegadas().get(i);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Muestra las rutas llenandose desde la base. Antes de trazar,
+     * se ve en que orden Dijkstra fue revisando las esquinas hasta la primera entrega.
+     */
+    private void animarRutas() {
+        if (panelMapa == null || rutas.isEmpty() || base == null) {
+            return;
+        }
+        panelMapa.setRutas(rutas, rutaActiva);
+        int[] orden = null;
+        Ruta primera = rutas.get(rutaActiva < rutas.size() ? rutaActiva : 0);
+        if (!primera.getParadas().isEmpty()) {
+            Dijkstra d = new Dijkstra(mapa.getGrafo(), base.getNodo(), trafico, ultimoCriterio,
+                    ultimaSalida == null ? LocalTime.now() : ultimaSalida);
+            orden = d.ordenDeVisitaHasta(primera.getParadas().get(0).getNodo());
+        }
+        panelMapa.animarRutas(orden, ultimoCriterio == Criterio.MAS_CORTA
+                ? "Buscando el camino más corto…" : "Buscando el camino más rápido…");
     }
 
     public void setRutaActiva(int i) {
@@ -222,6 +388,7 @@ public class Aplicacion {
 
     public void mostrarRuta(Ruta r) {
         rutas = new ArrayList<>(List.of(r));
+        rutaGuardada = true; // viene del historial
         rutaActiva = 0;
         if (panelMapa != null) {
             panelMapa.setRutas(rutas, 0);
@@ -258,6 +425,7 @@ public class Aplicacion {
         geo.asignarNodo(p, Geo.x(lon), Geo.y(lat), null);
         p.setPrecision("Ubicación corregida a mano");
         if (correccionIndice >= 0 && correccionIndice < entregas.size()) {
+            p.copiarDatosDe(entregas.get(correccionIndice));
             entregas.set(correccionIndice, p);
         } else {
             entregas.add(p);
@@ -284,6 +452,10 @@ public class Aplicacion {
     }
 
     public void guardarRutaEnHistorial() throws IOException {
+        if (rutaGuardada || rutas.isEmpty()) {
+            return;
+        }
+        rutaGuardada = true;
         List<Ruta> copia = new ArrayList<>(rutas);
         guardar(() -> bd.guardarRutas(copia));
         historial.addAll(copia);
@@ -304,6 +476,7 @@ public class Aplicacion {
     }
 
     public void guardarNovedades() throws IOException {
+        invalidarDistancias(); // una via cerrada cambia el camino y por tanto el valor del domicilio
         guardar(() -> bd.guardarIncidentes(mapa));
         limpiarRuta(); // los tiempos cambiaron
         avisar();
@@ -350,6 +523,7 @@ public class Aplicacion {
     public Parada getBase() { return base; }
     public Ruta getRuta() { return rutas.isEmpty() ? null : rutas.get(Math.min(rutaActiva, rutas.size() - 1)); }
     public List<Ruta> getRutas() { return rutas; }
+    public int getRutaActiva() { return rutaActiva; }
     public boolean[] getAlcanzable() { return alcanzable; }
     public PanelMapa getPanelMapa() { return panelMapa; }
     public void setPanelMapa(PanelMapa panelMapa) { this.panelMapa = panelMapa; }
