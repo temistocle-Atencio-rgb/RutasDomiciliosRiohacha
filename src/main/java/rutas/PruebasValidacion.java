@@ -12,6 +12,29 @@ public class PruebasValidacion {
         System.out.println("--- Validacion de datos ---");
         probarCantidades();
         probarPrecioCero();
+        probarCsvFormulas();
+    }
+
+    /** H1: el CSV exportado no deja formulas vivas (caso 3), y la lista va y vuelve igual. */
+    private static void probarCsvFormulas() throws Exception {
+        try (rutas.logica.BaseTienda bd = PruebasCaja.baseTemporal()) {
+            rutas.logica.Catalogo cat = new rutas.logica.Catalogo(bd);
+            cat.crear(new rutas.modelo.Producto(0, "77", "=HYPERLINK(\"http://x\",\"y\")", Unidad.UNIDAD, 1000, 500,
+                    0, 0, null, true));
+            cat.crear(new rutas.modelo.Producto(0, "78", "@SUMA y -resta", Unidad.UNIDAD, 2000, 0, 0, 0, null, true));
+            cat.crear(new rutas.modelo.Producto(0, "79", "Arroz; libra", Unidad.UNIDAD, 3000, 0, 0, 0, null, true));
+            String csv = rutas.logica.ListadoProductos.aCsv(cat.todosConInactivos(), new java.util.HashMap<>());
+            revisar("H1 caso 3: =HYPERLINK sale como texto (con ' delante y entre comillas)",
+                    csv.contains("\"'=HYPERLINK(\"\"http://x\"\",\"\"y\"\")\";") && !csv.contains(";=HYPERLINK")
+                    && !csv.contains("\n=HYPERLINK"));
+            revisar("H1: @ también se protege y el ; queda dentro de comillas",
+                    csv.contains("\"'@SUMA y -resta\"") && csv.contains("\"Arroz; libra\""));
+            ImportadorProductos.Resultado r = importar(cat, csv);
+            revisar("H1: volver a importar quita la comilla (el nombre queda igual): " + r.errores, r.errores.isEmpty()
+                    && cat.buscarCodigo("77").getNombre().equals("=HYPERLINK(\"http://x\",\"y\")")
+                    && cat.buscarCodigo("78").getNombre().equals("@SUMA y -resta")
+                    && cat.buscarCodigo("79").getNombre().equals("Arroz; libra"));
+        }
     }
 
     /** Escribe un CSV temporal y lo importa. */

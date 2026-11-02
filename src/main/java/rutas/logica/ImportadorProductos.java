@@ -154,7 +154,8 @@ public final class ImportadorProductos {
 
     private static String celda(List<String> f, Map<String, Integer> col, String nombre) {
         Integer i = col.get(nombre);
-        return i == null || i >= f.size() ? "" : f.get(i).trim();
+        // la comilla simple que pone el exportador delante de = + - @ se quita (asi la lista va y vuelve igual)
+        return i == null || i >= f.size() ? "" : ListadoProductos.sinProteccion(f.get(i).trim());
     }
 
     // ---------------- numeros escritos a la colombiana ----------------

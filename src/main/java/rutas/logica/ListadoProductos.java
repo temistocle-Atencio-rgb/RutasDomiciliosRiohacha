@@ -192,11 +192,27 @@ public final class ListadoProductos {
         return (b.scale() < 0 ? b.setScale(0) : b).toPlainString().replace('.', ',');
     }
 
-    /** Entre comillas si tiene separador o comillas (y las comillas se duplican). */
-    private static String campo(String s) {
-        if (s.contains(";") || s.contains("\"") || s.contains("\n")) {
-            return "\"" + s.replace("\"", "\"\"") + "\"";
+    /** Lo que Excel toma como el comienzo de una formula (OWASP, CSV Injection). */
+    static final String INICIO_FORMULA = "=+-@\t\r\n\uFF1D\uFF0B\uFF0D\uFF20";
+
+    /**
+     * Campo de texto (nombre, codigo, categoria): siempre entre comillas, con las comillas internas
+     * duplicadas, y si empieza como una formula se le antepone una comilla simple para que Excel
+     * lo muestre como texto y no lo ejecute. Al importar, esa comilla se quita.
+     */
+    static String campo(String s) {
+        if (s == null || s.isEmpty()) {
+            return "";
         }
-        return s;
+        String t = INICIO_FORMULA.indexOf(s.charAt(0)) >= 0 ? "'" + s : s;
+        return "\"" + t.replace("\"", "\"\"") + "\"";
+    }
+
+    /** Lo contrario de campo(): quita la comilla simple que se puso para que Excel no ejecute formulas. */
+    public static String sinProteccion(String v) {
+        if (v != null && v.length() > 1 && v.charAt(0) == '\'' && INICIO_FORMULA.indexOf(v.charAt(1)) >= 0) {
+            return v.substring(1);
+        }
+        return v;
     }
 }
