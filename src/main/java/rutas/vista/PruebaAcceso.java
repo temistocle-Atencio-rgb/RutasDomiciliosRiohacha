@@ -17,6 +17,11 @@ public final class PruebaAcceso {
                 "riohacha", credito, true, "");
     }
 
+    /** La revision de una foto del computador (por su contenido). */
+    public static byte[] leerImagenLocal(java.io.File f) throws java.io.IOException {
+        return FormularioProducto.leerImagenLocal(f);
+    }
+
     /** Como armarCliente, con direccion y nota. */
     public static rutas.modelo.Cliente armarClienteCon(java.util.List<rutas.modelo.Cliente> todos, rutas.modelo.Cliente viejo,
             String nombre, String direccion, String nota) {

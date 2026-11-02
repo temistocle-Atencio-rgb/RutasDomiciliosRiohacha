@@ -1268,9 +1268,11 @@ final class FormularioProducto {
             decir("Esa imagen pesa " + (f.length() / 1024) + " KB. El máximo es 1 MB.", false);
             return;
         }
-        Image img = new ImageIcon(f.getAbsolutePath()).getImage();
-        if (img.getWidth(null) <= 0) {
-            decir("No se pudo abrir esa imagen. Use JPG o PNG.", false);
+        Image img;
+        try {
+            img = javax.imageio.ImageIO.read(new ByteArrayInputStream(leerImagenLocal(f))); // por el contenido
+        } catch (IllegalArgumentException | IOException e) {
+            decir(e instanceof IllegalArgumentException ? e.getMessage() : "No se pudo abrir esa imagen. Use JPG o PNG.", false);
             return;
         }
         fotoElegida = f;
@@ -1357,6 +1359,27 @@ final class FormularioProducto {
         return datos;
     }
 
+    /**
+     * Lee una foto del computador y revisa que de verdad sea JPG o PNG por su contenido (no por la
+     * extension: un GIF renombrado a .png no pasa), que pese hasta 1 MB y que se pueda abrir.
+     */
+    static byte[] leerImagenLocal(File f) throws IOException {
+        if (f.length() > MAXIMO_FOTO) {
+            throw new IllegalArgumentException("Esa imagen pesa " + (f.length() / 1024) + " KB. El máximo es 1 MB.");
+        }
+        byte[] datos = Files.readAllBytes(f.toPath());
+        if (datos.length > MAXIMO_FOTO) {
+            throw new IllegalArgumentException("Esa imagen pesa más de 1 MB.");
+        }
+        if (!esPng(datos) && !esJpg(datos)) {
+            throw new IllegalArgumentException("Ese archivo no es una imagen JPG o PNG (aunque se llame así)");
+        }
+        if (javax.imageio.ImageIO.read(new ByteArrayInputStream(datos)) == null) {
+            throw new IllegalArgumentException("Esa imagen está dañada");
+        }
+        return datos;
+    }
+
     private static boolean esPng(byte[] b) {
         return b.length > 8 && (b[0] & 0xFF) == 0x89 && b[1] == 'P' && b[2] == 'N' && b[3] == 'G';
     }
@@ -1365,7 +1388,7 @@ final class FormularioProducto {
         return b.length > 3 && (b[0] & 0xFF) == 0xFF && (b[1] & 0xFF) == 0xD8;
     }
 
-    private static String guardarBytes(byte[] datos, String nombreBase) throws IOException {
+    static String guardarBytes(byte[] datos, String nombreBase) throws IOException {
         File carpeta = new File(Ubicaciones.carpetaUsuario(), "fotos");
         carpeta.mkdirs();
         File destino = new File(carpeta, nombreBase + (esPng(datos) ? ".png" : ".jpg"));

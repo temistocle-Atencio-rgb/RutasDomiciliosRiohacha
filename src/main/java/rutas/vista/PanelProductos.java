@@ -21,7 +21,6 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.nio.file.StandardCopyOption;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -635,13 +634,12 @@ public class PanelProductos extends JPanel {
 
     /** Copia la foto a la carpeta del programa, asi no se pierde si la original se borra. */
     static String copiarFoto(File origen, String nombreBase) throws IOException {
-        String nombre = origen.getName().toLowerCase();
-        String ext = nombre.endsWith(".png") ? "png" : "jpg";
-        File carpeta = new File(Ubicaciones.carpetaUsuario(), "fotos");
-        carpeta.mkdirs();
-        File destino = new File(carpeta, nombreBase + "." + ext);
-        Files.copy(origen.toPath(), destino.toPath(), StandardCopyOption.REPLACE_EXISTING);
-        return destino.getAbsolutePath();
+        // se vuelve a revisar al copiar (pudo cambiar el archivo) y la extension sale del contenido
+        try {
+            return FormularioProducto.guardarBytes(FormularioProducto.leerImagenLocal(origen), nombreBase);
+        } catch (IllegalArgumentException e) {
+            throw new IOException(e.getMessage(), e);
+        }
     }
 
     // ------------------------------------------------------------------

@@ -18,6 +18,44 @@ public class PruebasValidacion {
         probarMayusculas();
         probarTextos();
         probarMensajes();
+        probarFotoLocal();
+    }
+
+    static java.io.File imagen(String formato, String nombre) throws Exception {
+        java.io.File d = java.nio.file.Files.createTempDirectory("domiruta_foto").toFile();
+        java.io.File f = new java.io.File(d, nombre);
+        java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(4, 4, java.awt.image.BufferedImage.TYPE_INT_RGB);
+        javax.imageio.ImageIO.write(img, formato, f);
+        return f;
+    }
+
+    /** H9 caso 19: el tipo de la foto se decide por su contenido. */
+    private static void probarFotoLocal() throws Exception {
+        java.io.File gif = imagen("gif", "foto.png");
+        revisar("H9 caso 19: un GIF llamado .png se rechaza", lanza("no es una imagen JPG o PNG", () -> leer(gif)));
+        java.io.File txt = new java.io.File(gif.getParentFile(), "texto.png");
+        java.nio.file.Files.write(txt.toPath(), "hola".getBytes());
+        revisar("H9 caso 18: un texto llamado .png se rechaza", lanza("no es una imagen", () -> leer(txt)));
+        java.io.File png = imagen("png", "de-verdad.jpg");
+        revisar("H9: un PNG de verdad pasa aunque se llame .jpg", noLanza(() -> leer(png)));
+        revisar("H9: un JPG de verdad pasa", noLanza(() -> {
+            try {
+                leer(imagen("jpg", "x.jpg"));
+            } catch (Exception e) {
+                throw new IllegalStateException(e);
+            }
+        }));
+        java.io.File grande = new java.io.File(gif.getParentFile(), "grande.png");
+        java.nio.file.Files.write(grande.toPath(), new byte[1024 * 1024 + 1]);
+        revisar("H9: más de 1 MB se rechaza", lanza("máximo es 1 MB", () -> leer(grande)));
+    }
+
+    static void leer(java.io.File f) {
+        try {
+            rutas.vista.PruebaAcceso.leerImagenLocal(f);
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     /** H6: al usuario no le llegan los detalles tecnicos (quedan en errores.log). */
