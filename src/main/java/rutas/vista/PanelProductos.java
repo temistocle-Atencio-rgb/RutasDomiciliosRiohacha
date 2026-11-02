@@ -639,6 +639,11 @@ public class PanelProductos extends JPanel {
             if (r.errores.isEmpty()) {
                 Aviso.mostrar(this, Aviso.Tipo.BIEN, "Lista importada", r.creados + " creados, " + r.actualizados
                         + " actualizados");
+                if (!r.avisos.isEmpty()) { // se guardaron, pero puede ser un codigo mal escrito
+                    Aviso.mostrar(this, Aviso.Tipo.AVISO, "Revise " + r.avisos.size()
+                            + (r.avisos.size() == 1 ? " código" : " códigos"), r.avisos.get(0)
+                            + (r.avisos.size() > 1 ? " (y " + (r.avisos.size() - 1) + " más)" : ""), true);
+                }
             } else {
                 mostrarErrores(r.errores.size() + (r.errores.size() == 1 ? " fila tiene error" : " filas tienen error"),
                         r.errores);

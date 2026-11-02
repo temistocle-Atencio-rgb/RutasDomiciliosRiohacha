@@ -144,7 +144,7 @@ public class Catalogo {
     // ---------------- cambiar ----------------
 
     public Producto crear(Producto p) throws SQLException {
-        validar(p);
+        validar(p, null);
         Producto guardado = bd.insertarProducto(p.conActivo(true));
         poner(guardado);
         return guardado;
@@ -152,11 +152,11 @@ public class Catalogo {
 
     /** Primero se guarda en la base; solo si salio bien se cambian los arboles. */
     public Producto editar(Producto p) throws SQLException {
-        validar(p);
         Producto viejo = bd.buscarProductoPorId(p.getId());
         if (viejo == null) {
             throw new IllegalArgumentException("Ese producto ya no existe");
         }
+        validar(p, viejo);
         Producto nuevo = p.conActivo(viejo.isActivo());
         bd.actualizarProducto(nuevo);
         if (viejo.isActivo()) {
@@ -193,7 +193,26 @@ public class Catalogo {
         return bd.listarProductos(true);
     }
 
-    private void validar(Producto p) throws SQLException {
+    /** Codigo: letras, numeros y guion (lista blanca). Sin espacios, comillas, comas ni notacion de Excel. */
+    public static final String FORMATO_CODIGO = "[0-9A-Za-z-]{1,40}";
+
+    /**
+     * True si el codigo no es comercial (no son 8, 12 o 13 cifras) o si su digito de control
+     * (EAN-8, UPC-A, EAN-13) cuadra. Si es false solo se avisa: puede ser un codigo propio.
+     */
+    public static boolean digitoControlValido(String codigo) {
+        if (codigo == null || !codigo.matches("\\d{8}|\\d{12}|\\d{13}")) {
+            return true;
+        }
+        int suma = 0;
+        for (int i = codigo.length() - 2, k = 0; i >= 0; i--, k++) {
+            suma += (codigo.charAt(i) - '0') * (k % 2 == 0 ? 3 : 1);
+        }
+        return (10 - suma % 10) % 10 == codigo.charAt(codigo.length() - 1) - '0';
+    }
+
+    /** viejo: el producto como esta guardado (null si es nuevo); lo que no cambio no se vuelve a revisar. */
+    private void validar(Producto p, Producto viejo) throws SQLException {
         if (p.getNombre().isBlank()) {
             throw new IllegalArgumentException("Escriba el nombre");
         }
@@ -205,6 +224,12 @@ public class Catalogo {
         }
         if (p.getPrecioVenta() > ImportadorProductos.PRECIO_MAXIMO || p.getPrecioCompra() > ImportadorProductos.PRECIO_MAXIMO) {
             throw new IllegalArgumentException("El valor máximo es $99.999.999");
+        }
+        boolean codigoNuevo = p.getCodigo() != null && (viejo == null || !p.getCodigo().equals(viejo.getCodigo()));
+        if (codigoNuevo && !p.getCodigo().matches(FORMATO_CODIGO)) {
+            throw new IllegalArgumentException(p.getCodigo().toUpperCase().matches(".*\\d[.,]?\\d*E\\+?\\d+")
+                    ? "Ese código parece cambiado por Excel (notación científica); escríbalo completo"
+                    : "El código lleva solo letras, números y guion (sin espacios, comillas ni puntos), máximo 40");
         }
         if (p.getCodigo() != null) {
             Producto otro = bd.buscarPorCodigoEnBase(p.getCodigo());

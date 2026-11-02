@@ -42,6 +42,8 @@ public final class ImportadorProductos {
         public int creados;
         public int actualizados;
         public final List<String> errores = new ArrayList<>();
+        /** Lo que se guardo pero conviene revisar (codigo comercial con el digito de control malo). */
+        public final List<String> avisos = new ArrayList<>();
     }
 
     public static Resultado importar(File csv, Catalogo cat) throws IOException {
@@ -81,7 +83,10 @@ public final class ImportadorProductos {
                         continue;
                     }
                     try {
-                        importarFila(partir(lineas.get(i), sep), col, cat, r, categorias);
+                        String cod = importarFila(partir(lineas.get(i), sep), col, cat, r, categorias);
+                        if (!Catalogo.digitoControlValido(cod)) {
+                            r.avisos.add("Fila " + (i + 1) + ": el dígito de control del código " + cod + " no cuadra");
+                        }
                     } catch (IllegalArgumentException e) {
                         r.errores.add("Fila " + (i + 1) + ": " + e.getMessage());
                     }
@@ -118,7 +123,8 @@ public final class ImportadorProductos {
         }
     }
 
-    private static void importarFila(List<String> f, Map<String, Integer> col, Catalogo cat, Resultado r,
+    /** Guarda una fila y devuelve su codigo (para el aviso del digito de control). */
+    private static String importarFila(List<String> f, Map<String, Integer> col, Catalogo cat, Resultado r,
             Map<String, Long> categorias) throws SQLException {
         String nombre = celda(f, col, "nombre");
         if (nombre.isEmpty()) {
@@ -165,6 +171,7 @@ public final class ImportadorProductos {
                     viejo.getFoto(), true, categoriaId, viejo.isManejaInventario()));
             r.actualizados++;
         }
+        return codigo;
     }
 
     private static long valor(String texto, long siFalta, boolean esPlata) {

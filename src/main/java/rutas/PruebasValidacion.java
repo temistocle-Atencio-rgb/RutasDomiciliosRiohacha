@@ -14,6 +14,56 @@ public class PruebasValidacion {
         probarPrecioCero();
         probarCsvFormulas();
         probarTodoONada();
+        probarFormatoCodigo();
+    }
+
+    /** Crea un producto con ese codigo (null si se guardo; el mensaje si se rechazo). */
+    static String crearConCodigo(rutas.logica.Catalogo cat, String codigo) {
+        try {
+            cat.crear(new rutas.modelo.Producto(0, codigo, "P " + codigo, Unidad.UNIDAD, 1000, 0, 0, 0, null, true));
+            return null;
+        } catch (IllegalArgumentException e) {
+            return e.getMessage();
+        } catch (java.sql.SQLException e) {
+            return "SQL " + e.getMessage();
+        }
+    }
+
+    /** H3: formato del codigo (casos 5, 7 y 8). */
+    private static void probarFormatoCodigo() throws Exception {
+        try (rutas.logica.BaseTienda bd = PruebasCaja.baseTemporal()) {
+            rutas.logica.Catalogo cat = new rutas.logica.Catalogo(bd);
+            String e5 = crearConCodigo(cat, "7,7E+12");
+            revisar("H3 caso 5: «7,7E+12» en el formulario se rechaza explicando lo de Excel: " + e5,
+                    e5 != null && e5.contains("notación científica"));
+            String e7 = crearConCodigo(cat, "234567890'");
+            revisar("H3 caso 7: código con apóstrofe se rechaza: " + e7, e7 != null && e7.contains("solo letras, números"));
+            revisar("H3: con espacio en medio o de más de 40 se rechaza", crearConCodigo(cat, "770 123") != null
+                    && crearConCodigo(cat, "A".repeat(41)) != null);
+            revisar("H3: códigos propios con letras y guion sí entran", crearConCodigo(cat, "XY-CH-001") == null);
+            revisar("H3 caso 4: ceros a la izquierda se conservan", crearConCodigo(cat, "0012345678905") == null
+                    && cat.buscarCodigo("0012345678905") != null);
+            revisar("H3: dígito de control de EAN-13, EAN-8 y UPC-A", rutas.logica.Catalogo.digitoControlValido("7702004003508")
+                    && rutas.logica.Catalogo.digitoControlValido("96385074")
+                    && rutas.logica.Catalogo.digitoControlValido("036000291452"));
+            revisar("H3 caso 8: EAN-13 con el dígito malo solo da aviso (se guarda)",
+                    !rutas.logica.Catalogo.digitoControlValido("7702004003500") && crearConCodigo(cat, "7702004003500") == null);
+            revisar("H3: un código propio no se revisa como EAN", rutas.logica.Catalogo.digitoControlValido("ABC123")
+                    && rutas.logica.Catalogo.digitoControlValido("12345"));
+            ImportadorProductos.Resultado r = importar(cat, "nombre;codigo;precio_venta\nCafé;7702004003517;5000\n");
+            revisar("H3: el importador guarda el EAN con dígito malo y lo deja en avisos: " + r.avisos,
+                    r.errores.isEmpty() && r.creados == 1 && r.avisos.size() == 1 && r.avisos.get(0).contains("7702004003517"));
+            // un codigo viejo que no cumple el formato nuevo no impide editar lo demas
+            long id = bd.insertarProducto(new rutas.modelo.Producto(0, "VIEJO 1", "Viejo", Unidad.UNIDAD, 900, 0, 0, 0, null, true)).getId();
+            cat.recargar();
+            revisar("H3: un código viejo con espacio no impide cambiar el precio", noLanza(() -> {
+                try {
+                    cat.editar(new rutas.modelo.Producto(id, "VIEJO 1", "Viejo", Unidad.UNIDAD, 950, 0, 0, 0, null, true));
+                } catch (java.sql.SQLException e) {
+                    throw new IllegalStateException(e);
+                }
+            }));
+        }
     }
 
     /** H5 caso 20: 3 filas con la del medio mala: no se guarda ninguna, ni la categoria nueva. */

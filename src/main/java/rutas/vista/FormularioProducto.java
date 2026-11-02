@@ -1145,6 +1145,10 @@ final class FormularioProducto {
                 alCrear.accept(cat.buscarPorId(p.getId()) != null ? cat.buscarPorId(p.getId()) : p);
             }
             Aviso.mostrar(panel, Aviso.Tipo.BIEN, eraNuevo ? "Producto creado" : "Cambios guardados", p.getNombre());
+            if (!Catalogo.digitoControlValido(p.getCodigo())) { // solo aviso: puede ser un codigo propio
+                Aviso.mostrar(panel, Aviso.Tipo.AVISO, "Revise el código " + p.getCodigo(),
+                        "Su dígito de control no cuadra como código de barras comercial. Si es un código propio, está bien.", true);
+            }
         } catch (IllegalArgumentException e) {
             decir(e.getMessage(), false);
         } catch (SQLException | IOException e) {
