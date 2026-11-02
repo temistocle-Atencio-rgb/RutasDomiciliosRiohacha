@@ -91,6 +91,8 @@ public final class Tema {
         cargar("poppins-bold", "Poppins-Bold.ttf");
         cargar("poppins-semibold", "Poppins-SemiBold.ttf");
         cargar("inter", "Inter.ttf");
+        cargar("inter-semibold", "Inter-SemiBold.ttf"); // el recibo carta (manual de facturas) usa Inter con pesos
+        cargar("inter-bold", "Inter-Bold.ttf");
     }
 
     private static void cargar(String clave, String archivo) {
@@ -123,6 +125,15 @@ public final class Tema {
         return f.deriveFont(tamano);
     }
 
+    /*
+     * Tamanos de letra del programa (para no agrandar de mas). Menus y texto: 12.5 a 14.
+     * Titulo de ventana o banda azul: 16. Titulo de pantalla: 21. Una cifra importante
+     * (total, vueltas): 26. Nada de 30 para arriba.
+     */
+    public static final float LETRA_VENTANA = 16f;
+    public static final float LETRA_CIFRA = 26f;
+    public static final float LETRA_CIFRA_MEDIA = 20f;
+
     public static Font titulo(float tamano) {
         return fuente("poppins-bold", Font.BOLD, tamano);
     }
@@ -133,6 +144,16 @@ public final class Tema {
 
     public static Font texto(float tamano) {
         return fuente("inter", Font.PLAIN, tamano);
+    }
+
+    /** Inter seminegrita (recibo carta). */
+    public static Font interSemi(float tamano) {
+        return fuente("inter-semibold", Font.BOLD, tamano);
+    }
+
+    /** Inter negrita (recibo carta: el total). */
+    public static Font interNegrita(float tamano) {
+        return fuente("inter-bold", Font.BOLD, tamano);
     }
 
     public static Font textoFuerte(float tamano) {

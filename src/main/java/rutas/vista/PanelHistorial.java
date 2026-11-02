@@ -33,7 +33,10 @@ public class PanelHistorial extends JPanel {
         setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
         setBorder(BorderFactory.createEmptyBorder(16, 16, 20, 16));
 
-        add(Tema.tituloPantalla("Historial de rutas"));
+        add(Tema.tituloPantalla("Historial"));
+        add(Tema.espacio(6));
+        add(new PanelHistorialSalidas(app));
+        add(Tema.espacio(12));
         add(Tema.parrafo("Las rutas, clientes y novedades se guardan en una base de datos SQLite "
                 + "(domiruta.db) en la carpeta del usuario:", 272));
         Tema.Parrafo ruta = Tema.parrafo(app.getCarpetaUsuario().getAbsolutePath(), 272);
@@ -52,6 +55,7 @@ public class PanelHistorial extends JPanel {
         add(Tema.espacio(10));
 
         Tema.Tarjeta t = new Tema.Tarjeta();
+        t.add(Tema.seccion("Rutas guardadas"));
         t.add(resumen);
         t.add(Tema.espacio(6));
         lista.setCellRenderer(new Render());

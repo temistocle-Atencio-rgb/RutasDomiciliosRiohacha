@@ -1,5 +1,6 @@
 package rutas.vista;
 
+import rutas.logica.AjustesRecibo;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -27,6 +28,8 @@ import rutas.modelo.Cliente;
 import rutas.modelo.Geo;
 import rutas.modelo.Parada;
 import rutas.modelo.Ruta;
+import rutas.modelo.Salida;
+import rutas.logica.NubeRepartidor;
 
 /**
  * Estado compartido del programa: el mapa, las estructuras de busqueda,
@@ -47,6 +50,8 @@ public class Aplicacion {
     private final ArbolAVL<String, Cliente> clientes;
     private final List<Ruta> historial;
     private final List<Parada> entregas = new ArrayList<>();
+    private final List<Salida> salidas = new ArrayList<>(); // las de hoy y las que siguen abiertas
+    private String firmaPendientes = "";
     private final List<Runnable> oyentes = new ArrayList<>();
     private Parada base;
     private List<Ruta> rutas = new ArrayList<>();
@@ -82,6 +87,9 @@ public class Aplicacion {
             bd.cargarDirecciones(geo);
             clientes = bd.cargarClientes();
             historial = bd.cargarHistorial(mapa);
+            entregas.addAll(bd.cargarPendientes()); // las que quedaron sin salir (si se cerró el programa)
+            firmaPendientes = firma(entregas);
+            salidas.addAll(bd.cargarSalidas(java.time.LocalDate.now().atStartOfDay()));
         } catch (SQLException e) {
             bd.close();
             throw new IOException("Error leyendo la base de datos: " + e.getMessage(), e);
@@ -165,13 +173,35 @@ public class Aplicacion {
 
     // ---------------- entregas ----------------
 
+    private Object ventaEnCurso; // mientras la caja arma una venta a domicilio, lo que se agrega es de ella
+
+    /** La venta a domicilio que arma la caja (null si no hay). */
+    Object getVentaEnCurso() {
+        return ventaEnCurso;
+    }
+
+    /** La caja empieza (marca) o termina (null) una venta a domicilio. */
+    void setVentaEnCurso(Object marca) {
+        ventaEnCurso = marca;
+    }
+
+    private void marcar(Parada p) {
+        if (ventaEnCurso != null && p.getVenta() == null) {
+            p.setVenta(ventaEnCurso);
+        }
+    }
+
     public void agregarEntrega(Parada p) {
+        marcar(p);
         entregas.add(p);
         limpiarRuta();
         avisar();
     }
 
     public void reemplazarEntrega(int i, Parada p) {
+        if (p.getVenta() == null) { // al editarla sigue siendo de la misma venta (o de ninguna)
+            p.setVenta(entregas.get(i).getVenta());
+        }
         entregas.set(i, p);
         limpiarRuta();
         avisar();
@@ -301,8 +331,27 @@ public class Aplicacion {
         return c;
     }
 
-    /** Nombre del negocio para el mensaje al cliente ("" si no se ha dicho). */
+    /** Datos del negocio y de la impresora (Configuración). Si no se pueden leer, los de siempre. */
+    public AjustesRecibo getAjustesRecibo() {
+        if (tienda != null) {
+            try {
+                return AjustesRecibo.leer(tienda);
+            } catch (SQLException e) {
+                Ubicaciones.registrarError(e);
+            }
+        }
+        return new AjustesRecibo();
+    }
+
+    /** Nombre del negocio para el mensaje al cliente ("" si no se ha dicho). Manda el de Configuración. */
     public String getNegocio() {
+        String deConfig = getAjustesRecibo().nombre;
+        if (!deConfig.isBlank()) {
+            return deConfig;
+        }
+        if (bd == null) {
+            return "";
+        }
         try {
             String n = bd.leerConfig("nombre_negocio");
             return n == null ? "" : n;
@@ -428,11 +477,252 @@ public class Aplicacion {
             p.copiarDatosDe(entregas.get(correccionIndice));
             entregas.set(correccionIndice, p);
         } else {
+            marcar(p);
             entregas.add(p);
         }
         correccionTexto = null;
         limpiarRuta();
         avisar();
+    }
+
+    // ---------------- salidas del repartidor ----------------
+
+    /** Las pendientes se guardan solo si cambiaron (avisar se llama seguido). */
+    private void guardarPendientes() {
+        String f = firma(entregas);
+        if (f.equals(firmaPendientes)) {
+            return;
+        }
+        try {
+            bd.guardarPendientes(entregas);
+            firmaPendientes = f;
+        } catch (SQLException e) {
+            Ubicaciones.registrarError(e);
+        }
+    }
+
+    private static String firma(List<Parada> l) {
+        StringBuilder b = new StringBuilder();
+        for (Parada p : l) {
+            b.append(p.getNombre()).append('|').append(p.getDireccion()).append('|').append(p.getLat()).append('|')
+                    .append(p.getLon()).append('|').append(p.getTelefono()).append('|').append(p.getValorPedido())
+                    .append('|').append(p.isPagado()).append('|').append(p.getPagaCon()).append('|')
+                    .append(p.isUrgente()).append('|').append(p.getVentaNumero()).append('|').append(p.getProductos())
+                    .append('\n');
+        }
+        return b.toString();
+    }
+
+    public List<Salida> getSalidas() {
+        return salidas;
+    }
+
+    /** Salidas cerradas entre dos fechas (para el historial). */
+    public List<Salida> historialSalidas(java.time.LocalDate desde, java.time.LocalDate hasta) throws SQLException {
+        return bd.historialSalidas(desde, hasta);
+    }
+
+    public String fotoEntrega(long idEntrega) throws SQLException {
+        return bd.fotoEntrega(idEntrega);
+    }
+
+    public List<Salida> salidasAbiertas() {
+        List<Salida> l = new ArrayList<>();
+        for (Salida s : salidas) {
+            if (s.abierta()) {
+                l.add(s);
+            }
+        }
+        return l;
+    }
+
+    /**
+     * El repartidor sale con las entregas de la ruta: dejan de estar pendientes y pasan a una salida
+     * En camino. La ruta se guarda en el historial. Devuelve la salida (todavía sin subir a internet).
+     */
+    public Salida despachar(Ruta r, String repartidor) throws IOException {
+        Salida s = new Salida();
+        s.repartidor = repartidor == null ? "" : repartidor;
+        for (Parada p : r.getParadas()) {
+            Salida.Entrega e = new Salida.Entrega(p, cobrarEnPuerta(p));
+            e.domicilio = domicilioDe(p);
+            s.entregas.add(e);
+        }
+        guardar(() -> bd.guardarSalida(s)); // primero se guarda: si falla, las entregas siguen pendientes
+        for (Parada p : r.getParadas()) {
+            quitarDePendientes(p);
+        }
+        salidas.add(s);
+        try {
+            guardarRutaEnHistorial();
+        } catch (IOException e) {
+            Ubicaciones.registrarError(e); // el historial no es lo importante aqui
+        }
+        // la ruta enviada ya no es de las pendientes; las otras motos (si habia) siguen en el mapa
+        List<Ruta> otras = new ArrayList<>(rutas);
+        otras.remove(r);
+        rutas = otras;
+        rutaActiva = 0;
+        if (panelMapa != null) {
+            panelMapa.setRutas(rutas.isEmpty() ? null : rutas, 0);
+        }
+        avisar();
+        return s;
+    }
+
+    private void quitarDePendientes(Parada p) {
+        for (int i = 0; i < entregas.size(); i++) {
+            Parada q = entregas.get(i);
+            if (q == p || (q.getNombre().equals(p.getNombre()) && q.getDireccion().equals(p.getDireccion())
+                    && q.getLat() == p.getLat() && q.getLon() == p.getLon())) {
+                entregas.remove(i);
+                return;
+            }
+        }
+    }
+
+    /** Una entrega pendiente se manda en una salida que ya va en camino. */
+    public Salida.Entrega agregarASalida(Salida s, Parada p) throws IOException {
+        if (!s.abierta() || s.subiendo) {
+            throw new IOException("Esa salida ya no recibe entregas");
+        }
+        Salida.Entrega e = new Salida.Entrega(p, cobrarEnPuerta(p));
+        e.domicilio = domicilioDe(p);
+        s.entregas.add(e);
+        Salida.Estado antes = s.estado;
+        s.revisarEstado();
+        try {
+            guardar(() -> bd.guardarSalida(s));
+        } catch (IOException ex) {
+            s.entregas.remove(e);
+            s.estado = antes;
+            throw ex;
+        }
+        quitarDePendientes(p);
+        avisar();
+        return e;
+    }
+
+    public void guardarSalida(Salida s) throws IOException {
+        guardar(() -> bd.guardarSalida(s));
+    }
+
+    /**
+     * El repartidor volvió: la salida se cierra. Las entregas que no se pudieron entregar vuelven a
+     * las pendientes (con sus datos) para la próxima salida.
+     */
+    public void cerrarSalida(Salida s, java.util.Set<Salida.Entrega> noEntregadas) throws IOException {
+        if (!s.abierta() || s.subiendo) {
+            return; // ya se cerró (dos clics) o todavía se está subiendo
+        }
+        for (Salida.Entrega e : s.entregas) {
+            if (noEntregadas.contains(e)) {
+                if (!e.noEntregada()) {
+                    e.estado = Salida.Entrega.NO_ENTREGADO;
+                }
+                Parada vuelve = new Parada(e.parada.getNombre(), e.parada.getDireccion(), e.parada.getLat(),
+                        e.parada.getLon());
+                vuelve.setNodo(e.parada.getNodo());
+                vuelve.copiarDatosDe(e.parada);
+                vuelve.setVenta(null); // conserva el número de la venta: es la misma bolsa
+                vuelve.setPrecision("Volvió sin entregar" + (e.motivo.isEmpty() ? "" : ": " + e.motivo));
+                entregas.add(vuelve);
+            } else {
+                e.estado = Salida.Entrega.ENTREGADO;
+            }
+        }
+        s.estado = Salida.Estado.CERRADA;
+        s.cerrada = java.time.LocalDateTime.now();
+        guardar(() -> bd.guardarSalida(s));
+        if (!noEntregadas.isEmpty()) {
+            limpiarRuta(); // volvieron entregas a pendientes: la ruta calculada ya no sirve
+        }
+        avisar();
+    }
+
+    /** Si la salida terminó y no debe nada (ni plata ni bolsas), se cierra sola. True si la cerró. */
+    public boolean cerrarSiTermino(Salida s) {
+        if (!s.cierraSola()) {
+            return false;
+        }
+        try {
+            cerrarSalida(s, java.util.Set.of());
+            return true;
+        } catch (IOException e) { // no se pudo guardar: sigue abierta (se vuelve a intentar en la próxima revisión)
+            Ubicaciones.registrarError(e);
+            s.estado = Salida.Estado.REGRESANDO;
+            s.cerrada = null;
+            avisar();
+            return false;
+        }
+    }
+
+    /** Quienes llevan los domicilios (fijos, independientes y grupos), guardados en este computador. */
+    public List<rutas.modelo.Domiciliario> getDomiciliarios() {
+        try {
+            return bd.cargarDomiciliarios();
+        } catch (SQLException e) {
+            Ubicaciones.registrarError(e);
+            return new ArrayList<>();
+        }
+    }
+
+    public void guardarDomiciliario(rutas.modelo.Domiciliario d) throws IOException {
+        if (d.nombre.length() < 2) {
+            throw new IOException("Escriba el nombre");
+        }
+        guardar(() -> bd.guardarDomiciliario(d));
+    }
+
+    public void eliminarDomiciliario(rutas.modelo.Domiciliario d) throws IOException {
+        guardar(() -> bd.eliminarDomiciliario(d.id));
+    }
+
+    /** La conexión con Supabase, o null si no se ha configurado (sin internet todo sigue funcionando). */
+    public NubeRepartidor getNube() {
+        NubeRepartidor.Ajustes a = getAjustesNube();
+        if (a == null || !a.listo()) {
+            return null;
+        }
+        if (nube == null) {
+            nube = new NubeRepartidor(a); // una sola conexion (se renueva si cambia la configuracion)
+        }
+        return nube;
+    }
+
+    private NubeRepartidor.Ajustes ajustesNube;
+    private NubeRepartidor nube;
+    private Seguimiento seguimiento;
+
+    public NubeRepartidor.Ajustes getAjustesNube() {
+        if (tienda == null) {
+            return null;
+        }
+        if (ajustesNube == null) {
+            try {
+                ajustesNube = NubeRepartidor.Ajustes.leer(tienda);
+            } catch (SQLException e) {
+                return null;
+            }
+        }
+        return ajustesNube;
+    }
+
+    /** Se guardó otra configuracion de Supabase: la proxima vez se vuelve a leer. */
+    public void nubeCambio() {
+        ajustesNube = null;
+        nube = null;
+    }
+
+    void setSeguimiento(Seguimiento s) {
+        seguimiento = s;
+    }
+
+    /** Pide una revision ya (por ejemplo despues de marcar o agregar algo); null si no hay ventana. */
+    void revisarYa() {
+        if (seguimiento != null) {
+            seguimiento.revisar();
+        }
     }
 
     // ---------------- persistencia ----------------
@@ -469,6 +759,50 @@ public class Aplicacion {
         avisar();
     }
 
+    /**
+     * Guarda un cliente editado. Si le cambiaron el nombre se quita el viejo del arbol y sus ventas
+     * pasan al nombre nuevo (asi no pierde sus compras).
+     */
+    public void reemplazarCliente(String nombreViejo, Cliente c) throws IOException {
+        String kv = Geo.normalizar(nombreViejo), kn = Geo.normalizar(c.getNombre());
+        if (kv.equals(kn)) {
+            guardarCliente(c);
+            return;
+        }
+        if (clientes.buscar(kn) != null) {
+            throw new IllegalArgumentException("Ya hay un cliente llamado «" + clientes.buscar(kn).getNombre() + "»");
+        }
+        guardar(() -> bd.renombrarCliente(nombreViejo, c));
+        clientes.eliminar(kv);
+        clientes.insertar(kn, c);
+        if (tienda != null) {
+            try {
+                tienda.renombrarClienteEnVentas(nombreViejo, c.getNombre());
+            } catch (SQLException e) {
+                Ubicaciones.registrarError(e);
+                avisar();
+                throw new IOException("El cliente quedó con el nombre nuevo, pero sus compras de antes siguen con el"
+                        + " nombre viejo: " + e.getMessage(), e);
+            }
+        }
+        avisar();
+    }
+
+    /** Importar: todos los clientes se guardan juntos (si uno falla no se guarda ninguno). */
+    public void guardarClientes(List<Cliente> lista) throws IOException {
+        guardar(() -> bd.guardarClientes(lista));
+        for (Cliente c : lista) {
+            clientes.insertar(Geo.normalizar(c.getNombre()), c);
+        }
+        avisar();
+    }
+
+    /** La nota para el domiciliario del cliente guardado con ese nombre ("" si no hay). */
+    public String notaDe(String nombre) {
+        Cliente c = buscarCliente(nombre);
+        return c == null ? "" : c.getNota();
+    }
+
     public void eliminarCliente(String nombre) throws IOException {
         guardar(() -> bd.eliminarCliente(nombre));
         clientes.eliminar(Geo.normalizar(nombre));
@@ -502,10 +836,27 @@ public class Aplicacion {
         oyentes.add(r);
     }
 
+    /** Deja de avisarle a un oyente (el cobro a domicilio escucha solo mientras esta abierto). */
+    public void quitarOyente(Runnable r) {
+        oyentes.remove(r);
+    }
+
+    private VentanaPrincipal ventana; // para prestar el mapa y la ruta al cobro a domicilio
+
+    void setVentana(VentanaPrincipal v) {
+        ventana = v;
+    }
+
+    VentanaPrincipal getVentana() {
+        return ventana;
+    }
+
     public void avisar() {
+        guardarPendientes();
         if (panelMapa != null) {
             panelMapa.setBase(base);
             panelMapa.setPendientes(entregas);
+            panelMapa.setSalidas(salidas);
         }
         for (Runnable r : oyentes) {
             r.run();
@@ -543,9 +894,20 @@ public class Aplicacion {
         this.tienda = tienda;
         this.catalogo = catalogo;
         this.sesion = sesion;
+        this.ordenes = null; // otra base: se vuelve a crear
     }
 
     public rutas.logica.BaseTienda getTienda() { return tienda; }
+
+    private rutas.logica.BaseOrdenes ordenes;
+
+    /** Proveedores y ordenes de compra (en la misma base de la tienda). */
+    public rutas.logica.BaseOrdenes getOrdenes() {
+        if (ordenes == null && tienda != null) {
+            ordenes = new rutas.logica.BaseOrdenes(tienda);
+        }
+        return ordenes;
+    }
 
     public rutas.logica.Catalogo getCatalogo() { return catalogo; }
 

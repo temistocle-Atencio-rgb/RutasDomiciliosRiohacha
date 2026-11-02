@@ -393,9 +393,9 @@ public class PanelVender extends JPanel {
         JPanel der = new JPanel(new BorderLayout()) {
             @Override
             public Dimension getPreferredSize() {
-                // cerca de la mitad del ancho, entre 540 y 680 px (la tabla tiene 7 columnas)
+                // un poco menos de la mitad, entre 540 y 660 px: la tabla tiene 7 columnas y a la izquierda caben 4 tarjetas
                 int ancho = PanelVender.this.getWidth();
-                int w = ancho <= 0 ? 560 : Math.max(540, Math.min(680, (int) (ancho * 0.47)));
+                int w = ancho <= 0 ? 560 : Math.max(540, Math.min(660, (int) (ancho * 0.42)));
                 return new Dimension(w, 100);
             }
         };
@@ -460,6 +460,7 @@ public class PanelVender extends JPanel {
         lt.setAlignmentX(RIGHT_ALIGNMENT);
         tot.add(lt);
         lblTotal.setFont(Tema.titulo(36));
+        lblTotal.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 4)); // el ultimo numero en negrita se sale un poquito
         lblTotal.setForeground(Tema.GRIS_OSCURO);
         lblTotal.setAlignmentX(RIGHT_ALIGNMENT);
         tot.add(lblTotal);
@@ -621,6 +622,9 @@ public class PanelVender extends JPanel {
 
     /** "12", "-3" o "4,5 lb": lo que queda en la tienda. */
     private static String textoStock(Producto p) {
+        if (!p.isManejaInventario()) {
+            return "—"; // no se cuentan existencias
+        }
         return p.getUnidad() == Unidad.UNIDAD ? PanelProductos.cantidad(p.getStock()) : CuadroGranel.peso(p.getStock(), p);
     }
 
@@ -740,7 +744,9 @@ public class PanelVender extends JPanel {
                 setHorizontalAlignment(CENTER);
                 setFont(Tema.texto(13));
                 Producto p = r < carrito.getLineas().size() ? actual(carrito.getLineas().get(r)) : null;
-                if (p != null && p.getStock() <= 0) {
+                if (p != null && !p.isManejaInventario()) {
+                    setForeground(Tema.GRIS_TEXTO);
+                } else if (p != null && p.getStock() <= 0) {
                     setForeground(Tema.ERROR_TEXTO);
                 } else if (p != null && p.getStock() <= p.getMinimo()) {
                     setForeground(Tema.AVISO_TEXTO);
@@ -788,7 +794,7 @@ public class PanelVender extends JPanel {
     }
 
     /** Relleno del buscador con la lupa a la izquierda y el codigo de barras a la derecha. */
-    private static class BordeIconos extends javax.swing.border.AbstractBorder {
+    static class BordeIconos extends javax.swing.border.AbstractBorder {
         private final javax.swing.Icon izq;
         private final javax.swing.Icon der;
 
@@ -839,7 +845,7 @@ public class PanelVender extends JPanel {
     }
 
     /** Columna para quitar el producto: una caneca dibujada en rojo (sin emojis). */
-    private static class Quitar extends DefaultTableCellRenderer {
+    static class Quitar extends DefaultTableCellRenderer {
         Quitar() {
             setToolTipText("Quitar de la venta (Supr)");
         }
@@ -1296,12 +1302,8 @@ public class PanelVender extends JPanel {
             } else if (id == null) {
                 g.setColor(activa ? Tema.BLANCO : Tema.GRIS_CLARO);
                 g.fillOval(cx - d / 2, 12, d, d);
-                // cuatro cuadritos: "todos"
-                g.setColor(Tema.AZUL);
-                g.setStroke(new BasicStroke(1.8f));
-                for (int i = 0; i < 4; i++) {
-                    g.drawRoundRect(cx - 11 + (i % 2) * 12, cy - 11 + (i / 2) * 12, 9, 9, 3, 3);
-                }
+                // "todos": el icono de categorias de la carpeta de iconos del diseño
+                Iconos.dibujar(g, "categorias", cx - 11, cy - 11, 22, Tema.AZUL);
             } else {
                 g.setColor(activa ? Tema.BLANCO : Tema.GRIS_CLARO);
                 g.fillOval(cx - d / 2, 12, d, d);

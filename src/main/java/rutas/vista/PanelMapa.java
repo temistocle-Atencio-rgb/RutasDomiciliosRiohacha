@@ -37,6 +37,7 @@ import rutas.modelo.Incidente;
 import rutas.modelo.Lugar;
 import rutas.modelo.Parada;
 import rutas.modelo.Ruta;
+import rutas.modelo.Salida;
 import rutas.modelo.TipoIncidente;
 import rutas.modelo.Via;
 
@@ -129,6 +130,12 @@ public class PanelMapa extends JPanel {
             public void actionPerformed(java.awt.event.ActionEvent e) {
                 terminarAnimacion(); // Esc tambien salta la animacion de la ruta
                 setModo(Modo.NORMAL);
+            }
+
+            @Override
+            public boolean isEnabled() {
+                // si no hay nada que cancelar, Esc le llega a la ventana de encima (por ejemplo el cobro)
+                return animando || modo != Modo.NORMAL;
             }
         });
         agregarControles();
@@ -581,6 +588,27 @@ public class PanelMapa extends JPanel {
     public void setBase(Parada base) {
         this.base = base;
         repaint();
+    }
+
+    private List<Salida> salidas = new ArrayList<>();
+
+    /** Salidas abiertas: sus entregas en camino y por dónde va el repartidor. */
+    public void setSalidas(List<Salida> todas) {
+        List<Salida> l = new ArrayList<>();
+        for (Salida s : todas) {
+            if (s.abierta()) {
+                l.add(s);
+            }
+        }
+        this.salidas = l;
+        repaint();
+    }
+
+    /** Lleva el mapa hasta el repartidor de una salida. */
+    public void verRepartidor(Salida s) {
+        if (!Double.isNaN(s.lat)) {
+            centrarEn(Geo.x(s.lon), Geo.y(s.lat), 0.9);
+        }
     }
 
     public void setPendientes(List<Parada> pendientes) {
@@ -1441,6 +1469,7 @@ public class PanelMapa extends JPanel {
                 }
             }
         }
+        dibujarSalidas(g);
         if (base != null) {
             int x = (int) sx(Geo.x(base.getLon())), y = (int) sy(Geo.y(base.getLat()));
             // el cubo va solo, sin circulo ni cuadro (regla del logo); un borde blanco lo separa del mapa
@@ -1457,6 +1486,42 @@ public class PanelMapa extends JPanel {
                 g.setFont(Tema.textoFuerte(12));
                 textoConHalo(g, textoResaltado, x + 12, y - 18, Tema.AZUL_PROFUNDO);
             }
+        }
+    }
+
+    /**
+     * Entregas que ya van con el repartidor: en camino en azul y ya entregadas en verde (sin número de
+     * orden de la ruta, para no confundirlas con las pendientes). El repartidor es un círculo azul
+     * profundo con una R y la hora de su última ubicación.
+     */
+    private void dibujarSalidas(Graphics2D g) {
+        for (Salida s : salidas) {
+            for (Salida.Entrega e : s.entregas) {
+                if (e.enCamino()) {
+                    marcadorNumero(g, e.parada, "", Tema.AZUL);
+                } else if (e.entregada()) {
+                    marcadorNumero(g, e.parada, "", Tema.EXITO_TEXTO);
+                }
+            }
+        }
+        for (Salida s : salidas) {
+            if (Double.isNaN(s.lat) || s.ubicacionEn == null) {
+                continue;
+            }
+            int x = (int) sx(Geo.x(s.lon)), y = (int) sy(Geo.y(s.lat));
+            boolean vieja = java.time.Duration.between(s.ubicacionEn, java.time.LocalDateTime.now()).toMinutes() >= 5;
+            g.setColor(Color.WHITE);
+            g.fillOval(x - 16, y - 16, 32, 32);
+            g.setColor(vieja ? Tema.GRIS_TEXTO : Tema.AZUL_PROFUNDO);
+            g.fillOval(x - 13, y - 13, 26, 26);
+            g.setFont(Tema.titulo(13));
+            FontMetrics fm = g.getFontMetrics();
+            g.setColor(Color.WHITE);
+            g.drawString("R", x - fm.stringWidth("R") / 2, y + fm.getAscent() / 2 - 2);
+            g.setFont(Tema.textoFuerte(12));
+            String txt = (s.repartidor.isEmpty() ? "Repartidor" : s.repartidor) + " · "
+                    + Ruta.FORMATO_HORA.format(s.ubicacionEn);
+            textoConHalo(g, txt, x + 18, y + 5, vieja ? Tema.GRIS_TEXTO : Tema.AZUL_PROFUNDO);
         }
     }
 

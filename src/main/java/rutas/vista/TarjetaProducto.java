@@ -18,14 +18,16 @@ import rutas.modelo.Producto;
 import rutas.modelo.Unidad;
 
 /**
- * Tarjeta de un producto en la caja: foto, nombre, precio y (si hace falta)
- * cuanto queda. Clic, Enter o espacio lo agregan a la venta.
+ * Tarjeta de un producto en la caja, como las de PuveSoft: precio arriba, la foto
+ * grande en el centro y el nombre abajo en una franja gris. Si hace falta, dice
+ * cuanto queda debajo del precio. Clic, Enter o espacio lo agregan a la venta.
  */
 class TarjetaProducto extends javax.swing.JPanel {
 
-    static final int ANCHO = 168;
-    static final int ALTO = 208;
-    private static final int FOTO = 112;
+    static final int ANCHO = 148;   // minimo; la rejilla las estira para llenar la fila
+    static final int ALTO = 218;
+    private static final int CABEZA = 48; // precio y estado
+    private static final int FRANJA = 46; // nombre en dos renglones
 
     private final Producto producto;
     private boolean encima;
@@ -90,6 +92,9 @@ class TarjetaProducto extends javax.swing.JPanel {
 
     /** Texto del estado del inventario, o null si no hay nada que decir. */
     static String estado(Producto p) {
+        if (!p.isManejaInventario()) {
+            return null;
+        }
         if (p.getStock() <= 0) {
             return "Sin existencias";
         }
@@ -123,39 +128,46 @@ class TarjetaProducto extends javax.swing.JPanel {
             g.drawRoundRect(x, y, cw, ch, Tema.ARCO, Tema.ARCO);
         }
 
-        // foto (o el paquete dibujado)
-        int fx = x + 12, fy = y + 12, fw = cw - 24, fh = FOTO - 12;
+        int tx = x + 12, ancho = cw - 24;
+
+        // arriba: precio en azul y, debajo, el estado como texto de color (sin pildoras)
+        String est = estado(producto);
+        g.setFont(Tema.subtitulo(15));
+        g.setColor(Tema.AZUL);
+        g.drawString(recortar(g.getFontMetrics(), precio(producto), ancho), tx, y + 25);
+        if (est != null) {
+            g.setFont(Tema.texto(12));
+            g.setColor(producto.getStock() <= 0 ? Tema.ERROR_TEXTO : Tema.AVISO_TEXTO);
+            g.drawString(est, tx, y + 42);
+        }
+
+        // centro: la foto grande (o el paquete dibujado)
+        int fy = y + CABEZA, fh = ch - CABEZA - FRANJA - 8;
+        int fx = x + 14, fw = cw - 28;
         Image img = Fotos.cargar(producto.getFoto(), fw, fh);
         if (img != null) {
             Fotos.dibujar(g, img, fx, fy, fw, fh);
         } else {
-            g.setColor(Tema.GRIS_CLARO);
-            g.fillRoundRect(fx, fy, fw, fh, Tema.ARCO, Tema.ARCO);
-            Fotos.paquete(g, fx + fw / 2, fy + fh / 2, 40);
+            Fotos.paquete(g, fx + fw / 2, fy + fh / 2, 44);
         }
 
-        // nombre en dos lineas como maximo
-        int tx = x + 12, ancho = cw - 24;
-        int ty = y + FOTO + 18;
-        g.setFont(Tema.textoFuerte(13.5f));
+        // abajo: franja gris con el nombre centrado, dos renglones como maximo
+        int by = y + ch - FRANJA;
+        java.awt.Shape antes = g.getClip();
+        g.clip(new java.awt.geom.RoundRectangle2D.Float(x, y, cw, ch, Tema.ARCO, Tema.ARCO));
+        g.setColor(Tema.GRIS_CLARO);
+        g.fillRect(x, by, cw, FRANJA);
+        g.setClip(antes);
+        g.setFont(Tema.textoFuerte(12.5f));
         g.setColor(Tema.GRIS_OSCURO);
         FontMetrics fm = g.getFontMetrics();
         String[] lineas = dosLineas(fm, producto.getNombre(), ancho);
-        g.drawString(lineas[0], tx, ty);
+        int alto = fm.getHeight() - 2;
+        int y1 = lineas[1] == null ? by + (FRANJA + fm.getAscent() - fm.getDescent()) / 2
+                : by + (FRANJA - 2 * alto) / 2 + fm.getAscent();
+        g.drawString(lineas[0], x + (cw - fm.stringWidth(lineas[0])) / 2, y1);
         if (lineas[1] != null) {
-            g.drawString(lineas[1], tx, ty + fm.getHeight() - 2);
-        }
-
-        // precio y estado abajo
-        int base = y + ch - 12;
-        String est = estado(producto);
-        g.setFont(Tema.subtitulo(15.5f));
-        g.setColor(Tema.AZUL);
-        g.drawString(precio(producto), tx, est == null ? base : base - 17);
-        if (est != null) {
-            g.setFont(Tema.texto(12.5f));
-            g.setColor(producto.getStock() <= 0 ? Tema.ERROR_TEXTO : Tema.AVISO_TEXTO);
-            g.drawString(est, tx, base);
+            g.drawString(lineas[1], x + (cw - fm.stringWidth(lineas[1])) / 2, y1 + alto);
         }
         g.dispose();
     }

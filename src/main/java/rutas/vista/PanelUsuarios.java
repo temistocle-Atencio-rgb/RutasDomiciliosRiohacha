@@ -20,7 +20,10 @@ import rutas.logica.BaseTienda;
 import rutas.modelo.Rol;
 import rutas.modelo.Usuario;
 
-/** Usuarios de la tienda (solo el administrador): crear cajeros, cambiar contraseñas, desactivar. */
+/**
+ * Usuarios de la tienda (Configuración › Usuarios, solo el administrador): crear cajeros, cambiar
+ * contraseñas, desactivar y decir qué más puede hacer cada cajero (permisos con casillas).
+ */
 public class PanelUsuarios extends JPanel {
 
     private final Aplicacion app;
@@ -30,6 +33,7 @@ public class PanelUsuarios extends JPanel {
     private final Tema.Boton btnClave = Tema.botonSecundario("Cambiar contraseña");
     private final Tema.Boton btnActivo = Tema.botonPequeno("Desactivar");
     private final Tema.Parrafo lblLista = mensaje();
+    private final JPanel zonaPermisos = new JPanel(); // las casillas del usuario escogido
 
     private final JTextField campoNombre = Tema.campo("Nombre completo");
     private final JTextField campoUsuario = Tema.campo("Usuario para entrar (ej. luis)");
@@ -46,8 +50,9 @@ public class PanelUsuarios extends JPanel {
         setBorder(BorderFactory.createEmptyBorder(16, 16, 20, 16));
 
         add(Tema.tituloPantalla("Usuarios"));
-        add(Tema.parrafo("El administrador ve todo. Los cajeros venden y organizan los domicilios, "
-                + "pero no ven precios de compra, ganancias ni usuarios.", 272));
+        add(Tema.parrafo("El administrador puede todo. Los cajeros venden, organizan los domicilios y consultan "
+                + "el inventario (precio de venta y existencias). Lo demás se lo da usted a cada uno con las casillas.",
+                420));
         add(Tema.espacio(10));
 
         Tema.Tarjeta lst = new Tema.Tarjeta();
@@ -67,6 +72,10 @@ public class PanelUsuarios extends JPanel {
         lst.add(Tema.fila(8, btnClave, btnActivo));
         lst.add(Tema.espacio(4));
         lst.add(lblLista);
+        zonaPermisos.setOpaque(false);
+        zonaPermisos.setLayout(new BoxLayout(zonaPermisos, BoxLayout.Y_AXIS));
+        zonaPermisos.setAlignmentX(LEFT_ALIGNMENT);
+        lst.add(zonaPermisos);
         add(lst);
         add(Tema.espacio(12));
 
@@ -128,6 +137,80 @@ public class PanelUsuarios extends JPanel {
         btnActivo.setEnabled(u != null && u.getId() != miId());
         btnActivo.setText(u != null && !u.isActivo() ? "Activar" : "Desactivar");
         btnActivo.setToolTipText(u != null && u.getId() == miId() ? "Es su propio usuario" : null);
+        mostrarPermisos(u);
+    }
+
+    /** «Qué más puede hacer»: una casilla por permiso; se guarda al marcarla. */
+    private void mostrarPermisos(Usuario u) {
+        zonaPermisos.removeAll();
+        if (u != null) {
+            zonaPermisos.add(Tema.espacio(12));
+            javax.swing.JLabel t = new javax.swing.JLabel("Qué más puede hacer " + u.getNombre());
+            t.setFont(Tema.textoFuerte(14));
+            t.setForeground(Tema.AZUL_PROFUNDO);
+            zonaPermisos.add(t);
+            zonaPermisos.add(Tema.espacio(4));
+            if (u.getRol() == Rol.ADMIN) {
+                Tema.Parrafo p = Tema.parrafo("Es administrador: puede todo.", 300);
+                p.setFont(Tema.texto(13));
+                p.setForeground(Tema.GRIS_TEXTO);
+                zonaPermisos.add(p);
+            } else {
+                Tema.Parrafo p = Tema.parrafo("Siempre puede vender, hacer domicilios y consultar el inventario. "
+                        + "Los cambios valen desde la próxima vez que entre.", 420);
+                p.setFont(Tema.texto(13));
+                p.setForeground(Tema.GRIS_TEXTO);
+                zonaPermisos.add(p);
+                zonaPermisos.add(Tema.espacio(4));
+                java.util.List<javax.swing.JCheckBox> casillas = new java.util.ArrayList<>();
+                java.util.List<rutas.logica.Permiso> cuales = new java.util.ArrayList<>();
+                for (rutas.logica.Permiso pe : rutas.logica.Permiso.values()) {
+                    if (!pe.seDa()) {
+                        continue;
+                    }
+                    javax.swing.JCheckBox c = Tema.casilla(pe.getTexto());
+                    c.setSelected(u.tienePermiso(pe.name()));
+                    c.setAlignmentX(LEFT_ALIGNMENT);
+                    casillas.add(c);
+                    cuales.add(pe);
+                    zonaPermisos.add(c);
+                }
+                // quien registra compras escribe los costos: «Ver costos» va marcado y no se puede quitar
+                Runnable amarrar = () -> {
+                    int compras = cuales.indexOf(rutas.logica.Permiso.REGISTRAR_COMPRAS);
+                    int costos = cuales.indexOf(rutas.logica.Permiso.VER_COSTOS);
+                    if (compras >= 0 && costos >= 0) {
+                        boolean c = casillas.get(compras).isSelected();
+                        if (c) {
+                            casillas.get(costos).setSelected(true);
+                        }
+                        casillas.get(costos).setEnabled(!c);
+                        casillas.get(costos).setToolTipText(c ? "Viene con «Registrar compras»" : null);
+                    }
+                };
+                amarrar.run();
+                for (javax.swing.JCheckBox c : casillas) {
+                    c.addActionListener(e -> {
+                        amarrar.run();
+                        java.util.Set<rutas.logica.Permiso> elegidos = java.util.EnumSet.noneOf(rutas.logica.Permiso.class);
+                        for (int i = 0; i < casillas.size(); i++) {
+                            if (casillas.get(i).isSelected()) {
+                                elegidos.add(cuales.get(i));
+                            }
+                        }
+                        try {
+                            bd.guardarPermisos(u.getId(), elegidos);
+                            decir(lblLista, "Permisos de " + u.getNombre() + " guardados", true);
+                            refrescar();
+                        } catch (SQLException ex) {
+                            decir(lblLista, "No se pudo guardar: " + ex.getMessage(), false);
+                        }
+                    });
+                }
+            }
+        }
+        zonaPermisos.revalidate();
+        zonaPermisos.repaint();
     }
 
     private void crear() {
@@ -212,7 +295,14 @@ public class PanelUsuarios extends JPanel {
         @Override
         public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean sel, boolean foco) {
             Usuario u = (Usuario) value;
+            int extra = 0;
+            for (rutas.logica.Permiso pe : rutas.logica.Permiso.values()) {
+                if (pe.seDa() && u.tienePermiso(pe.name())) {
+                    extra++;
+                }
+            }
             String detalle = "Usuario «" + u.getUsuario() + "» · " + u.getRol().getTexto()
+                    + (u.getRol() == Rol.CAJERO && extra > 0 ? " · " + extra + (extra == 1 ? " permiso más" : " permisos más") : "")
                     + (u.isActivo() ? "" : " · Desactivado") + (u.getId() == miId() ? " · Usted" : "");
             return Tema.celda(list, u.getNombre(), Tema.textoFuerte(14),
                     u.isActivo() ? Tema.GRIS_OSCURO : Tema.GRIS_TEXTO, detalle, sel, Color.WHITE);

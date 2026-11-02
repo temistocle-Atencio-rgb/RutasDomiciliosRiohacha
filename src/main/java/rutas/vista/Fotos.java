@@ -73,15 +73,11 @@ final class Fotos {
     }
 
     /** Icono de paquete en linea gris (cuando el producto no tiene foto). */
+    /** Producto sin foto: la caja de la carpeta de iconos del diseño, suave para que no compita con las fotos. */
     static void paquete(java.awt.Graphics2D g, int cx, int cy, int t) {
-        g.setColor(Tema.BORDE_CONTROL);
-        g.setStroke(new java.awt.BasicStroke(1.8f, java.awt.BasicStroke.CAP_ROUND, java.awt.BasicStroke.JOIN_ROUND));
-        int w = t, h = (int) (t * 0.8);
-        int x = cx - w / 2, y = cy - h / 2 + t / 8;
-        g.drawRoundRect(x, y, w, h, 4, 4);
-        g.drawLine(x, y + h / 4, x + w, y + h / 4);
-        g.drawLine(cx, y, cx, y + h / 4);
-        g.drawLine(x + w / 8, y, cx - w / 8, y - t / 6);
-        g.drawLine(x + w - w / 8, y, cx + w / 8, y - t / 6);
+        java.awt.Graphics2D g2 = (java.awt.Graphics2D) g.create();
+        g2.setComposite(java.awt.AlphaComposite.SrcOver.derive(0.45f));
+        Iconos.dibujarColor(g2, "/imagenes/caja.png", cx - t / 2, cy - t / 2, t);
+        g2.dispose();
     }
 }

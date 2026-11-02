@@ -66,7 +66,7 @@ public final class ListadoProductos {
             case BAJO_MINIMO:
                 return p.isActivo() && p.estaBajoMinimo();
             case SIN_EXISTENCIAS:
-                return p.isActivo() && p.getStock() <= 0;
+                return p.isActivo() && p.isManejaInventario() && p.getStock() <= 0;
             case DESACTIVADOS:
                 return !p.isActivo();
             default:
@@ -162,16 +162,24 @@ public final class ListadoProductos {
      * ImportadorProductos: asi la lista exportada se puede editar en Excel y volver a importar.
      */
     public static String aCsv(List<Producto> productos, Map<Long, String> categorias) {
-        StringBuilder sb = new StringBuilder("﻿"); // marca para que Excel lea bien las tildes
-        sb.append("nombre;codigo;unidad;precio_venta;precio_compra;stock;minimo;categoria\r\n");
+        return aCsv(productos, categorias, true);
+    }
+
+    /** conCosto = false: sin la columna precio_compra (para quien no puede ver los costos). */
+    public static String aCsv(List<Producto> productos, Map<Long, String> categorias, boolean conCosto) {
+        StringBuilder sb = new StringBuilder("\uFEFF"); // marca para que Excel lea bien las tildes
+        sb.append(conCosto ? "nombre;codigo;unidad;precio_venta;precio_compra;stock;minimo;categoria\r\n"
+                : "nombre;codigo;unidad;precio_venta;stock;minimo;categoria\r\n");
         for (Producto p : productos) {
             String cat = p.getCategoriaId() == null ? "" : categorias.getOrDefault(p.getCategoriaId(), "");
             sb.append(campo(p.getNombre())).append(';')
                     .append(p.getCodigo() == null ? "" : campo(p.getCodigo())).append(';')
                     .append(p.getUnidad().getCorto()).append(';')
-                    .append(p.getPrecioVenta()).append(';')
-                    .append(p.getPrecioCompra()).append(';')
-                    .append(cantidad(p.getStock())).append(';')
+                    .append(p.getPrecioVenta()).append(';');
+            if (conCosto) {
+                sb.append(p.getPrecioCompra()).append(';');
+            }
+            sb.append(cantidad(p.getStock())).append(';')
                     .append(cantidad(p.getMinimo())).append(';')
                     .append(campo(cat)).append("\r\n");
         }

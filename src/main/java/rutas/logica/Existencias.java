@@ -29,6 +29,9 @@ public final class Existencias {
     public static Revision revisar(Producto p, long totalEnVenta) {
         String u = p.getUnidad().getCorto();
         String n = p.getNombre();
+        if (!p.isManejaInventario()) {
+            return new Revision(Estado.BIEN, null); // servicios y recetas: no se cuentan existencias
+        }
         if (p.getStock() <= 0) {
             return new Revision(Estado.AGOTADO, "No hay " + n + ": está agotado");
         }

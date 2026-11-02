@@ -78,6 +78,15 @@ escribe el código y oprime Enter). Si el código no está, se abre el formulari
 crearlo con ese código ya puesto. Los precios se escriben como en Colombia: `2.500`.
 Las cantidades a granel aceptan coma: `10,5` libras.
 
+**Vender.** Es lo primero que se abre al entrar. Se toca la tarjeta del producto, se
+escanea el código o se escribe el nombre y Enter. Los productos a granel preguntan
+cuánto: por peso (1,5 lb) o por valor ("dos mil de azúcar"). Pagar (F12) abre el cobro:
+Efectivo, Nequi, Daviplata, Transferencia o Combinado; los billetes suman y se ven las
+vueltas en grande. Al cobrar baja el inventario y se puede imprimir el comprobante
+(dice que no es factura electrónica). En espera (F8) guarda la venta con un nombre y
+deja la pantalla libre; queda abajo para retomarla. Las categorías con foto se crean
+en Productos > Categorías.
+
 **Importar la lista desde Excel.** En Excel: Archivo > Guardar como > CSV. La primera
 fila debe tener los nombres de las columnas (en cualquier orden):
 

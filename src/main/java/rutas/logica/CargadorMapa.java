@@ -57,6 +57,8 @@ public class CargadorMapa {
 
         // muchos tramos no tienen nombre en OSM: se deduce de los tramos vecinos en linea recta
         InferenciaNombres.aplicar(grafo, vias);
+        // calles que cruzan una avenida con separador y en el mapa no quedaron unidas
+        CrucesSeparador.aplicar(grafo, vias);
 
         List<Lugar> lugares = new ArrayList<>();
         for (String l : leer(new File(carpeta, "lugares.txt"))) {

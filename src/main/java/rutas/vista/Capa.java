@@ -32,6 +32,7 @@ public class Capa extends JPanel {
     private final JComponent tarjeta;
     private final Envoltura envoltura;
     private Runnable alCerrar;
+    private java.util.function.BooleanSupplier alEsc; // true = Esc ya se uso (no se cierra la capa)
     private float alfa = 0f;
 
     public Capa(JComponent dentroDe, JComponent tarjeta, boolean escCierra) {
@@ -54,7 +55,7 @@ public class Capa extends JPanel {
             getActionMap().put("cerrarCapa", new AbstractAction() {
                 @Override
                 public void actionPerformed(java.awt.event.ActionEvent e) {
-                    if (esLaDeArriba()) {
+                    if (esLaDeArriba() && (alEsc == null || !alEsc.getAsBoolean())) {
                         cerrar();
                     }
                 }
@@ -83,6 +84,11 @@ public class Capa extends JPanel {
     public void reacomodar() {
         revalidate();
         repaint();
+    }
+
+    /** Antes de cerrar con Esc: si devuelve true, Esc hizo otra cosa (por ejemplo volver un paso). */
+    public void setAlEsc(java.util.function.BooleanSupplier s) {
+        this.alEsc = s;
     }
 
     public void setAlCerrar(Runnable r) {
@@ -144,6 +150,20 @@ public class Capa extends JPanel {
         return tarjeta;
     }
 
+    /** Cuantas capas hay abiertas en la ventana de este componente. */
+    static int abiertas(JComponent c) {
+        JRootPane r = SwingUtilities.getRootPane(c);
+        int n = 0;
+        if (r != null) {
+            for (Component k : r.getLayeredPane().getComponentsInLayer(JLayeredPane.MODAL_LAYER)) {
+                if (k instanceof Capa) {
+                    n++;
+                }
+            }
+        }
+        return n;
+    }
+
     /** True si hay alguna capa abierta en la ventana de este componente. */
     public static boolean hayAbierta(JComponent c) {
         JRootPane r = SwingUtilities.getRootPane(c);
@@ -158,7 +178,8 @@ public class Capa extends JPanel {
         return false;
     }
 
-    private boolean esLaDeArriba() {
+    /** True si ninguna otra capa esta encima de esta. */
+    boolean esLaDeArriba() {
         Component[] capas = raiz.getLayeredPane().getComponentsInLayer(JLayeredPane.MODAL_LAYER);
         return capas.length > 0 && capas[0] == this;
     }

@@ -35,6 +35,9 @@ public class Pruebas {
 
     public static void main(String[] args) throws Exception {
         PruebasCaja.correr();
+        PruebasRepartidor.correr();
+        PruebasOrdenes.correr();
+        PruebasClientes.correr();
         probarAvl();
         probarMonticulo();
         probarGrafoPequeno();
@@ -281,6 +284,15 @@ public class Pruebas {
         revisar("carga " + g.getCantidadNodos() + " nodos, " + g.getCantidadAristas() + " aristas, "
                 + mapa.getVias().size() + " vias y " + mapa.getLugares().size() + " lugares en " + (t1 - t0) + " ms",
                 g.getCantidadNodos() > 10000 && mapa.getLugares().size() > 1000);
+
+        // Calle 25 cruzando la Carrera 7H (avenida con separador): en OSM no estaba unida y la moto daba la vuelta
+        boolean cruza = false;
+        for (rutas.estructuras.Arista x = g.primera(1336); x != null; x = x.getSiguiente()) {
+            cruza |= x.getDestino() == 4332;
+        }
+        revisar("se puede cruzar la Carrera 7H por la Calle 25 (cruce del separador unido)", cruza);
+        revisar("los cruces de separador ya estan todos unidos al cargar",
+                rutas.logica.CrucesSeparador.aplicar(g, mapa.getVias()) == 0);
 
         ModeloTrafico trafico = new ModeloTrafico(mapa, new File("datos/trafico.txt"));
         BuscadorLugares buscador = new BuscadorLugares(mapa.getLugares());

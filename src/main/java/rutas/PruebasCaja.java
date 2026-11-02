@@ -50,6 +50,71 @@ public class PruebasCaja {
         probarArchivos();
         probarExistencias();
         probarPorcentajeYNota();
+        probarCodigoBarras();
+        probarFichaProducto();
+        probarAjustesRecibo();
+        probarCategoriasExcel();
+        probarCompras();
+        probarHistorialCompras();
+        probarMediosPago();
+        probarClientesCaja();
+        probarCorreo();
+        probarDomicilioCaja();
+        probarReciboCarta();
+        String wa = rutas.logica.Avisos.enlaceWhatsAppSinNumero("Ruta:\n1. Calle 15 # 7-20 & más");
+        revisar("whatsapp: enlace directo a la app (sin navegador)",
+                rutas.logica.Avisos.enlaceWhatsAppApp("", "Hola mundo").equals("whatsapp://send?text=Hola%20mundo")
+                && rutas.logica.Avisos.enlaceWhatsAppApp("312 777 8899", "a").equals("whatsapp://send?phone=573127778899&text=a"));
+        revisar("whatsapp: distingue la app de un navegador en el registro",
+                rutas.vista.AbrirWhatsApp.esLaApp("AppXkfx1n2v3xk7b8s4t6e7j1gbn5xcjb0e3")
+                && rutas.vista.AbrirWhatsApp.esLaApp("\"C:\\Users\\u\\AppData\\Local\\WhatsApp\\WhatsApp.exe\" \"%1\"")
+                && !rutas.vista.AbrirWhatsApp.esLaApp("MSEdgeHTM")
+                && !rutas.vista.AbrirWhatsApp.esLaApp("\"C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe\" --single-argument %1")
+                && !rutas.vista.AbrirWhatsApp.esLaApp("ChromeHTML"));
+        revisar("whatsapp: enlace sin número con la ruta escrita", wa.startsWith("https://wa.me/?text=")
+                && wa.contains("%0A") && wa.contains("%26") && !wa.contains(" "));
+    }
+
+    /** El PDF del correo: hoja carta, valor en letras y varias hojas si son muchos productos. */
+    private static void probarReciboCarta() throws Exception {
+        System.out.println("--- Recibo carta ---");
+        revisar("letras: 12.500", rutas.logica.Letras.pesos(12500).equals("Doce mil quinientos pesos m/cte"));
+        revisar("letras: 21.000 (veintiún mil)", rutas.logica.Letras.pesos(21000).equals("Veintiún mil pesos m/cte"));
+        revisar("letras: 1.747.500", rutas.logica.Letras.pesos(1747500)
+                .equals("Un millón setecientos cuarenta y siete mil quinientos pesos m/cte"));
+        revisar("letras: 2.000.000 (de pesos)", rutas.logica.Letras.pesos(2000000).equals("Dos millones de pesos m/cte"));
+        revisar("letras: 101 y 100", rutas.logica.Letras.pesos(101).equals("Ciento un pesos m/cte")
+                && rutas.logica.Letras.pesos(100).equals("Cien pesos m/cte"));
+        Object[] uno = rutas.vista.PruebaAcceso.reciboCarta(3);
+        Object[] cien = rutas.vista.PruebaAcceso.reciboCarta(100);
+        String pdf1 = new String((byte[]) uno[1], java.nio.charset.StandardCharsets.ISO_8859_1);
+        String pdf100 = new String((byte[]) cien[1], java.nio.charset.StandardCharsets.ISO_8859_1);
+        revisar("recibo carta: 3 productos caben en una hoja carta", (int) uno[0] == 1 && pdf1.contains("/Count 1")
+                && pdf1.contains("/MediaBox [0 0 612.00 792.00]") && pdf1.trim().endsWith("%%EOF"));
+        revisar("recibo carta: 100 productos siguen en varias hojas", (int) cien[0] >= 3
+                && pdf100.contains("/Count " + cien[0]));
+    }
+
+    /** Venta a domicilio: lo que se guarda en la entrega y lo que sale en el recibo para el repartidor. */
+    private static void probarDomicilioCaja() {
+        System.out.println("--- Venta a domicilio ---");
+        rutas.modelo.Parada p = new rutas.modelo.Parada("Marcela Luna", "Calle 15 # 7-20", 11.54, -72.9);
+        p.setValorPedido(12500);
+        p.setPagaCon(50000);
+        rutas.modelo.Parada q = new rutas.modelo.Parada("Marcela Luna", "Calle 15 # 7-20", 11.54, -72.9);
+        q.copiarDatosDe(p);
+        revisar("al editar la entrega no se pierde con cuánto paga", q.getPagaCon() == 50000 && q.getValorPedido() == 12500);
+        p.setPagaCon(-5);
+        revisar("paga con no queda negativo", p.getPagaCon() == 0);
+        rutas.logica.Cuadre c = new rutas.logica.Cuadre();
+        c.agregar(12500, 3000, false); // contra entrega
+        c.agregar(0, 3000, false);     // pagó en la tienda: solo el domicilio
+        revisar("cuadre: el repartidor entrega pedido contra entrega + los dos domicilios", c.getEfectivo() == 18500
+                && c.getDomicilios() == 6000 && c.getPedidos() == 12500);
+        int sin = rutas.vista.PruebaAcceso.altoRecibo(null);
+        int con = rutas.vista.PruebaAcceso.altoRecibo(java.util.List.of("*Marcela Luna", "Calle 15 # 7-20",
+                "Domicilio: $3.000", "*CONTRA ENTREGA: cobrar $15.500"));
+        revisar("el recibo a domicilio es más largo (lleva los datos del repartidor)", con > sin + 40);
     }
 
     private static void probarSeguridad() {
@@ -88,6 +153,17 @@ public class PruebasCaja {
             return false;
         } catch (Throwable t) {
             return tipo.isInstance(t) && (mensaje == null || mensaje.equals(t.getMessage()));
+        }
+    }
+
+    /** Como lanza, pero basta con que el mensaje contenga el pedazo dado. */
+    private static boolean lanzaCon(Class<? extends Throwable> tipo, String pedazo, Runnable r) {
+        try {
+            r.run();
+            return false;
+        } catch (Throwable t) {
+            Throwable c = t instanceof RuntimeException && t.getCause() != null && !tipo.isInstance(t) ? t.getCause() : t;
+            return tipo.isInstance(c) && c.getMessage() != null && c.getMessage().contains(pedazo);
         }
     }
 
@@ -131,8 +207,23 @@ public class PruebasCaja {
 
             Usuario luis = bd.crearUsuario("luis", "Luis", Rol.CAJERO, "clavel".toCharArray());
             Sesion cajero = new Ingreso(bd, reloj::get).entrar("luis", "clavel".toCharArray());
-            revisar("el cajero no ve precio de compra", !cajero.puede(Permiso.VER_COMPRA) && !cajero.esAdmin());
-            revisar("la admin si", s.puede(Permiso.VER_COMPRA) && s.puede(Permiso.ADMIN_USUARIOS));
+            revisar("el cajero no ve precio de compra", !cajero.puede(Permiso.VER_COSTOS) && !cajero.esAdmin());
+            revisar("la admin si", s.puede(Permiso.VER_COSTOS) && s.puede(Permiso.ADMIN_USUARIOS));
+            revisar("el cajero consulta el inventario pero no edita, ni compra, ni entra a usuarios",
+                    cajero.puede(Permiso.VER_INVENTARIO) && !cajero.puede(Permiso.EDITAR_PRODUCTOS)
+                    && !cajero.puede(Permiso.REGISTRAR_COMPRAS) && !cajero.puede(Permiso.ADMIN_USUARIOS));
+            bd.guardarPermisos(luis.getId(), java.util.EnumSet.of(Permiso.EDITAR_PRODUCTOS, Permiso.REGISTRAR_COMPRAS,
+                    Permiso.ADMIN_USUARIOS)); // usuarios no se puede dar: no se guarda
+            Sesion conPermisos = new Ingreso(bd, reloj::get).entrar("luis", "clavel".toCharArray());
+            revisar("permisos por usuario: edita productos y registra compras (y por eso ve costos)",
+                    conPermisos.puede(Permiso.EDITAR_PRODUCTOS) && conPermisos.puede(Permiso.REGISTRAR_COMPRAS)
+                    && conPermisos.puede(Permiso.VER_COSTOS) && !conPermisos.puede(Permiso.ADMIN_USUARIOS)
+                    && !conPermisos.esAdmin());
+            bd.guardarPermisos(luis.getId(), java.util.EnumSet.of(Permiso.VER_COSTOS));
+            Sesion soloCostos = new Ingreso(bd, reloj::get).entrar("luis", "clavel".toCharArray());
+            revisar("permisos: se pueden quitar (solo ve costos)", soloCostos.puede(Permiso.VER_COSTOS)
+                    && !soloCostos.puede(Permiso.EDITAR_PRODUCTOS) && !soloCostos.puede(Permiso.REGISTRAR_COMPRAS));
+            bd.guardarPermisos(luis.getId(), java.util.EnumSet.noneOf(Permiso.class));
             char[] borrada = "secreto1".toCharArray();
             new Ingreso(bd, reloj::get).entrar("ana", borrada);
             revisar("la contraseña se borra de memoria despues de usarla", new String(borrada).equals("\0\0\0\0\0\0\0\0"));
@@ -595,6 +686,9 @@ public class PruebasCaja {
             java.util.Map<Long, String> nombresCat = new java.util.HashMap<>();
             nombresCat.put(granos, "Granos");
             String csv = rutas.logica.ListadoProductos.aCsv(todos, nombresCat);
+            String sinCosto = rutas.logica.ListadoProductos.aCsv(todos, nombresCat, false);
+            revisar("Excel para quien no ve costos: sin la columna precio_compra", csv.contains("precio_compra")
+                    && !sinCosto.contains("precio_compra") && sinCosto.split("\r\n").length == csv.split("\r\n").length);
             File carpeta = java.nio.file.Files.createTempDirectory("domiruta_export").toFile();
             File archivo = new File(carpeta, "productos.csv");
             java.nio.file.Files.write(archivo.toPath(), csv.getBytes("UTF-8"));
@@ -723,4 +817,609 @@ public class PruebasCaja {
         }
     }
 
+
+    private static void probarCodigoBarras() {
+        System.out.println("--- Código de barras ---");
+        revisar("solo numeros usa el juego C con su control", rutas.vista.CodigoBarras.simbolos("12")
+                .equals(java.util.List.of(105, 12, 14)));
+        revisar("con letras usa el juego B", rutas.vista.CodigoBarras.simbolos("A1").get(0) == 104);
+        revisar("digito EAN bien calculado", rutas.vista.CodigoBarras.digitoEan("750103131130") == 9);
+        String c = rutas.vista.CodigoBarras.generar(x -> false);
+        revisar("el generado tiene 13 numeros y empieza por 20", c.matches("20\\d{11}"));
+        revisar("el generado trae su digito EAN", rutas.vista.CodigoBarras.digitoEan(c.substring(0, 12)) == c.charAt(12) - '0');
+        java.util.Set<String> usados = new java.util.HashSet<>();
+        String primero = rutas.vista.CodigoBarras.generar(x -> false);
+        usados.add(primero);
+        revisar("no repite un codigo que ya esta usado", !rutas.vista.CodigoBarras.generar(usados::contains).equals(primero));
+        revisar("no dibuja la ñ ni tildes", !rutas.vista.CodigoBarras.sePuede("Año") && !rutas.vista.CodigoBarras.sePuede(" "));
+        revisar("si dibuja letras y numeros comunes", rutas.vista.CodigoBarras.sePuede("ABC-123"));
+    }
+
+
+    private static void probarFichaProducto() throws Exception {
+        System.out.println("--- Ficha completa del producto ---");
+        try (BaseTienda bd = baseTemporal()) {
+            long cajero = bd.crearUsuario("caja2", "Caja", Rol.CAJERO, "clave123".toCharArray()).getId();
+            Catalogo cat = new Catalogo(bd);
+            Producto aceite = cat.crear(new Producto(0, "02234672", "Aceite de oliva", Unidad.UNIDAD, 10000, 8000,
+                    71000, 5000, null, true, null));
+            revisar("la bodega punto de venta ya existe", bd.listarBodegas().size() == 1
+                    && bd.listarBodegas().get(0).getNombre().equals("PUNTO DE VENTA"));
+            rutas.modelo.Bodega b2 = bd.crearBodega("planta angela");
+            revisar("bodega nueva en mayusculas", b2.getNombre().equals("PLANTA ANGELA") && bd.listarBodegas().size() == 2);
+            revisar("no deja dos bodegas con el mismo nombre", lanzaCon(IllegalArgumentException.class, "Ya hay una bodega",
+                    () -> { try { bd.crearBodega("Planta Angela"); } catch (java.sql.SQLException e) { throw new RuntimeException(e); } }));
+
+            rutas.modelo.FichaProducto f = new rutas.modelo.FichaProducto();
+            f.descripcion = "Aceite a base de ingredientes naturales";
+            f.garantia = "Cambio si llega roto";
+            f.medida = "Litro";
+            f.impuestos.add("IVA 5%");
+            f.vencimiento = java.time.LocalDate.of(2027, 3, 15);
+            f.porMargen = true;
+            f.margenCentesimas = 2500;
+            f.precioMayor = 9500;
+            f.esInsumo = true;
+            f.urlImagen = "https://ejemplo.com/aceite.png";
+            f.caracterizar = true;
+            f.caracteristicas.add(new String[]{"Tamaño", "1 litro"});
+            f.usaImei = true;
+            f.imeis.add("490154203237518");
+            f.usaLotes = true;
+            f.lotes.add(new rutas.modelo.Lote("L-01", java.time.LocalDate.of(2026, 12, 1), 10000));
+            f.lotes.add(new rutas.modelo.Lote("L-02", java.time.LocalDate.of(2026, 11, 5), 0));
+            f.bodegas.put(b2.getId(), new long[]{4000, 1000});
+            f.validar(10000);
+            bd.guardarFicha(aceite.getId(), f);
+            rutas.modelo.FichaProducto g = bd.leerFicha(aceite.getId());
+            revisar("se guardan y se leen los textos", g.descripcion.equals(f.descripcion) && g.garantia.equals(f.garantia)
+                    && g.medida.equals("Litro") && g.urlImagen.equals(f.urlImagen));
+            revisar("se guardan impuesto, vencimiento y margen", g.impuestos.equals(java.util.List.of("IVA 5%"))
+                    && g.vencimiento.equals(f.vencimiento) && g.porMargen && g.margenCentesimas == 2500 && g.precioMayor == 9500);
+            revisar("se guarda el tipo", g.esProducto && g.esInsumo && !g.esReceta);
+            revisar("se guardan caracteristicas, IMEI y lotes", g.caracteristicas.size() == 1
+                    && g.caracteristicas.get(0)[1].equals("1 litro") && g.imeis.equals(f.imeis) && g.lotes.size() == 2);
+            revisar("se guarda el stock de la otra bodega", g.bodegas.get(b2.getId())[0] == 4000
+                    && g.bodegas.get(b2.getId())[1] == 1000);
+            revisar("vence primero el lote con cantidad", g.vencimientoMasCercano().equals(java.time.LocalDate.of(2026, 12, 1)));
+            revisar("listado de vencimientos usa el lote", bd.vencimientos().get(aceite.getId())
+                    .equals(java.time.LocalDate.of(2026, 12, 1)));
+            revisar("producto sin ficha toma su medida de la unidad", bd.leerFicha(999).medida.equals("Unidad"));
+
+            revisar("IMEI valido", rutas.modelo.FichaProducto.imeiValido("490154203237518"));
+            revisar("IMEI con digito malo se rechaza", !rutas.modelo.FichaProducto.imeiValido("490154203237519")
+                    && !rutas.modelo.FichaProducto.imeiValido("12345"));
+            Producto otro = cat.crear(new Producto(0, null, "Celular", Unidad.UNIDAD, 500000, 400000, 1000, 0, null, true, null));
+            rutas.modelo.FichaProducto fo = new rutas.modelo.FichaProducto();
+            fo.usaImei = true;
+            fo.imeis.add("490154203237518");
+            revisar("un IMEI no puede estar en dos productos", lanzaCon(IllegalArgumentException.class, "ya está en",
+                    () -> { try { bd.guardarFicha(otro.getId(), fo); } catch (java.sql.SQLException e) { throw new RuntimeException(e); } }));
+            revisar("si falla no queda nada a medias", !bd.leerFicha(otro.getId()).usaImei);
+
+            rutas.modelo.FichaProducto mala = new rutas.modelo.FichaProducto();
+            mala.precioMayor = 12000;
+            revisar("por mayor mas caro que el de venta se rechaza", lanzaCon(IllegalArgumentException.class, "por mayor",
+                    () -> mala.validar(10000)));
+            rutas.modelo.FichaProducto sinTipo = new rutas.modelo.FichaProducto();
+            sinTipo.esProducto = false;
+            revisar("sin tipo se rechaza", lanzaCon(IllegalArgumentException.class, "Marque", () -> sinTipo.validar(0)));
+            rutas.modelo.FichaProducto urlMala = new rutas.modelo.FichaProducto();
+            urlMala.urlImagen = "foto.png";
+            revisar("direccion de imagen sin http se rechaza", lanzaCon(IllegalArgumentException.class, "http",
+                    () -> urlMala.validar(0)));
+            revisar("precio con margen del 25 %", rutas.modelo.FichaProducto.precioConMargen(8000, 2500) == 10000);
+            revisar("litro se vende por unidad y kilo por peso", rutas.modelo.FichaProducto.unidadDe("Litro") == Unidad.UNIDAD
+                    && rutas.modelo.FichaProducto.unidadDe("Kilo") == Unidad.KILO);
+
+            Producto servicio = cat.crear(new Producto(0, null, "Domicilio", Unidad.UNIDAD, 3000, 0, 0, 0, null, true,
+                    null, false));
+            revisar("sin inventario se puede vender aunque el stock sea 0",
+                    rutas.logica.Existencias.revisar(servicio, 5000).puedeVender());
+            revisar("sin inventario no sale como bajo minimo ni agotado", !servicio.estaBajoMinimo());
+            Carrito c = new Carrito();
+            c.agregar(servicio);
+            c.agregar(aceite);
+            Cobro.Resultado res = Cobro.calcular(c.getTotal(), pagos(MetodoPago.EFECTIVO, 20000L));
+            bd.cobrar(null, cajero, null, c, pagos(MetodoPago.EFECTIVO, 20000L), res);
+            revisar("cobrar un servicio no toca su stock", bd.buscarProductoPorId(servicio.getId()).getStock() == 0
+                    && !bd.buscarProductoPorId(servicio.getId()).isManejaInventario());
+            revisar("pero el aceite si baja", bd.buscarProductoPorId(aceite.getId()).getStock() == 70000);
+            revisar("la venta sale del lote que vence primero", bd.leerFicha(aceite.getId()).lotes.stream()
+                    .filter(l -> l.getNumero().equals("L-01")).findFirst().get().getCantidad() == 9000);
+            revisar("se sabe que producto tiene un IMEI", "Aceite de oliva".equals(bd.productoConImei("490154203237518", 0))
+                    && bd.productoConImei("490154203237518", aceite.getId()) == null);
+        }
+    }
+
+
+    private static void probarAjustesRecibo() throws Exception {
+        System.out.println("--- Configuración: mi negocio e impresora ---");
+        try (BaseTienda bd = baseTemporal()) {
+            rutas.logica.AjustesRecibo d = rutas.logica.AjustesRecibo.leer(bd);
+            revisar("sin configurar: 58 mm y 48 mm útiles (384 puntos)", d.anchoMm == 58 && d.anchoUtilMm() == 48
+                    && d.puntosUtiles() == 384);
+            d.nombre = "Tienda La Esquina";
+            d.nit = "901543586-2";
+            d.logo = "C:/logo.png";
+            d.anchoMm = 80;
+            d.margenIzqMm = 4;
+            d.margenDerMm = 4;
+            d.letra = rutas.logica.AjustesRecibo.Letra.GRANDE;
+            d.impresora = "POS-80";
+            d.abrirCajon = true;
+            d.copias = 2;
+            d.guardar(bd);
+            rutas.logica.AjustesRecibo l = rutas.logica.AjustesRecibo.leer(bd);
+            revisar("se guardan los datos del negocio", l.nombre.equals("Tienda La Esquina") && l.nit.equals("901543586-2")
+                    && "C:/logo.png".equals(l.logo));
+            revisar("se guarda la impresora", l.anchoMm == 80 && l.anchoUtilMm() == 72 && l.puntosUtiles() == 576
+                    && l.letra == rutas.logica.AjustesRecibo.Letra.GRANDE && l.impresora.equals("POS-80") && l.abrirCajon
+                    && l.copias == 2);
+            revisar("margen común por rollo", rutas.logica.AjustesRecibo.margenComun(58) == 5
+                    && rutas.logica.AjustesRecibo.margenComun(80) == 4);
+            rutas.logica.AjustesRecibo mal = rutas.logica.AjustesRecibo.leer(bd);
+            mal.anchoMm = 30;
+            revisar("ancho imposible se rechaza", lanzaCon(IllegalArgumentException.class, "ancho del papel", mal::validar));
+            rutas.logica.AjustesRecibo estrecho = rutas.logica.AjustesRecibo.leer(bd);
+            estrecho.anchoMm = 40;
+            estrecho.margenIzqMm = 6;
+            estrecho.margenDerMm = 6;
+            revisar("márgenes que no dejan espacio se rechazan", lanzaCon(IllegalArgumentException.class, "muy poco",
+                    estrecho::validar));
+            revisar("si falla, no se guarda nada", lanzaCon(IllegalArgumentException.class, "ancho",
+                    () -> { try { mal.guardar(bd); } catch (java.sql.SQLException e) { throw new RuntimeException(e); } })
+                    && rutas.logica.AjustesRecibo.leer(bd).anchoMm == 80);
+        }
+    }
+
+
+    private static void probarCategoriasExcel() throws Exception {
+        System.out.println("--- Categorías: Excel e importación ---");
+        java.io.File x = java.io.File.createTempFile("categorias", ".xlsx");
+        x.deleteOnExit();
+        java.util.List<Object[]> filas = new java.util.ArrayList<>();
+        filas.add(new Object[]{30L, "Bebidas & jugos", "", "ACTIVO", 1});
+        filas.add(new Object[]{null, "Aseo <hogar>", null, "INACTIVO", 2});
+        rutas.logica.Xlsx.escribir(x, "Categorías", new String[]{"codigo", "nombre", "url_imagen", "estado", "orden"}, filas);
+        java.util.List<String[]> leidas = rutas.logica.Xlsx.leer(x);
+        revisar("Excel: se escribe y se vuelve a leer igual", leidas.size() == 3 && leidas.get(0)[1].equals("nombre")
+                && leidas.get(1)[0].equals("30") && leidas.get(1)[1].equals("Bebidas & jugos")
+                && leidas.get(2)[0].isEmpty() && leidas.get(2)[1].equals("Aseo <hogar>") && leidas.get(2)[3].equals("INACTIVO"));
+        try (BaseTienda bd = baseTemporal()) {
+            Categoria vieja = bd.crearCategoria("Granos", null, 1);
+            java.util.List<String[]> imp = new java.util.ArrayList<>();
+            imp.add(new String[]{"Código", "Nombre", "URL de imagen", "Estado"});
+            imp.add(new String[]{"30", "Bebidas", "https://ejemplo.com/b.png", "ACTIVO"});
+            imp.add(new String[]{"", "granos", "", "INACTIVO"});
+            imp.add(new String[]{"", "Aseo", "", ""});
+            imp.add(new String[]{"", "", "", ""});
+            rutas.logica.ImportadorCategorias.Resultado r = rutas.logica.ImportadorCategorias.importar(imp, bd);
+            revisar("importar crea y actualiza", r.errores.isEmpty() && r.creadas == 2 && r.actualizadas == 1
+                    && bd.listarCategorias(true).size() == 3);
+            revisar("el código del archivo queda como código", bd.buscarCategoria(30) != null
+                    && bd.buscarCategoria(30).getNombre().equals("Bebidas"));
+            revisar("sin código, el mismo nombre se actualiza (no se duplica)", !bd.buscarCategoria(vieja.getId()).isActivo());
+            revisar("la imagen queda para bajar", r.fotos.size() == 1 && r.fotos.get(0)[0].equals("30"));
+            java.util.List<String[]> mal = new java.util.ArrayList<>();
+            mal.add(new String[]{"codigo", "nombre", "estado"});
+            mal.add(new String[]{"40", "Dulces", ""});
+            mal.add(new String[]{"abc", "Panadería", ""});
+            mal.add(new String[]{"40", "Lácteos", "talvez"});
+            rutas.logica.ImportadorCategorias.Resultado r2 = rutas.logica.ImportadorCategorias.importar(mal, bd);
+            revisar("con errores no guarda ninguna fila", r2.errores.size() == 2 && bd.buscarCategoria(40) == null);
+            java.util.List<String[]> sinNombre = new java.util.ArrayList<>();
+            sinNombre.add(new String[]{"codigo", "titulo"});
+            revisar("sin columna nombre avisa", rutas.logica.ImportadorCategorias.importar(sinNombre, bd).errores.get(0)
+                    .contains("nombre"));
+            Catalogo cat = new Catalogo(bd);
+            cat.crear(new Producto(0, null, "Gaseosa", Unidad.UNIDAD, 2000, 1500, 1000, 0, null, true, 30L));
+            revisar("cuenta productos por categoría", bd.productosPorCategoria().get(30L) == 1);
+            revisar("no deja borrar una categoría con productos", lanzaCon(IllegalArgumentException.class, "desactívela",
+                    () -> { try { bd.eliminarCategoria(30); } catch (java.sql.SQLException e) { throw new RuntimeException(e); } }));
+            long aseo = 0;
+            for (Categoria c : bd.listarCategorias(true)) {
+                if (c.getNombre().equals("Aseo")) {
+                    aseo = c.getId();
+                }
+            }
+            bd.eliminarCategoria(aseo);
+            revisar("borra una categoría sin productos", bd.buscarCategoria(aseo) == null);
+        }
+    }
+
+    private static void probarCompras() throws Exception {
+        System.out.println("--- Compras ---");
+        // calculos como en la referencia: 926 + 8 % = 1.000; total bruto 3.800, impuestos 74, total 3.874
+        Producto a = new Producto(1, null, "Gaseosa", Unidad.UNIDAD, 1500, 1000, 0, 0, null, true);
+        Producto b = new Producto(2, null, "Arroz", Unidad.UNIDAD, 3500, 2874, 0, 0, null, true);
+        rutas.logica.Compra c = new rutas.logica.Compra();
+        rutas.logica.Compra.Linea la = c.agregar(a, rutas.logica.Compra.impuestoDe(java.util.List.of("INC 8%")));
+        c.agregar(b, 0);
+        revisar("compra: 1.000 con 8 % queda base 926", la.getBase() == 926 && la.getCosto() == 1000);
+        revisar("compra: lo nuevo queda arriba", c.getLineas().get(0).getProducto() == b);
+        revisar("compra: totales de la referencia", c.getBruto() == 3800 && c.getImpuestos() == 74 && c.getTotal() == 3874);
+        c.agregar(a, 800);
+        revisar("compra: el mismo producto suma 1", la.getCantidad() == 2000 && c.getLineas().size() == 2);
+        la.setDescuento(1000); // 10 %
+        revisar("compra: descuento de linea", la.getValorDescuento() == 185 && la.getCostoNeto() == 900);
+        revisar("compra: impuestos 19 % + 8 %", rutas.logica.Compra.impuestoDe(java.util.List.of("IVA 19%", "INC 8%")) == 2700
+                && rutas.logica.Compra.impuestoDe(java.util.List.of("IVA 5,5 %")) == 550);
+        revisar("compra vacia se rechaza", lanza(IllegalArgumentException.class, "Agregue al menos un producto a la compra",
+                () -> new rutas.logica.Compra().validar()));
+        la.setCantidad(0);
+        revisar("compra con cantidad 0 se rechaza", lanzaCon(IllegalArgumentException.class, "debe ser mayor que 0", c::validar));
+        la.setCantidad(2000);
+        c.setDescuentoGeneral(999_999);
+        revisar("descuento mas grande que la compra se rechaza", lanzaCon(IllegalArgumentException.class, "más grande", c::validar));
+        c.setDescuentoGeneral(0);
+
+        try (BaseTienda bd = baseTemporal()) {
+            long admin = bd.crearUsuario("jefe", "Jefe", Rol.ADMIN, "clave123".toCharArray()).getId();
+            Catalogo cat = new Catalogo(bd);
+            Producto gaseosa = cat.crear(new Producto(0, "770100", "Gaseosa", Unidad.UNIDAD, 1500, 900, 2000, 0, null, true));
+            Producto azucar = cat.crear(new Producto(0, null, "Azúcar", Unidad.KILO, 4400, 3600, -500, 0, null, true));
+            rutas.logica.Compra k = new rutas.logica.Compra();
+            rutas.logica.Compra.Linea lg = k.agregar(gaseosa, 800);
+            lg.setCantidad(12_000);
+            lg.setCosto(1080);
+            lg.setPrecioVenta(1800L);
+            rutas.logica.Compra.Linea lz = k.agregar(azucar, 0);
+            lz.setCantidad(2500);
+            lz.setBase(3800);
+            k.setObservaciones("Llegó con la factura");
+            k.setProveedor("Postobón");
+
+            long idEspera = bd.guardarCompraEspera(null, admin, k);
+            revisar("compra en espera aparece en la lista", bd.listarComprasEspera().size() == 1
+                    && bd.listarComprasEspera().get(0).getProductos() == 2
+                    && bd.listarComprasEspera().get(0).getTotal() == k.getTotal()
+                    && "Postobón".equals(bd.listarComprasEspera().get(0).getProveedor()));
+            revisar("compra en espera no sube el stock", bd.buscarProductoPorId(gaseosa.getId()).getStock() == 2000);
+            BaseTienda.CompraRetomada r = bd.cargarCompraEspera(idEspera, cat);
+            rutas.logica.Compra k2 = r.getCompra();
+            revisar("compra en espera vuelve igual", r.getAvisos().isEmpty() && k2.getLineas().size() == 2
+                    && k2.getLineas().get(0).getProducto().getId() == azucar.getId()
+                    && k2.getLineas().get(1).getCantidad() == 12_000 && k2.getLineas().get(1).getCosto() == 1080
+                    && Long.valueOf(1800).equals(k2.getLineas().get(1).getPrecioVenta())
+                    && k2.getTotal() == k.getTotal() && k2.getObservaciones().equals("Llegó con la factura"));
+            bd.guardarCompraEspera(idEspera, admin, k2); // actualizarla no duplica
+            revisar("actualizar la espera no la duplica", bd.listarComprasEspera().size() == 1
+                    && bd.cargarCompraEspera(idEspera, cat).getCompra().getLineas().size() == 2);
+
+            long n1 = bd.registrarCompra(idEspera, admin, k2);
+            for (rutas.logica.Compra.Linea l : k2.getLineas()) {
+                cat.recargarProducto(l.getProducto().getId());
+            }
+            Producto g2 = bd.buscarProductoPorId(gaseosa.getId());
+            Producto z2 = bd.buscarProductoPorId(azucar.getId());
+            revisar("compra guardada: numero 1 y sale de espera", n1 == 1 && bd.listarComprasEspera().isEmpty());
+            revisar("compra sube el stock (tambien si estaba negativo)", g2.getStock() == 14_000 && z2.getStock() == 2000);
+            revisar("compra deja el costo nuevo", g2.getPrecioCompra() == 1080 && z2.getPrecioCompra() == 3800);
+            revisar("compra cambia el precio de venta si se escribio", g2.getPrecioVenta() == 1800 && z2.getPrecioVenta() == 4400);
+            revisar("el catalogo queda al dia", cat.buscarPorId(gaseosa.getId()).getStock() == 14_000);
+            revisar("ya guardada no se puede retomar", lanza(IllegalArgumentException.class, "Esa compra ya no está en espera",
+                    () -> { try { bd.cargarCompraEspera(idEspera, cat); } catch (java.sql.SQLException e) { throw new RuntimeException(e); } }));
+
+            // a otra bodega: no toca el stock del punto de venta
+            rutas.modelo.Bodega trastienda = bd.crearBodega("Trastienda");
+            rutas.logica.Compra k3 = new rutas.logica.Compra();
+            k3.agregar(g2, 0).setCantidad(6000);
+            k3.setBodegaId(trastienda.getId());
+            long n2 = bd.registrarCompra(null, admin, k3);
+            k3.getLineas().get(0).setCantidad(4000);
+            bd.registrarCompra(null, admin, k3);
+            revisar("compra a otra bodega suma en esa bodega", n2 == 2
+                    && bd.leerFicha(gaseosa.getId()).bodegas.get(trastienda.getId())[0] == 10_000
+                    && bd.buscarProductoPorId(gaseosa.getId()).getStock() == 14_000);
+
+            // sin manejo de inventario: no sube stock pero si el costo
+            Producto domicilio = cat.crear(new Producto(0, null, "Bolsa", Unidad.UNIDAD, 100, 50, 0, 0, null, true, null, false));
+            rutas.logica.Compra k4 = new rutas.logica.Compra();
+            k4.agregar(domicilio, 0).setCosto(60);
+            bd.registrarCompra(null, admin, k4);
+            revisar("sin inventario: no sube stock, si el costo", bd.buscarProductoPorId(domicilio.getId()).getStock() == 0
+                    && bd.buscarProductoPorId(domicilio.getId()).getPrecioCompra() == 60);
+
+            // si algo falla no se guarda nada
+            rutas.logica.Compra k5 = new rutas.logica.Compra();
+            k5.agregar(g2, 0);
+            k5.agregar(new Producto(999_999, null, "Fantasma", Unidad.UNIDAD, 100, 50, 0, 0, null, true), 0);
+            revisar("compra con producto que no existe se rechaza entera", lanzaCon(RuntimeException.class, "ya no existe",
+                    () -> { try { bd.registrarCompra(null, admin, k5); } catch (java.sql.SQLException e) { throw new RuntimeException(e); } }));
+            // costo escrito con 19 %: queda tal cual (no se corre un peso al redondear)
+            rutas.logica.Compra k6 = new rutas.logica.Compra();
+            rutas.logica.Compra.Linea l6 = k6.agregar(bd.buscarProductoPorId(gaseosa.getId()), 1900);
+            l6.setCosto(3);
+            revisar("costo escrito no se corre al redondear", l6.getCosto() == 3);
+            // el precio de venta cambiado en Productos no se pisa con una copia vieja
+            long idK6 = bd.guardarCompraEspera(null, admin, k6);
+            cat.editar(new Producto(gaseosa.getId(), "770100", "Gaseosa", Unidad.UNIDAD, 2000, 1080, 14_000, 0, null, true));
+            rutas.logica.Compra k6b = bd.cargarCompraEspera(idK6, cat).getCompra();
+            revisar("espera guarda el costo escrito", k6b.getLineas().get(0).getCosto() == 3);
+            bd.registrarCompra(idK6, admin, k6b);
+            Producto g3 = bd.buscarProductoPorId(gaseosa.getId());
+            revisar("precio de venta nuevo de Productos se respeta", g3.getPrecioVenta() == 2000 && g3.getPrecioCompra() == 3);
+            // desactivado: no se puede comprar
+            cat.desactivar(azucar.getId());
+            rutas.logica.Compra k7 = new rutas.logica.Compra();
+            k7.agregar(bd.buscarProductoPorId(azucar.getId()), 0);
+            revisar("producto desactivado no se compra", lanzaCon(RuntimeException.class, "está desactivado",
+                    () -> { try { bd.registrarCompra(null, admin, k7); } catch (java.sql.SQLException e) { throw new RuntimeException(e); } }));
+            revisar("valor de venta 0 se rechaza", lanzaCon(IllegalArgumentException.class, "mayor que 0", () -> {
+                rutas.logica.Compra k8 = new rutas.logica.Compra();
+                k8.agregar(g3, 0).setPrecioVenta(0L);
+                k8.validar();
+            }));
+            revisar("y no toco el stock ni el numero", bd.buscarProductoPorId(gaseosa.getId()).getStock() == 15_000
+                    && bd.siguienteNumeroCompra() == 6);
+        }
+    }
+
+    private static void probarHistorialCompras() throws Exception {
+        System.out.println("--- Historial de compras ---");
+        try (BaseTienda bd = baseTemporal()) {
+            long admin = bd.crearUsuario("jefe", "Ana Jefe", Rol.ADMIN, "clave123".toCharArray()).getId();
+            Catalogo cat = new Catalogo(bd);
+            Producto leche = cat.crear(new Producto(0, "7701", "Leche", Unidad.UNIDAD, 3000, 2500, 0, 0, null, true));
+            Producto pan = cat.crear(new Producto(0, null, "Pan", Unidad.UNIDAD, 500, 300, 0, 0, null, true));
+            rutas.modelo.Bodega trastienda = bd.crearBodega("Trastienda");
+
+            rutas.logica.Compra c1 = new rutas.logica.Compra();
+            c1.agregar(leche, 0).setCantidad(10_000);
+            c1.setProveedor("Alpina");
+            c1.setFactura("FE-100");
+            c1.setObservaciones("Llegó fría");
+            long n1 = bd.registrarCompra(null, admin, c1);
+            rutas.logica.Compra c2 = new rutas.logica.Compra();
+            c2.agregar(pan, 0).setCantidad(20_000);
+            c2.setBodegaId(trastienda.getId());
+            c2.setProveedor("Panadería Rey");
+            long n2 = bd.registrarCompra(null, admin, c2);
+            bd.guardarCompraEspera(null, admin, c1); // las de espera no salen en el historial
+
+            java.time.LocalDateTime hoy0 = java.time.LocalDate.now().atStartOfDay();
+            java.time.LocalDateTime hoy1 = java.time.LocalDate.now().atTime(23, 59);
+            java.util.List<BaseTienda.CompraGuardada> todas = bd.listarCompras(hoy0, hoy1, null, null, "");
+            revisar("historial: salen las guardadas, la mas nueva primero", todas.size() == 2
+                    && todas.get(0).getNumero() == n2 && todas.get(1).getNumero() == n1);
+            revisar("historial: trae bodega, quien atendio y total", todas.get(1).getBodega().equals("PUNTO DE VENTA")
+                    && todas.get(1).getAtendio().equals("Ana Jefe") && todas.get(1).getTotal() == 25_000
+                    && todas.get(1).getFactura().equals("FE-100"));
+            revisar("historial: filtro por bodega", bd.listarCompras(hoy0, hoy1, null, trastienda.getId(), "").size() == 1);
+            revisar("historial: busca por proveedor", bd.listarCompras(hoy0, hoy1, null, null, "alpi").size() == 1);
+            revisar("historial: busca por numero con ceros", bd.listarCompras(hoy0, hoy1, null, null, "0000" + n1).size() == 1);
+            revisar("historial: busca por factura", bd.listarCompras(hoy0, hoy1, null, null, "FE-1").size() == 1);
+            revisar("historial: ayer no hay compras", bd.listarCompras(hoy0.minusDays(1), hoy0.minusMinutes(1), null, null, "").isEmpty());
+            revisar("historial: fechas al reves se rechazan", lanza(IllegalArgumentException.class,
+                    "La fecha inicial es después de la fecha final", () -> {
+                        try { bd.listarCompras(hoy1, hoy0, null, null, ""); } catch (java.sql.SQLException e) { throw new RuntimeException(e); }
+                    }));
+
+            BaseTienda.DetalleCompra d = bd.detalleCompra(todas.get(1).getId());
+            revisar("detalle: productos, observaciones y totales", d.lineas.size() == 1 && d.lineas.get(0).nombre.equals("Leche")
+                    && d.lineas.get(0).cantidad == 10_000 && d.lineas.get(0).costo == 2500 && d.total == 25_000
+                    && d.observaciones.equals("Llegó fría"));
+
+            // vender 4 leches y anular: el punto de venta queda en -4 (se avisa antes)
+            cat.editar(new Producto(leche.getId(), "7701", "Leche", Unidad.UNIDAD, 3000, 2500, 6000, 0, null, true));
+            java.util.List<String> av = bd.revisarAnulacion(todas.get(1).getId());
+            revisar("anular: avisa si el stock queda negativo", av.size() == 1 && av.get(0).contains("-4"));
+            revisar("anular: pide el motivo", lanza(IllegalArgumentException.class, "Escriba por qué se anula la compra",
+                    () -> { try { bd.anularCompra(todas.get(1).getId(), admin, " "); } catch (java.sql.SQLException e) { throw new RuntimeException(e); } }));
+            bd.anularCompra(todas.get(1).getId(), admin, "Factura repetida");
+            revisar("anular: devuelve el stock", bd.buscarProductoPorId(leche.getId()).getStock() == -4000);
+            BaseTienda.DetalleCompra d2 = bd.detalleCompra(todas.get(1).getId());
+            revisar("anular: queda quien, cuando y por que", d2.compra.isAnulada() && d2.anuladaPor.equals("Ana Jefe")
+                    && d2.motivo.equals("Factura repetida") && d2.anuladaEn != null);
+            revisar("anular dos veces no se puede", lanza(IllegalStateException.class, "Esa compra ya estaba anulada",
+                    () -> { try { bd.anularCompra(todas.get(1).getId(), admin, "otra"); } catch (java.sql.SQLException e) { throw new RuntimeException(e); } }));
+            revisar("historial: filtro anuladas y pagadas", bd.listarCompras(hoy0, hoy1, true, null, "").size() == 1
+                    && bd.listarCompras(hoy0, hoy1, false, null, "").size() == 1);
+
+            // otra bodega: no se saca mas de lo que hay
+            bd.guardarFicha(pan.getId(), conBodega(bd.leerFicha(pan.getId()), trastienda.getId(), 5000));
+            revisar("anular en bodega sin mercancia se rechaza entera", lanzaCon(IllegalArgumentException.class,
+                    "solo quedan 5", () -> { try { bd.anularCompra(todas.get(0).getId(), admin, "error"); } catch (java.sql.SQLException e) { throw new RuntimeException(e); } }));
+            revisar("y la compra sigue pagada", !bd.detalleCompra(todas.get(0).getId()).compra.isAnulada()
+                    && bd.leerFicha(pan.getId()).bodegas.get(trastienda.getId())[0] == 5000);
+            bd.guardarFicha(pan.getId(), conBodega(bd.leerFicha(pan.getId()), trastienda.getId(), 25_000));
+            bd.anularCompra(todas.get(0).getId(), admin, "Devuelta");
+            revisar("anular en otra bodega resta en esa bodega", bd.leerFicha(pan.getId()).bodegas.get(trastienda.getId())[0] == 5000
+                    && bd.buscarProductoPorId(pan.getId()).getStock() == 0);
+        }
+    }
+
+    private static rutas.modelo.FichaProducto conBodega(rutas.modelo.FichaProducto f, long bodega, long stock) {
+        f.bodegas.put(bodega, new long[]{stock, 0});
+        return f;
+    }
+
+    private static void probarMediosPago() throws Exception {
+        System.out.println("--- Medios de pago ---");
+        java.io.File carpeta = Files.createTempDirectory("domiruta_pagos").toFile();
+        java.io.File archivo = new java.io.File(carpeta, "tienda.db");
+        long cajero;
+        try (BaseTienda bd = new BaseTienda(archivo, 1000)) {
+            revisar("por defecto: los 4 de antes", rutas.logica.MediosPago.activos(bd).equals(java.util.List.of(
+                    MetodoPago.EFECTIVO, MetodoPago.NEQUI, MetodoPago.DAVIPLATA, MetodoPago.TRANSFERENCIA)));
+            rutas.logica.MediosPago.guardar(bd, java.util.List.of(MetodoPago.BREB, MetodoPago.NEQUI));
+            revisar("efectivo siempre va y el orden es el de la lista", rutas.logica.MediosPago.activos(bd).equals(
+                    java.util.List.of(MetodoPago.EFECTIVO, MetodoPago.NEQUI, MetodoPago.BREB)));
+            cajero = bd.crearUsuario("caja", "Caja", Rol.CAJERO, "clave123".toCharArray()).getId();
+            Catalogo cat = new Catalogo(bd);
+            Producto p = cat.crear(new Producto(0, null, "Pan", Unidad.UNIDAD, 1000, 500, 10_000, 0, null, true));
+            Carrito c = new Carrito();
+            c.agregar(p);
+            // una venta vieja pagada con Nequi, guardada con la tabla de antes
+            long n = bd.cobrar(null, cajero, null, c, pagos(MetodoPago.NEQUI, 1000L),
+                    Cobro.calcular(1000, pagos(MetodoPago.NEQUI, 1000L)));
+            revisar("venta con Nequi", bd.pagosDeVenta(n).equals(java.util.Map.of(MetodoPago.NEQUI, 1000L)));
+        }
+        // se vuelve la tabla de pagos a como era antes (solo 4 medios)
+        try (java.sql.Connection con = java.sql.DriverManager.getConnection("jdbc:sqlite:" + archivo.getAbsolutePath());
+             java.sql.Statement st = con.createStatement()) {
+            st.execute("CREATE TABLE vieja (id INTEGER PRIMARY KEY, venta_id INTEGER NOT NULL REFERENCES ventas(id)"
+                    + " ON DELETE CASCADE, metodo TEXT NOT NULL CHECK (metodo IN ('EFECTIVO','NEQUI','DAVIPLATA',"
+                    + "'TRANSFERENCIA')), valor INTEGER NOT NULL)");
+            st.execute("INSERT INTO vieja SELECT * FROM venta_pagos");
+            st.execute("DROP TABLE venta_pagos");
+            st.execute("ALTER TABLE vieja RENAME TO venta_pagos");
+        }
+        try (BaseTienda bd = new BaseTienda(archivo, 1000)) {
+            revisar("base vieja: los pagos de antes siguen", bd.pagosDeVenta(1).equals(java.util.Map.of(MetodoPago.NEQUI, 1000L)));
+            Catalogo cat = new Catalogo(bd);
+            Carrito c = new Carrito();
+            c.agregar(cat.buscar("Pan").get(0));
+            java.util.List<Pago> l = pagos(MetodoPago.BREB, 600L, MetodoPago.TARJETA_DEBITO, 400L);
+            long n = bd.cobrar(null, cajero, null, c, l, Cobro.calcular(1000, l));
+            revisar("base vieja ampliada: se cobra con Bre-B y tarjeta", bd.pagosDeVenta(n).equals(
+                    java.util.Map.of(MetodoPago.BREB, 600L, MetodoPago.TARJETA_DEBITO, 400L)));
+        }
+        revisar("cada medio tiene su logo", java.util.Arrays.stream(MetodoPago.values())
+                .allMatch(m -> PruebasCaja.class.getResource(m.getLogo()) != null)
+                && PruebasCaja.class.getResource("/imagenes/pagos/combinado.png") != null);
+    }
+
+    private static void probarClientesCaja() throws Exception {
+        System.out.println("--- Clientes de la caja ---");
+        java.io.File carpeta = Files.createTempDirectory("domiruta_clientes").toFile();
+        java.io.File archivo = new java.io.File(carpeta, "domiruta.db");
+        // base vieja: la tabla de clientes sin documento ni correo
+        try (java.sql.Connection con = java.sql.DriverManager.getConnection("jdbc:sqlite:" + archivo.getAbsolutePath());
+             java.sql.Statement st = con.createStatement()) {
+            st.execute("CREATE TABLE clientes (id INTEGER PRIMARY KEY AUTOINCREMENT, clave TEXT NOT NULL UNIQUE,"
+                    + " nombre TEXT NOT NULL, telefono TEXT NOT NULL DEFAULT '', direccion TEXT NOT NULL,"
+                    + " nota TEXT NOT NULL DEFAULT '', lat REAL NOT NULL, lon REAL NOT NULL,"
+                    + " creado TEXT NOT NULL DEFAULT (datetime('now','localtime')))");
+            st.execute("INSERT INTO clientes(clave, nombre, telefono, direccion, lat, lon)"
+                    + " VALUES('ana ruiz', 'Ana Ruiz', '3001112233', 'Calle 1', 11.5, -72.9)");
+        }
+        try (rutas.logica.BaseDatos bd = new rutas.logica.BaseDatos(archivo)) {
+            rutas.estructuras.ArbolAVL<String, rutas.modelo.Cliente> a = bd.cargarClientes();
+            rutas.modelo.Cliente ana = a.buscar("ana ruiz");
+            revisar("base vieja de clientes se amplia sin perder nada", ana != null && ana.getTelefono().equals("3001112233")
+                    && ana.getDocumento().isEmpty() && ana.tieneUbicacion());
+            bd.guardarCliente(new rutas.modelo.Cliente("Marcela Luna", "3127778899", "", "", 0, 0,
+                    "Cédula de ciudadanía", "1052090292", "marce@gmail.com", "La Guajira", "Riohacha", 200_000));
+            bd.guardarCliente(ana.conTelefono("3009998877"));
+            a = bd.cargarClientes();
+            rutas.modelo.Cliente m = a.buscar("marcela luna");
+            revisar("cliente de la caja guarda documento, correo y fiado", m != null && m.getDocumento().equals("1052090292")
+                    && m.getCorreo().equals("marce@gmail.com") && m.getCreditoMaximo() == 200_000
+                    && m.documentoCorto().equals("CC 1052090292") && !m.tieneUbicacion());
+            revisar("cambiar el celular conserva lo demas", a.buscar("ana ruiz").getTelefono().equals("3009998877")
+                    && a.buscar("ana ruiz").getLat() == 11.5);
+            revisar("buscar por cedula, celular y apellido", rutas.vista.PruebaAcceso.coincide(m, "105209")
+                    && rutas.vista.PruebaAcceso.coincide(m, "312 777") && rutas.vista.PruebaAcceso.coincide(m, "luna")
+                    && !rutas.vista.PruebaAcceso.coincide(m, "ana"));
+        }
+    }
+
+    /** Servidor de correo de mentiras (en este computador) para probar el envio sin internet. */
+    private static String[] servidorFalso(java.net.ServerSocket ss, String claveBuena) {
+        String[] recibido = {null, null};
+        Thread t = new Thread(() -> {
+            try (java.net.Socket s = ss.accept();
+                 java.io.BufferedReader in = new java.io.BufferedReader(new java.io.InputStreamReader(s.getInputStream(),
+                         java.nio.charset.StandardCharsets.UTF_8));
+                 java.io.PrintWriter out = new java.io.PrintWriter(new java.io.OutputStreamWriter(s.getOutputStream(),
+                         java.nio.charset.StandardCharsets.UTF_8), true)) {
+                out.print("220 hola\r\n"); out.flush();
+                String l;
+                int paso = 0;
+                StringBuilder data = new StringBuilder();
+                boolean enData = false;
+                while ((l = in.readLine()) != null) {
+                    if (enData) {
+                        if (l.equals(".")) { enData = false; recibido[0] = data.toString(); out.print("250 ok\r\n"); out.flush(); }
+                        else { data.append(l).append("\n"); }
+                        continue;
+                    }
+                    if (l.startsWith("EHLO")) { out.print("250-hola\r\n250 AUTH LOGIN PLAIN\r\n"); }
+                    else if (l.equals("AUTH LOGIN")) { out.print("334 VXNlcm5hbWU6\r\n"); paso = 1; }
+                    else if (paso == 1) { out.print("334 UGFzc3dvcmQ6\r\n"); paso = 2; }
+                    else if (paso == 2) {
+                        String clave = new String(java.util.Base64.getDecoder().decode(l), java.nio.charset.StandardCharsets.UTF_8);
+                        recibido[1] = clave;
+                        out.print(clave.equals(claveBuena) ? "235 bien\r\n" : "535 mal\r\n"); paso = 3;
+                    }
+                    else if (l.startsWith("MAIL") || l.startsWith("RCPT")) { out.print("250 ok\r\n"); }
+                    else if (l.equals("DATA")) { out.print("354 dale\r\n"); enData = true; }
+                    else if (l.equals("QUIT")) { out.print("221 chao\r\n"); out.flush(); break; }
+                    out.flush();
+                }
+            } catch (java.io.IOException e) {
+                // fin
+            }
+        });
+        t.setDaemon(true);
+        t.start();
+        return recibido;
+    }
+
+    private static void probarCorreo() throws Exception {
+        System.out.println("--- Correo y PDF ---");
+        String conHtml = rutas.logica.CorreoPrueba.mensaje("tienda@gmail.com", "Tienda", "cliente@gmail.com", "Recibo",
+                "Hola,\nsu compra.", "<p>Hola</p>", "Recibo-00001.pdf", new byte[]{1, 2, 3}, "application/pdf");
+        revisar("correo: lleva Message-ID y Reply-To (menos spam)", conHtml.contains("\r\nMessage-ID: <")
+                && conHtml.contains("@gmail.com>\r\n") && conHtml.contains("Reply-To: Tienda <tienda@gmail.com>"));
+        revisar("correo: texto y HTML juntos y el PDF aparte", conHtml.contains("multipart/alternative")
+                && conHtml.contains("text/html; charset=UTF-8") && conHtml.contains("filename=\"Recibo-00001.pdf\""));
+        String html = rutas.vista.PruebaAcceso.htmlRecibo("Hola <Ana> & cía");
+        revisar("correo: el HTML lleva la compra y no deja pasar etiquetas escritas", html.contains("&lt;Ana&gt; &amp; cía")
+                && html.contains("Total") && html.contains("Recibo de venta N.º") && html.contains("cid:logo@domiruta"));
+        String conLogo = rutas.logica.CorreoPrueba.mensaje("tienda@gmail.com", "Tienda", "cliente@gmail.com", "Recibo",
+                "Hola", "<img src=\"cid:logo@domiruta\">", new byte[]{9, 9}, "Recibo-00001.pdf", new byte[]{1}, "application/pdf");
+        revisar("correo: el logo va dentro del correo (related + Content-ID) y el PDF aparte", conLogo.contains("multipart/related")
+                && conLogo.contains("Content-ID: <logo@domiruta>") && conLogo.contains("Content-Disposition: inline")
+                && conLogo.indexOf("Content-ID") < conLogo.indexOf("filename=\"Recibo-00001.pdf\""));
+        java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(300, 500, java.awt.image.BufferedImage.TYPE_INT_RGB);
+        byte[] pdf = rutas.logica.PdfImagen.crear(img, 164);
+        String txt = new String(pdf, java.nio.charset.StandardCharsets.ISO_8859_1);
+        revisar("PDF: empieza y termina bien", txt.startsWith("%PDF-1.4") && txt.trim().endsWith("%%EOF")
+                && txt.contains("/MediaBox [0 0 164.00 273.33]"));
+
+        try (java.net.ServerSocket ss = new java.net.ServerSocket(0)) {
+            String[] r = servidorFalso(ss, "abcdabcdabcdabcd");
+            rutas.logica.CorreoSmtp c = new rutas.logica.CorreoSmtp("127.0.0.1", ss.getLocalPort(), false,
+                    "tienda@gmail.com", "abcd abcd abcd abcd");
+            c.enviar("Tienda La Esquiña", "cliente@gmail.com", "Recibo No. 00015 – gracias", "Hola,\nsu compra.",
+                    "Recibo-00015.pdf", pdf, "application/pdf");
+            Thread.sleep(200);
+            String m = r[0];
+            revisar("correo: la clave va sin espacios", "abcdabcdabcdabcd".equals(r[1]));
+            revisar("correo: lleva remitente, para y asunto con tildes", m != null && m.contains("From: =?UTF-8?B?")
+                    && m.contains("<tienda@gmail.com>") && m.contains("To: <cliente@gmail.com>") && m.contains("Subject: =?UTF-8?B?"));
+            String parte = m.substring(m.indexOf("filename=\"Recibo-00015.pdf\""));
+            String b64 = parte.substring(parte.indexOf("\n\n") + 2, parte.indexOf("------=_DomiRuta")).replace("\n", "");
+            revisar("correo: el PDF adjunto llega igual", java.util.Arrays.equals(java.util.Base64.getDecoder().decode(b64), pdf));
+        }
+        try (java.net.ServerSocket ss = new java.net.ServerSocket(0)) {
+            servidorFalso(ss, "otraclaveotracla");
+            rutas.logica.CorreoSmtp c = new rutas.logica.CorreoSmtp("127.0.0.1", ss.getLocalPort(), false,
+                    "tienda@gmail.com", "abcdabcdabcdabcd");
+            revisar("correo: clave mala da un mensaje claro", lanzaCon(RuntimeException.class, "contraseña de aplicación", () -> {
+                try { c.enviar("T", "cliente@gmail.com", "a", "b", null, null, null); }
+                catch (rutas.logica.CorreoSmtp.ErrorCorreo e) { throw new RuntimeException(e.getMessage()); }
+            }));
+        }
+        rutas.logica.CorreoSmtp sinConfig = rutas.logica.CorreoSmtp.gmail("", "");
+        revisar("correo: sin configurar avisa", lanzaCon(RuntimeException.class, "Configuración › Correo", () -> {
+            try { sinConfig.enviar("T", "cliente@gmail.com", "a", "b", null, null, null); }
+            catch (rutas.logica.CorreoSmtp.ErrorCorreo e) { throw new RuntimeException(e.getMessage()); }
+        }));
+        try (BaseTienda bd = baseTemporal()) {
+            rutas.logica.AjustesCorreo a = new rutas.logica.AjustesCorreo();
+            a.cuenta = "tienda@gmail";
+            revisar("ajustes de correo: correo malo se rechaza", lanzaCon(IllegalArgumentException.class, "Revise el correo",
+                    () -> { try { a.guardar(bd); } catch (java.sql.SQLException e) { throw new RuntimeException(e); } }));
+            a.cuenta = "tienda@gmail.com";
+            a.clave = "abcd abcd abcd abcd";
+            a.guardar(bd);
+            rutas.logica.AjustesCorreo b = rutas.logica.AjustesCorreo.leer(bd);
+            revisar("ajustes de correo se guardan (clave sin espacios)", b.cuenta.equals("tienda@gmail.com")
+                    && b.clave.equals("abcdabcdabcdabcd") && b.listo());
+        }
+    }
 }

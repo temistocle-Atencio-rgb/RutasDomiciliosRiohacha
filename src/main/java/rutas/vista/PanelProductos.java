@@ -70,7 +70,8 @@ public class PanelProductos extends JPanel {
 
     private final Aplicacion app;
     private final Catalogo cat;
-    private final boolean verCompra;
+    private final boolean verCompra;   // ve el valor de compra (costos)
+    private final boolean puedeEditar; // si no, la lista es solo de consulta (precio de venta y existencias)
 
     // ---- listado ----
     private final JComboBox<Integer> comboPorPagina = new JComboBox<>(POR_PAGINA);
@@ -88,27 +89,15 @@ public class PanelProductos extends JPanel {
     private ListadoProductos.Pagina pagina;
     private int numeroPagina = 1;
     private Map<Long, String> nombresCategoria = new HashMap<>();
+    private Map<Long, java.time.LocalDate> vencimientos = new HashMap<>();
 
-    // ---- formulario (capa) ----
-    private final JTextField campoNombre = Tema.campo("Ej. Arroz Diana 500 g");
-    private final JTextField campoCodigo = Tema.campo("Escanee el código (opcional)");
-    private final JComboBox<Unidad> comboUnidad = new JComboBox<>(Unidad.values());
-    private final JComboBox<Categoria> comboCategoria = new JComboBox<>();
-    private final JTextField campoVenta = Tema.campo("Ej. 2.500");
-    private final JTextField campoCompra = Tema.campo("Ej. 2.000");
-    private final JTextField campoStock = Tema.campo("Ej. 24 o 10,5");
-    private final JTextField campoMinimo = Tema.campo("Ej. 6");
-    private final JLabel miniatura = new JLabel();
-    private final Tema.Parrafo lblForm = mensaje();
-    private Producto editando; // null = producto nuevo
-    private File fotoElegida;  // foto escogida que todavia no se ha copiado
-    private Capa capaForm;
 
     public PanelProductos(Aplicacion app) {
         super(new BorderLayout());
         this.app = app;
         this.cat = app.getCatalogo();
-        this.verCompra = app.getSesion().puede(Permiso.VER_COMPRA);
+        this.verCompra = app.getSesion().puede(Permiso.VER_COSTOS);
+        this.puedeEditar = app.getSesion().puede(Permiso.EDITAR_PRODUCTOS);
         setBackground(Tema.GRIS_CLARO);
         setBorder(BorderFactory.createEmptyBorder(16, 20, 16, 20));
         putClientProperty(Capa.FOCO_AL_CERRAR, campoBuscar);
@@ -121,14 +110,13 @@ public class PanelProductos extends JPanel {
         tarjeta.add(piePaginas(), BorderLayout.SOUTH);
         add(tarjeta, BorderLayout.CENTER);
 
-        Tema.estiloCombo(comboUnidad, PanelProductos::textoUnidad);
-        Tema.estiloCombo(comboCategoria, Categoria::getNombre);
         refrescarCategorias();
 
         // cada vez que se abre la pantalla se lee de nuevo: el stock cambia con cada venta
         addComponentListener(new java.awt.event.ComponentAdapter() {
             @Override
             public void componentShown(java.awt.event.ComponentEvent e) {
+                refrescarCategorias(); // pudieron cambiar en Inventario › Categorías
                 refrescar();
                 javax.swing.SwingUtilities.invokeLater(campoBuscar::requestFocusInWindow);
             }
@@ -184,7 +172,7 @@ public class PanelProductos extends JPanel {
     }
 
     /** Etiqueta pequeña encima de un control (como "Por página" y "Exportar"). */
-    private static JPanel columna(String etiqueta, JComponent c) {
+    static JPanel columna(String etiqueta, JComponent c) {
         JPanel p = new JPanel();
         p.setOpaque(false);
         p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
@@ -228,10 +216,10 @@ public class PanelProductos extends JPanel {
         g.weightx = 1;
         b.add(Box.createHorizontalGlue(), g);
         g.weightx = 0;
-        b.add(new AccionIcono("Categorías", Icono.CATEGORIAS, "Crear y editar las categorías que se ven en Vender",
-                () -> PanelCategorias.mostrar(this, app, this::refrescarCategorias)), g);
-        b.add(new AccionIcono("Importar\nproductos", Icono.IMPORTAR, "Importar la lista desde Excel (guardada como CSV)",
-                this::importar), g);
+        if (puedeEditar) {
+            b.add(new AccionIcono("Importar\nproductos", Icono.IMPORTAR, "Importar la lista desde Excel (guardada como CSV)",
+                    this::importar), g);
+        }
         b.add(new AccionIcono("Actualizar", Icono.ACTUALIZAR, "Volver a leer los productos", this::refrescar), g);
         g.weightx = 1;
         b.add(Box.createHorizontalGlue(), g);
@@ -252,7 +240,15 @@ public class PanelProductos extends JPanel {
         nuevo.setToolTipText("Crear un producto (Ctrl+N)");
         nuevo.addActionListener(e -> abrirFormulario(null, null));
         g.insets = new Insets(0, 0, 0, 0);
-        b.add(nuevo, g);
+        if (puedeEditar) {
+            b.add(nuevo, g);
+        } else { // el cajero consulta: no crea ni cambia (se lo da el administrador en Configuración › Usuarios)
+            JLabel solo = new JLabel("Solo consulta");
+            solo.setFont(Tema.textoFuerte(13));
+            solo.setForeground(Tema.GRIS_TEXTO);
+            solo.setToolTipText("Para crear o cambiar productos y precios, pídale el permiso al administrador");
+            b.add(solo, g);
+        }
         return b;
     }
 
@@ -300,9 +296,11 @@ public class PanelProductos extends JPanel {
         for (int i = 0; i < anchos.length; i++) {
             tabla.getColumnModel().getColumn(i).setPreferredWidth(anchos[i]);
         }
-        tabla.getColumnModel().getColumn(modelo.colAcciones()).setCellRenderer(new Acciones());
-        tabla.getColumnModel().getColumn(modelo.colAcciones()).setMinWidth(96);
-        tabla.getColumnModel().getColumn(modelo.colAcciones()).setMaxWidth(110);
+        if (modelo.colAcciones() >= 0) {
+            tabla.getColumnModel().getColumn(modelo.colAcciones()).setCellRenderer(new Acciones());
+            tabla.getColumnModel().getColumn(modelo.colAcciones()).setMinWidth(96);
+            tabla.getColumnModel().getColumn(modelo.colAcciones()).setMaxWidth(110);
+        }
         tabla.getColumnModel().getColumn(0).setMaxWidth(70);
 
         tabla.addMouseListener(new MouseAdapter() {
@@ -314,7 +312,7 @@ public class PanelProductos extends JPanel {
                     return;
                 }
                 Producto p = pagina.getProductos().get(f);
-                if (c == modelo.colAcciones()) {
+                if (c >= 0 && c == modelo.colAcciones()) {
                     java.awt.Rectangle r = tabla.getCellRect(f, c, false);
                     if (e.getX() < r.x + r.width / 2) {
                         abrirFormulario(p, null);
@@ -330,7 +328,7 @@ public class PanelProductos extends JPanel {
             @Override
             public void mouseMoved(MouseEvent e) {
                 int c = tabla.columnAtPoint(e.getPoint());
-                tabla.setCursor(c == modelo.colAcciones() ? Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+                tabla.setCursor(c >= 0 && c == modelo.colAcciones() ? Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
                         : Cursor.getDefaultCursor());
             }
         });
@@ -405,6 +403,7 @@ public class PanelProductos extends JPanel {
         List<Producto> todos;
         try {
             todos = cat.todosConInactivos();
+            vencimientos = app.getTienda().vencimientos();
         } catch (SQLException e) {
             Aviso.mostrar(this, Aviso.Tipo.ERROR, "No se pudieron leer los productos", e.getMessage());
             return;
@@ -480,166 +479,67 @@ public class PanelProductos extends JPanel {
     }
 
     // ------------------------------------------------------------------
-    //  Formulario como capa
+    //  Formulario (capa aparte: FormularioProducto)
     // ------------------------------------------------------------------
 
     private void abrirFormulario(Producto p, String codigoNuevo) {
-        if (Capa.hayAbierta(this)) {
-            return;
+        if (!puedeEditar) {
+            return; // solo consulta
         }
+        FormularioProducto.abrir(this, app, verCompra, p, codigoNuevo, this::refrescar);
+    }
+
+    /** El formulario creo una categoria: el filtro de arriba tambien la debe mostrar. */
+    void categoriasCambiaron() {
         refrescarCategorias();
-        JPanel t = Capa.tarjeta(640, 24, 28);
-        t.add(Tema.tituloPantalla(p == null ? "Nuevo producto" : "Editar producto"));
-        t.add(Tema.espacio(10));
-
-        JPanel grilla = new JPanel(new GridBagLayout());
-        grilla.setOpaque(false);
-        grilla.setAlignmentX(LEFT_ALIGNMENT);
-        GridBagConstraints g = new GridBagConstraints();
-        g.fill = GridBagConstraints.HORIZONTAL;
-        g.weightx = 1;
-        g.insets = new Insets(0, 0, 10, 12);
-        g.gridx = 0;
-        g.gridy = 0;
-        g.gridwidth = 2;
-        grilla.add(etiquetado("Nombre", campoNombre), g);
-        g.gridwidth = 1;
-        fila(grilla, g, 1, "Código de barras", campoCodigo, "Categoría", comboCategoria);
-        fila(grilla, g, 2, "Se vende por", comboUnidad, "Precio de venta", campoVenta);
-        if (verCompra) {
-            fila(grilla, g, 3, "Precio de compra (para la ganancia)", campoCompra, "Cantidad en la tienda", campoStock);
-            fila(grilla, g, 4, "Avisar cuando queden (o menos)", campoMinimo, null, null);
-        } else {
-            fila(grilla, g, 3, "Cantidad en la tienda", campoStock, "Avisar cuando queden (o menos)", campoMinimo);
-        }
-        g.gridx = 1;
-        g.gridy = 4;
-        Tema.Boton foto = Tema.botonPequeno("Elegir foto…");
-        foto.addActionListener(e -> elegirFoto());
-        miniatura.setPreferredSize(new Dimension(64, 64));
-        miniatura.getAccessibleContext().setAccessibleName("Foto del producto");
-        JPanel filaFoto = Tema.fila(10, miniatura, foto);
-        grilla.add(mitad(etiquetado("Foto", filaFoto)), g);
-        t.add(grilla);
-        t.add(lblForm);
-        t.add(Tema.espacio(10));
-
-        Tema.Boton guardar = Tema.botonPrimario("Guardar");
-        Tema.Boton volver = Tema.botonSecundario("Volver");
-        JPanel botones = Tema.fila(8, guardar, volver);
-        Tema.Boton activo = null;
-        if (p != null) {
-            activo = Tema.botonPequeno(p.isActivo() ? "Desactivar" : "Reactivar");
-            botones.add(activo);
-        }
-        t.add(botones);
-
-        capaForm = new Capa(this, t, true);
-        guardar.addActionListener(e -> guardar());
-        volver.addActionListener(e -> capaForm.cerrar());
-        if (activo != null) {
-            activo.addActionListener(e -> {
-                capaForm.cerrar();
-                cambiarActivo(p);
-            });
-        }
-        if (p == null) {
-            limpiar(codigoNuevo);
-        } else {
-            cargar(p);
-        }
-        capaForm.mostrar(campoNombre);
     }
 
-    private void fila(JPanel grilla, GridBagConstraints g, int y, String e1, JComponent c1, String e2, JComponent c2) {
-        g.gridy = y;
-        g.gridx = 0;
-        grilla.add(mitad(etiquetado(e1, c1)), g);
-        if (e2 != null) {
-            g.gridx = 1;
-            grilla.add(mitad(etiquetado(e2, c2)), g);
+    /** Avisa cada vez que cambia el texto de un campo. */
+    /** Dias que faltan para el vencimiento mas cercano (negativo si ya vencio); muy grande si no tiene. */
+    private long diasParaVencer(Producto p) {
+        java.time.LocalDate v = vencimientos.get(p.getId());
+        return v == null ? Long.MAX_VALUE : java.time.temporal.ChronoUnit.DAYS.between(java.time.LocalDate.now(), v);
+    }
+
+    /** "Activo", "Desactivado", "Vencido" o "Vence en 5 días" (lo de vencer pesa mas que "Activo"). */
+    private String textoEstado(Producto p) {
+        if (!p.isActivo()) {
+            return "Desactivado";
         }
-    }
-
-    /** Las dos columnas del formulario con el mismo ancho. */
-    private static JPanel mitad(JPanel p) {
-        p.setPreferredSize(new Dimension(280, p.getPreferredSize().height));
-        return p;
-    }
-
-    private void limpiar(String codigo) {
-        editando = null;
-        fotoElegida = null;
-        for (JTextField f : new JTextField[]{campoNombre, campoVenta, campoCompra, campoStock, campoMinimo}) {
-            f.setText("");
+        long dias = diasParaVencer(p);
+        if (dias < 0) {
+            return "Vencido";
         }
-        campoCodigo.setText(codigo == null ? "" : codigo);
-        comboUnidad.setSelectedItem(Unidad.UNIDAD);
-        comboCategoria.setSelectedItem(SIN_CATEGORIA);
-        mostrarFoto(null);
-        lblForm.setText(codigo == null ? " " : "Ese código no está registrado. Escriba los datos y guarde.");
-        lblForm.setForeground(Tema.AVISO_TEXTO);
+        if (dias <= 30) {
+            return "Por vencer";
+        }
+        return "Activo";
     }
 
-    private void cargar(Producto p) {
-        editando = p;
-        fotoElegida = null;
-        campoNombre.setText(p.getNombre());
-        campoCodigo.setText(p.getCodigo() == null ? "" : p.getCodigo());
-        comboUnidad.setSelectedItem(p.getUnidad());
-        elegirCategoria(p.getCategoriaId());
-        campoVenta.setText(Tarifa.pesos(p.getPrecioVenta()).replace("$", ""));
-        campoCompra.setText(Tarifa.pesos(p.getPrecioCompra()).replace("$", ""));
-        campoStock.setText(cantidad(p.getStock()));
-        campoMinimo.setText(cantidad(p.getMinimo()));
-        mostrarFoto(p.getFoto() == null ? null : new File(p.getFoto()));
-        lblForm.setText(p.isActivo() ? " " : "Este producto está desactivado: no sale en Vender.");
-        lblForm.setForeground(Tema.AVISO_TEXTO);
-    }
-
-    private void guardar() {
-        try {
-            long venta = ImportadorProductos.leerPesos(campoVenta.getText());
-            long compra = !verCompra ? (editando == null ? 0 : editando.getPrecioCompra())
-                    : campoCompra.getText().isBlank() ? 0 : ImportadorProductos.leerPesos(campoCompra.getText());
-            long stock = campoStock.getText().isBlank() ? 0 : ImportadorProductos.leerCantidad(campoStock.getText());
-            if (editando != null && campoStock.getText().trim().equals(cantidad(editando.getStock()))) {
-                // no tocaron la cantidad: se guarda la de la base (pudo bajar por ventas mientras tanto)
-                Producto actual = app.getTienda().buscarProductoPorId(editando.getId());
-                if (actual != null) {
-                    stock = actual.getStock();
-                }
+    static DocumentListener alCambiar(Runnable r) {
+        return new DocumentListener() {
+            @Override
+            public void insertUpdate(DocumentEvent e) {
+                r.run();
             }
-            long minimo = campoMinimo.getText().isBlank() ? 0 : ImportadorProductos.leerCantidad(campoMinimo.getText());
-            Unidad u = (Unidad) comboUnidad.getSelectedItem();
-            long id = editando == null ? 0 : editando.getId();
-            String foto = editando == null ? null : editando.getFoto();
-            Categoria c = (Categoria) comboCategoria.getSelectedItem();
-            Long categoriaId = c == null || c.getId() == 0 ? null : c.getId();
-            boolean activo = editando == null || editando.isActivo();
-            Producto p = new Producto(id, campoCodigo.getText(), campoNombre.getText(), u, venta, compra, stock,
-                    minimo, foto, true, categoriaId);
-            boolean eraNuevo = editando == null;
-            p = eraNuevo ? cat.crear(p) : cat.editar(p);
-            editando = p; // si lo que sigue falla, guardar otra vez edita este producto en vez de duplicarlo
-            if (fotoElegida != null) {
-                String ruta = copiarFoto(fotoElegida, "producto-" + p.getId());
-                Fotos.olvidar(ruta); // la foto nueva queda con el mismo nombre de archivo
-                p = cat.editar(new Producto(p.getId(), p.getCodigo(), p.getNombre(), p.getUnidad(),
-                        p.getPrecioVenta(), p.getPrecioCompra(), p.getStock(), p.getMinimo(), ruta, activo, categoriaId));
+
+            @Override
+            public void removeUpdate(DocumentEvent e) {
+                r.run();
             }
-            capaForm.cerrar();
-            refrescar();
-            Aviso.mostrar(this, Aviso.Tipo.BIEN, eraNuevo ? "Producto creado" : "Cambios guardados", p.getNombre());
-        } catch (IllegalArgumentException e) {
-            decir(lblForm, e.getMessage(), false);
-        } catch (SQLException | IOException e) {
-            decir(lblForm, "No se pudo guardar: " + e.getMessage(), false);
-        }
+
+            @Override
+            public void changedUpdate(DocumentEvent e) {
+                r.run();
+            }
+        };
     }
 
     /** La papelera desactiva (no borra): las ventas guardadas nombran al producto. */
     private void cambiarActivo(Producto p) {
+        if (!puedeEditar) {
+            return; // solo consulta
+        }
         if (p.isActivo()) {
             Alerta.confirmar(this, "¿Desactivar «" + p.getNombre() + "»?",
                     "Deja de salir en Vender. Las ventas anteriores no cambian y se puede reactivar en «Mostrar: Desactivados».",
@@ -666,7 +566,6 @@ public class PanelProductos extends JPanel {
     /** Llena las listas de categorias (filtro y formulario) sin perder lo elegido. */
     private void refrescarCategorias() {
         Categoria antesFiltro = (Categoria) filtroCategoria.getSelectedItem();
-        Categoria antesForm = (Categoria) comboCategoria.getSelectedItem();
         List<Categoria> lista = new ArrayList<>();
         try {
             lista = app.getTienda().listarCategorias(false);
@@ -680,25 +579,17 @@ public class PanelProductos extends JPanel {
         }
         filtroCategoria.removeAllItems();
         filtroCategoria.addItem(TODAS);
-        comboCategoria.removeAllItems();
-        comboCategoria.addItem(SIN_CATEGORIA);
         for (Categoria c : lista) {
             nombresCategoria.put(c.getId(), c.getNombre());
             filtroCategoria.addItem(c);
-            comboCategoria.addItem(c);
         }
         seleccionar(filtroCategoria, antesFiltro == null || antesFiltro.getId() == 0 ? null : antesFiltro.getId(), TODAS);
         for (java.awt.event.ActionListener o : oyentes) {
             filtroCategoria.addActionListener(o);
         }
-        elegirCategoria(antesForm == null || antesForm.getId() == 0 ? null : antesForm.getId());
         if (pagina != null) {
             refrescar();
         }
-    }
-
-    private void elegirCategoria(Long id) {
-        seleccionar(comboCategoria, id, SIN_CATEGORIA);
     }
 
     private static void seleccionar(JComboBox<Categoria> combo, Long id, Categoria porDefecto) {
@@ -716,15 +607,6 @@ public class PanelProductos extends JPanel {
     //  Foto
     // ------------------------------------------------------------------
 
-    private void elegirFoto() {
-        File f = Archivos.abrir(this, "Elegir la foto del producto", "jpg", "jpeg", "png");
-        if (f != null) {
-            fotoElegida = f;
-            mostrarFoto(fotoElegida);
-            decir(lblForm, "La foto se guarda al oprimir Guardar", true);
-        }
-    }
-
     /** Copia la foto a la carpeta del programa, asi no se pierde si la original se borra. */
     static String copiarFoto(File origen, String nombreBase) throws IOException {
         String nombre = origen.getName().toLowerCase();
@@ -734,22 +616,6 @@ public class PanelProductos extends JPanel {
         File destino = new File(carpeta, nombreBase + "." + ext);
         Files.copy(origen.toPath(), destino.toPath(), StandardCopyOption.REPLACE_EXISTING);
         return destino.getAbsolutePath();
-    }
-
-    private void mostrarFoto(File f) {
-        if (f == null || !f.isFile()) {
-            miniatura.setIcon(null);
-            miniatura.setText("Sin foto");
-            miniatura.setFont(Tema.texto(12.5f));
-            miniatura.setForeground(Tema.GRIS_TEXTO);
-            return;
-        }
-        miniatura.setText(null);
-        Image img = new ImageIcon(f.getAbsolutePath()).getImage();
-        int w = img.getWidth(null), h = img.getHeight(null);
-        double e = w > 0 && h > 0 ? 64.0 / Math.max(w, h) : 1;
-        miniatura.setIcon(new ImageIcon(img.getScaledInstance(Math.max(1, (int) (w * e)), Math.max(1, (int) (h * e)),
-                Image.SCALE_SMOOTH)));
     }
 
     // ------------------------------------------------------------------
@@ -813,7 +679,7 @@ public class PanelProductos extends JPanel {
             return;
         }
         try {
-            Files.write(f.toPath(), ListadoProductos.aCsv(filtrados, nombresCategoria).getBytes(StandardCharsets.UTF_8));
+            Files.write(f.toPath(), ListadoProductos.aCsv(filtrados, nombresCategoria, verCompra).getBytes(StandardCharsets.UTF_8));
             Aviso.mostrar(this, Aviso.Tipo.BIEN, "Lista exportada", filtrados.size() + " productos en " + f.getName());
         } catch (IOException e) {
             Alerta.mostrar(this, Alerta.Tipo.AVISO, "No se pudo guardar el archivo", e.getMessage(), null);
@@ -825,7 +691,9 @@ public class PanelProductos extends JPanel {
         Modelo todo = new Modelo();
         todo.todos = true;
         JTable t = new JTable(todo);
-        t.removeColumn(t.getColumnModel().getColumn(todo.colAcciones()));
+        if (todo.colAcciones() >= 0) {
+            t.removeColumn(t.getColumnModel().getColumn(todo.colAcciones()));
+        }
         t.setFont(Tema.texto(10));
         t.setRowHeight(20);
         t.getTableHeader().setFont(Tema.textoFuerte(10));
@@ -894,6 +762,11 @@ public class PanelProductos extends JPanel {
         }
 
         String[] columnas() {
+            String[] c = conAcciones();
+            return puedeEditar ? c : java.util.Arrays.copyOf(c, c.length - 1); // consulta: sin editar ni desactivar
+        }
+
+        private String[] conAcciones() {
             return verCompra
                     ? new String[]{"Item", "Código de barras", "Nombre", "Stock", "Valor de compra", "Valor de venta",
                         "Categoría", "Estado", "Acciones"}
@@ -902,12 +775,17 @@ public class PanelProductos extends JPanel {
         }
 
         int[] anchos() {
+            int[] a = anchosConAcciones();
+            return puedeEditar ? a : java.util.Arrays.copyOf(a, a.length - 1);
+        }
+
+        private int[] anchosConAcciones() {
             return verCompra ? new int[]{60, 160, 360, 120, 130, 130, 150, 100, 100}
                     : new int[]{60, 160, 400, 120, 140, 160, 100, 100};
         }
 
         int colAcciones() {
-            return columnas().length - 1;
+            return puedeEditar ? columnas().length - 1 : -1;
         }
 
         @Override
@@ -945,7 +823,7 @@ public class PanelProductos extends JPanel {
                 case "Categoría":
                     return p.getCategoriaId() == null ? "—" : nombresCategoria.getOrDefault(p.getCategoriaId(), "—");
                 case "Estado":
-                    return p.isActivo() ? "Activo" : "Desactivado";
+                    return textoEstado(p);
                 default:
                     return "";
             }
@@ -990,7 +868,9 @@ public class PanelProductos extends JPanel {
             }
             if (col.equals("Estado")) {
                 setFont(Tema.textoFuerte(t.getFont().getSize2D() - 0.5f));
-                setForeground(p.isActivo() ? Tema.EXITO_TEXTO : Tema.GRIS_TEXTO);
+                long dias = diasParaVencer(p);
+                setForeground(!p.isActivo() ? Tema.GRIS_TEXTO : dias < 0 ? Tema.ERROR_TEXTO
+                        : dias <= 30 ? Tema.AVISO_TEXTO : Tema.EXITO_TEXTO);
             }
             if (!p.isActivo() && !col.equals("Estado")) {
                 setForeground(Tema.GRIS_TEXTO);
@@ -998,13 +878,18 @@ public class PanelProductos extends JPanel {
             String tip = col.equals("Stock") && p.isActivo() && p.getStock() < 0 ? "Se vendió más de lo que había registrado"
                     : col.equals("Stock") && p.isActivo() && p.estaBajoMinimo()
                     ? "Bajo el mínimo (" + cantidad(p.getMinimo()) + " " + p.getUnidad().getCorto() + ")" : null;
+            if (col.equals("Estado") && vencimientos.containsKey(p.getId())) {
+                long d = diasParaVencer(p);
+                tip = (d < 0 ? "Venció hace " + (-d) + " días" : d == 0 ? "Vence hoy" : "Vence en " + d + (d == 1 ? " día" : " días"))
+                        + " (" + vencimientos.get(p.getId()).format(Controles.FORMATO) + ")";
+            }
             setToolTipText(tip);
             return this;
         }
     }
 
     /** Encabezado gris con letra fuerte, en dos lineas si no cabe. */
-    private static class Encabezado extends DefaultTableCellRenderer {
+    static class Encabezado extends DefaultTableCellRenderer {
         @Override
         public Component getTableCellRendererComponent(JTable t, Object v, boolean sel, boolean foco, int r, int c) {
             JLabel l = new JLabel("<html><div style='text-align:center'>" + v + "</div></html>", CENTER);
@@ -1053,10 +938,32 @@ public class PanelProductos extends JPanel {
     }
 
     /** Iconos de linea (1.8 px, sin cuadro detras), como pide el manual. */
-    private enum Icono {
+    enum Icono {
         LAPIZ, PAPELERA, REACTIVAR, CATEGORIAS, IMPORTAR, ACTUALIZAR, EXCEL, PDF, LUPA;
 
+        /** Archivo de la carpeta de iconos del diseño que lo reemplaza (null: se dibuja a mano). */
+        String archivo() {
+            switch (this) {
+                case LAPIZ:
+                    return "editar";
+                case PAPELERA:
+                    return "basura";
+                case CATEGORIAS:
+                    return "categorias";
+                case IMPORTAR:
+                    return "subir";
+                case LUPA:
+                    return "lupa";
+                default:
+                    return null;
+            }
+        }
+
         void dibujar(Graphics2D g, int x, int y, int s, Color color) {
+            if (archivo() != null) {
+                Iconos.dibujar(g, archivo(), x, y, s, color);
+                return;
+            }
             g.setColor(color);
             g.setStroke(new BasicStroke(1.8f * s / 18f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
             double k = s / 18.0;
@@ -1161,16 +1068,29 @@ public class PanelProductos extends JPanel {
         }
     }
 
+    /** Lee un PNG de /imagenes/archivos/ (excel, pdf); null si no esta. */
+    private static Image cargarPng(String nombre) {
+        java.net.URL url = PanelProductos.class.getResource("/imagenes/archivos/" + nombre + ".png");
+        return url == null ? null : new ImageIcon(url).getImage();
+    }
+
     /** Boton de icono con su texto debajo (Excel, PDF). */
-    private static class BotonIcono extends JButton {
+    static class BotonIcono extends JButton {
         BotonIcono(String texto, Icono icono, String ayuda, Runnable accion) {
             super(texto);
-            Color color = icono == Icono.EXCEL ? Tema.EXITO_TEXTO : Tema.ERROR_TEXTO;
+            // iconos oficiales de Excel y PDF (imagenes/archivos), siempre a color
+            final Image png = cargarPng(icono == Icono.EXCEL ? "excel" : "pdf");
+            final java.util.Map<Integer, Image> escalas = new java.util.HashMap<>();
             setIcon(new javax.swing.Icon() {
                 public void paintIcon(Component c, Graphics g0, int x, int y) {
+                    if (png == null) return;
                     Graphics2D g = (Graphics2D) g0.create();
-                    Tema.suavizar(g);
-                    icono.dibujar(g, x, y, 24, color);
+                    // se escala al tamaño real de pantalla (125 %, 150 %...) para que no se vea borroso
+                    double esc = g.getTransform().getScaleX();
+                    int px = (int) Math.round(26 * esc);
+                    Image img = escalas.computeIfAbsent(px, t -> png.getScaledInstance(t, t, Image.SCALE_SMOOTH));
+                    new javax.swing.ImageIcon(img); // espera a que termine de escalar
+                    g.drawImage(img, x, y, 26, 26, null);
                     g.dispose();
                 }
                 public int getIconWidth() { return 26; }
@@ -1192,7 +1112,7 @@ public class PanelProductos extends JPanel {
     }
 
     /** Accion de la barra: texto arriba (en una o dos lineas) e icono azul abajo, como en la referencia. */
-    private static class AccionIcono extends JButton {
+    static class AccionIcono extends JButton {
         AccionIcono(String texto, Icono icono, String ayuda, Runnable accion) {
             super("<html><div style='text-align:center'>" + texto.replace("\n", "<br>") + "</div></html>");
             setIcon(new javax.swing.Icon() {
@@ -1220,7 +1140,7 @@ public class PanelProductos extends JPanel {
     }
 
     /** Boton de pagina: cuadro pequeño de 2 px de radio; la actual en azul. */
-    private static class BotonPagina extends JButton {
+    static class BotonPagina extends JButton {
         private final boolean actual;
 
         BotonPagina(String texto, String ayuda, boolean activo, boolean actual, Runnable accion) {

@@ -21,6 +21,7 @@ import rutas.modelo.Geo;
 import rutas.modelo.Incidente;
 import rutas.modelo.Parada;
 import rutas.modelo.Ruta;
+import rutas.modelo.Salida;
 import rutas.modelo.TipoIncidente;
 
 /**
@@ -90,6 +91,23 @@ public class BaseDatos implements AutoCloseable {
                     + " urgente INTEGER NOT NULL DEFAULT 0, llegada TEXT NOT NULL,"
                     + " PRIMARY KEY (ruta_id, orden))");
             st.execute("CREATE INDEX IF NOT EXISTS idx_rutas_fecha ON rutas(fecha)");
+            crearTablasSalidas(st);
+            // datos de caja del cliente (documento, correo, municipio y tope de credito)
+            String[][] nuevas = {{"tipo_doc", "TEXT NOT NULL DEFAULT ''"}, {"documento", "TEXT NOT NULL DEFAULT ''"},
+                {"correo", "TEXT NOT NULL DEFAULT ''"}, {"departamento", "TEXT NOT NULL DEFAULT ''"},
+                {"municipio", "TEXT NOT NULL DEFAULT ''"}, {"credito_max", "INTEGER NOT NULL DEFAULT 0"},
+                {"activo", "INTEGER NOT NULL DEFAULT 1"}};
+            for (String[] c : nuevas) {
+                boolean hay = false;
+                try (ResultSet rs = st.executeQuery("PRAGMA table_info(clientes)")) {
+                    while (rs.next()) {
+                        hay |= c[0].equalsIgnoreCase(rs.getString("name"));
+                    }
+                }
+                if (!hay) {
+                    st.execute("ALTER TABLE clientes ADD COLUMN " + c[0] + " " + c[1]);
+                }
+            }
         }
         if (leerConfig("version") == null) {
             guardarConfig("version", String.valueOf(VERSION));
@@ -166,10 +184,12 @@ public class BaseDatos implements AutoCloseable {
     public ArbolAVL<String, Cliente> cargarClientes() throws SQLException {
         ArbolAVL<String, Cliente> arbol = new ArbolAVL<>();
         try (Statement st = con.createStatement();
-             ResultSet rs = st.executeQuery("SELECT clave, nombre, telefono, direccion, nota, lat, lon FROM clientes")) {
+             ResultSet rs = st.executeQuery("SELECT clave, nombre, telefono, direccion, nota, lat, lon, tipo_doc,"
+                     + " documento, correo, departamento, municipio, credito_max, activo FROM clientes")) {
             while (rs.next()) {
                 arbol.insertar(rs.getString(1), new Cliente(rs.getString(2), rs.getString(3), rs.getString(4),
-                        rs.getString(5), rs.getDouble(6), rs.getDouble(7)));
+                        rs.getString(5), rs.getDouble(6), rs.getDouble(7), rs.getString(8), rs.getString(9),
+                        rs.getString(10), rs.getString(11), rs.getString(12), rs.getLong(13), rs.getInt(14) != 0));
             }
         }
         return arbol;
@@ -178,9 +198,13 @@ public class BaseDatos implements AutoCloseable {
     /** Inserta el cliente o lo actualiza si ya hay uno con el mismo nombre. */
     public void guardarCliente(Cliente c) throws SQLException {
         try (PreparedStatement ps = con.prepareStatement(
-                "INSERT INTO clientes(clave, nombre, telefono, direccion, nota, lat, lon) VALUES(?,?,?,?,?,?,?) "
+                "INSERT INTO clientes(clave, nombre, telefono, direccion, nota, lat, lon, tipo_doc, documento, correo,"
+                + " departamento, municipio, credito_max, activo) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
                 + "ON CONFLICT(clave) DO UPDATE SET nombre = excluded.nombre, telefono = excluded.telefono, "
-                + "direccion = excluded.direccion, nota = excluded.nota, lat = excluded.lat, lon = excluded.lon")) {
+                + "direccion = excluded.direccion, nota = excluded.nota, lat = excluded.lat, lon = excluded.lon, "
+                + "tipo_doc = excluded.tipo_doc, documento = excluded.documento, correo = excluded.correo, "
+                + "departamento = excluded.departamento, municipio = excluded.municipio, "
+                + "credito_max = excluded.credito_max, activo = excluded.activo")) {
             ps.setString(1, Geo.normalizar(c.getNombre()));
             ps.setString(2, c.getNombre());
             ps.setString(3, c.getTelefono());
@@ -188,7 +212,47 @@ public class BaseDatos implements AutoCloseable {
             ps.setString(5, c.getNota());
             ps.setDouble(6, c.getLat());
             ps.setDouble(7, c.getLon());
+            ps.setString(8, c.getTipoDocumento());
+            ps.setString(9, c.getDocumento());
+            ps.setString(10, c.getCorreo());
+            ps.setString(11, c.getDepartamento());
+            ps.setString(12, c.getMunicipio());
+            ps.setLong(13, c.getCreditoMaximo());
+            ps.setInt(14, c.isActivo() ? 1 : 0);
             ps.executeUpdate();
+        }
+    }
+
+    /** Cambia el nombre (la clave) de un cliente: se borra el viejo y se guarda el nuevo, juntos. */
+    public void renombrarCliente(String nombreViejo, Cliente nuevo) throws SQLException {
+        boolean antes = con.getAutoCommit();
+        con.setAutoCommit(false);
+        try {
+            eliminarCliente(nombreViejo);
+            guardarCliente(nuevo);
+            con.commit();
+        } catch (SQLException | RuntimeException e) {
+            con.rollback();
+            throw e;
+        } finally {
+            con.setAutoCommit(antes);
+        }
+    }
+
+    /** Guarda varios clientes juntos (importar): o se guardan todos o ninguno. */
+    public void guardarClientes(java.util.List<Cliente> lista) throws SQLException {
+        boolean antes = con.getAutoCommit();
+        con.setAutoCommit(false);
+        try {
+            for (Cliente c : lista) {
+                guardarCliente(c);
+            }
+            con.commit();
+        } catch (SQLException | RuntimeException e) {
+            con.rollback();
+            throw e;
+        } finally {
+            con.setAutoCommit(antes);
         }
     }
 
@@ -460,6 +524,425 @@ public class BaseDatos implements AutoCloseable {
         File destino = new File(f.getParentFile(), f.getName() + ".importado");
         if (!f.renameTo(destino)) {
             f.deleteOnExit();
+        }
+    }
+    // ------------------------------------------------------------------
+    //  Entregas pendientes y salidas del repartidor
+    // ------------------------------------------------------------------
+
+    private void crearTablasSalidas(Statement st) throws SQLException {
+        // las entregas que esperan salir (si se cierra el programa no se pierden)
+        st.execute("CREATE TABLE IF NOT EXISTS pendientes ("
+                + " orden INTEGER PRIMARY KEY,"
+                + " nombre TEXT NOT NULL, direccion TEXT NOT NULL, lat REAL NOT NULL, lon REAL NOT NULL,"
+                + " nodo INTEGER NOT NULL, precision_txt TEXT NOT NULL DEFAULT '', telefono TEXT NOT NULL DEFAULT '',"
+                + " valor INTEGER NOT NULL DEFAULT 0, pagado INTEGER NOT NULL DEFAULT 0,"
+                + " paga_con INTEGER NOT NULL DEFAULT 0, urgente INTEGER NOT NULL DEFAULT 0)");
+        st.execute("CREATE TABLE IF NOT EXISTS salidas ("
+                + " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                + " codigo TEXT NOT NULL DEFAULT '', uuid_nube TEXT NOT NULL DEFAULT '',"
+                + " repartidor TEXT NOT NULL DEFAULT '', creada TEXT NOT NULL, cerrada TEXT,"
+                + " estado TEXT NOT NULL, lat REAL, lon REAL, ubicacion_en TEXT)");
+        st.execute("CREATE TABLE IF NOT EXISTS entregas_salida ("
+                + " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                + " salida_id INTEGER NOT NULL REFERENCES salidas(id) ON DELETE CASCADE,"
+                + " orden INTEGER NOT NULL,"
+                + " nombre TEXT NOT NULL, direccion TEXT NOT NULL, lat REAL NOT NULL, lon REAL NOT NULL,"
+                + " nodo INTEGER NOT NULL, telefono TEXT NOT NULL DEFAULT '',"
+                + " valor INTEGER NOT NULL DEFAULT 0, pagado INTEGER NOT NULL DEFAULT 0,"
+                + " paga_con INTEGER NOT NULL DEFAULT 0, urgente INTEGER NOT NULL DEFAULT 0,"
+                + " cobrar INTEGER NOT NULL DEFAULT 0, estado TEXT NOT NULL, motivo TEXT NOT NULL DEFAULT '',"
+                + " id_nube INTEGER NOT NULL DEFAULT 0, tiene_foto INTEGER NOT NULL DEFAULT 0,"
+                + " foto TEXT NOT NULL DEFAULT '', marca_pendiente INTEGER NOT NULL DEFAULT 0,"
+                + " marcada_en INTEGER NOT NULL DEFAULT 0)");
+        st.execute("CREATE TABLE IF NOT EXISTS mensajes_salida ("
+                + " salida_id INTEGER NOT NULL REFERENCES salidas(id) ON DELETE CASCADE,"
+                + " id_nube INTEGER NOT NULL, de_tienda INTEGER NOT NULL, texto TEXT NOT NULL,"
+                + " hora TEXT NOT NULL, leido INTEGER NOT NULL DEFAULT 0)");
+        st.execute("CREATE INDEX IF NOT EXISTS idx_salidas_creada ON salidas(creada)");
+        columnaSiFalta(st, "salidas", "tipo_repartidor", "TEXT NOT NULL DEFAULT ''");
+        columnaSiFalta(st, "salidas", "aceptada_en", "TEXT");
+        columnaSiFalta(st, "salidas", "rechazada_en", "TEXT");
+        columnaSiFalta(st, "salidas", "motivo_rechazo", "TEXT NOT NULL DEFAULT ''");
+        columnaSiFalta(st, "salidas", "enviada_en", "TEXT");
+        columnaSiFalta(st, "entregas_salida", "domicilio", "INTEGER NOT NULL DEFAULT 0");
+        for (String t : new String[]{"pendientes", "entregas_salida"}) { // de qué venta salió y cuántos productos
+            columnaSiFalta(st, t, "venta_numero", "INTEGER NOT NULL DEFAULT 0");
+            columnaSiFalta(st, t, "productos", "INTEGER NOT NULL DEFAULT 0");
+        }
+        // quienes llevan los domicilios (sin contraseñas: a cada salida le llega su enlace)
+        st.execute("CREATE TABLE IF NOT EXISTS domiciliarios ("
+                + " id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT NOT NULL, celular TEXT NOT NULL DEFAULT '',"
+                + " tipo TEXT NOT NULL DEFAULT 'FIJO', activo INTEGER NOT NULL DEFAULT 1)");
+        columnaSiFalta(st, "entregas_salida", "marca_pendiente", "INTEGER NOT NULL DEFAULT 0");
+        columnaSiFalta(st, "entregas_salida", "marcada_en", "INTEGER NOT NULL DEFAULT 0");
+    }
+
+    /** Las tablas de salidas ya pueden existir de la versión anterior: se les agrega lo nuevo. */
+    private static void columnaSiFalta(Statement st, String tabla, String columna, String tipo) throws SQLException {
+        try (ResultSet rs = st.executeQuery("PRAGMA table_info(" + tabla + ")")) {
+            while (rs.next()) {
+                if (columna.equalsIgnoreCase(rs.getString("name"))) {
+                    return;
+                }
+            }
+        }
+        st.execute("ALTER TABLE " + tabla + " ADD COLUMN " + columna + " " + tipo);
+    }
+
+    /** Reemplaza la lista de entregas pendientes. */
+    public void guardarPendientes(List<Parada> entregas) throws SQLException {
+        boolean antes = con.getAutoCommit();
+        con.setAutoCommit(false);
+        try (Statement st = con.createStatement();
+             PreparedStatement ps = con.prepareStatement("INSERT INTO pendientes(orden, nombre, direccion, lat, lon, nodo,"
+                     + " precision_txt, telefono, valor, pagado, paga_con, urgente, venta_numero, productos)"
+                     + " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)")) {
+            st.execute("DELETE FROM pendientes");
+            for (int i = 0; i < entregas.size(); i++) {
+                Parada p = entregas.get(i);
+                ps.setInt(1, i + 1);
+                ps.setString(2, p.getNombre());
+                ps.setString(3, p.getDireccion());
+                ps.setDouble(4, p.getLat());
+                ps.setDouble(5, p.getLon());
+                ps.setInt(6, p.getNodo());
+                ps.setString(7, p.getPrecision() == null ? "" : p.getPrecision());
+                ps.setString(8, p.getTelefono());
+                ps.setInt(9, p.getValorPedido());
+                ps.setInt(10, p.isPagado() ? 1 : 0);
+                ps.setInt(11, p.getPagaCon());
+                ps.setInt(12, p.isUrgente() ? 1 : 0);
+                ps.setLong(13, p.getVentaNumero());
+                ps.setInt(14, p.getProductos());
+                ps.addBatch();
+            }
+            ps.executeBatch();
+            con.commit();
+        } catch (SQLException e) {
+            con.rollback();
+            throw e;
+        } finally {
+            con.setAutoCommit(antes);
+        }
+    }
+
+    public List<Parada> cargarPendientes() throws SQLException {
+        List<Parada> l = new ArrayList<>();
+        try (Statement st = con.createStatement();
+             ResultSet rs = st.executeQuery("SELECT nombre, direccion, lat, lon, nodo, precision_txt, telefono, valor,"
+                     + " pagado, paga_con, urgente, venta_numero, productos FROM pendientes ORDER BY orden")) {
+            while (rs.next()) {
+                Parada p = new Parada(rs.getString(1), rs.getString(2), rs.getDouble(3), rs.getDouble(4));
+                p.setNodo(rs.getInt(5));
+                p.setPrecision(rs.getString(6));
+                p.setTelefono(rs.getString(7));
+                p.setValorPedido(rs.getInt(8));
+                p.setPagado(rs.getInt(9) == 1);
+                p.setPagaCon(rs.getInt(10));
+                p.setUrgente(rs.getInt(11) == 1);
+                p.setVentaNumero(rs.getLong(12));
+                p.setProductos(rs.getInt(13));
+                l.add(p);
+            }
+        }
+        return l;
+    }
+
+    /** Guarda la salida completa (si es nueva le pone id). Entregas y mensajes se reescriben. */
+    public void guardarSalida(Salida s) throws SQLException {
+        boolean antes = con.getAutoCommit();
+        long idAntes = s.id;
+        long[] idsAntes = new long[s.entregas.size()];
+        for (int i = 0; i < idsAntes.length; i++) {
+            idsAntes[i] = s.entregas.get(i).id;
+        }
+        con.setAutoCommit(false);
+        try {
+            if (s.id == 0) {
+                try (PreparedStatement ps = con.prepareStatement("INSERT INTO salidas(codigo, uuid_nube, repartidor,"
+                        + " creada, cerrada, estado, lat, lon, ubicacion_en, tipo_repartidor, aceptada_en, rechazada_en, motivo_rechazo, enviada_en)"
+                        + " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        Statement.RETURN_GENERATED_KEYS)) {
+                    datosSalida(ps, s);
+                    ps.executeUpdate();
+                    try (ResultSet k = ps.getGeneratedKeys()) {
+                        k.next();
+                        s.id = k.getLong(1);
+                    }
+                }
+            } else {
+                try (PreparedStatement ps = con.prepareStatement("UPDATE salidas SET codigo=?, uuid_nube=?, repartidor=?,"
+                        + " creada=?, cerrada=?, estado=?, lat=?, lon=?, ubicacion_en=?, tipo_repartidor=?, aceptada_en=?, rechazada_en=?, motivo_rechazo=?, enviada_en=?"
+                        + " WHERE id=?")) {
+                    datosSalida(ps, s);
+                    ps.setLong(15, s.id);
+                    ps.executeUpdate();
+                }
+            }
+            try (PreparedStatement d1 = con.prepareStatement("DELETE FROM entregas_salida WHERE salida_id=?");
+                 PreparedStatement d2 = con.prepareStatement("DELETE FROM mensajes_salida WHERE salida_id=?")) {
+                d1.setLong(1, s.id);
+                d1.executeUpdate();
+                d2.setLong(1, s.id);
+                d2.executeUpdate();
+            }
+            try (PreparedStatement pe = con.prepareStatement("INSERT INTO entregas_salida(salida_id, orden, nombre,"
+                    + " direccion, lat, lon, nodo, telefono, valor, pagado, paga_con, urgente, cobrar, estado, motivo,"
+                    + " id_nube, tiene_foto, foto, marca_pendiente, marcada_en, domicilio, venta_numero, productos)"
+                    + " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    Statement.RETURN_GENERATED_KEYS)) {
+                for (int i = 0; i < s.entregas.size(); i++) {
+                    Salida.Entrega e = s.entregas.get(i);
+                    Parada p = e.parada;
+                    pe.setLong(1, s.id);
+                    pe.setInt(2, i + 1);
+                    pe.setString(3, p.getNombre());
+                    pe.setString(4, p.getDireccion());
+                    pe.setDouble(5, p.getLat());
+                    pe.setDouble(6, p.getLon());
+                    pe.setInt(7, p.getNodo());
+                    pe.setString(8, p.getTelefono());
+                    pe.setInt(9, p.getValorPedido());
+                    pe.setInt(10, p.isPagado() ? 1 : 0);
+                    pe.setInt(11, p.getPagaCon());
+                    pe.setInt(12, p.isUrgente() ? 1 : 0);
+                    pe.setInt(13, e.cobrar);
+                    pe.setString(14, e.estado);
+                    pe.setString(15, e.motivo);
+                    pe.setLong(16, e.idNube);
+                    pe.setInt(17, e.tieneFoto ? 1 : 0);
+                    pe.setString(18, e.foto);
+                    pe.setInt(19, e.marcaPendiente ? 1 : 0);
+                    pe.setLong(20, e.marcadaEn);
+                    pe.setInt(21, e.domicilio);
+                    pe.setLong(22, p.getVentaNumero());
+                    pe.setInt(23, p.getProductos());
+                    pe.executeUpdate();
+                    try (ResultSet k = pe.getGeneratedKeys()) {
+                        k.next();
+                        e.id = k.getLong(1);
+                    }
+                }
+            }
+            try (PreparedStatement pm = con.prepareStatement("INSERT INTO mensajes_salida(salida_id, id_nube, de_tienda,"
+                    + " texto, hora, leido) VALUES(?,?,?,?,?,?)")) {
+                for (Salida.Mensaje m : s.mensajes) {
+                    pm.setLong(1, s.id);
+                    pm.setLong(2, m.idNube);
+                    pm.setInt(3, m.deTienda ? 1 : 0);
+                    pm.setString(4, m.texto);
+                    pm.setString(5, m.hora.toString());
+                    pm.setInt(6, m.leido ? 1 : 0);
+                    pm.addBatch();
+                }
+                pm.executeBatch();
+            }
+            con.commit();
+        } catch (SQLException e) {
+            con.rollback();
+            s.id = idAntes; // lo que se deshizo no quedo con id (si no, no se podria volver a guardar)
+            for (int i = 0; i < idsAntes.length; i++) {
+                s.entregas.get(i).id = idsAntes[i];
+            }
+            throw e;
+        } finally {
+            con.setAutoCommit(antes);
+        }
+    }
+
+    private static LocalDateTime fecha(String t) {
+        return t == null || t.isEmpty() ? null : LocalDateTime.parse(t);
+    }
+
+    private static void datosSalida(PreparedStatement ps, Salida s) throws SQLException {
+        ps.setString(1, s.codigo);
+        ps.setString(2, s.uuidNube);
+        ps.setString(3, s.repartidor);
+        ps.setString(4, s.creada.toString());
+        ps.setString(5, s.cerrada == null ? null : s.cerrada.toString());
+        ps.setString(6, s.estado.name());
+        if (Double.isNaN(s.lat)) {
+            ps.setNull(7, java.sql.Types.REAL);
+            ps.setNull(8, java.sql.Types.REAL);
+        } else {
+            ps.setDouble(7, s.lat);
+            ps.setDouble(8, s.lon);
+        }
+        ps.setString(9, s.ubicacionEn == null ? null : s.ubicacionEn.toString());
+        ps.setString(10, s.tipoRepartidor);
+        ps.setString(11, s.aceptadaEn == null ? null : s.aceptadaEn.toString());
+        ps.setString(12, s.rechazadaEn == null ? null : s.rechazadaEn.toString());
+        ps.setString(13, s.motivoRechazo);
+        ps.setString(14, s.enviadaEn == null ? null : s.enviadaEn.toString());
+    }
+
+    /** Las salidas abiertas y las cerradas desde la fecha dada (las de hoy, para el apartado Salidas). */
+    public List<Salida> cargarSalidas(LocalDateTime cerradasDesde) throws SQLException {
+        // las cerradas que siguen en internet se cargan para terminar de borrarlas
+        return leerSalidas("estado <> 'CERRADA' OR cerrada >= ? OR uuid_nube <> ''", true, cerradasDesde.toString());
+    }
+
+    /**
+     * Historial: las salidas cerradas entre esas dos fechas (las dos incluidas), de la más vieja a la más nueva.
+     * Las fotos no se cargan (pesan): tieneFoto dice si está guardada aquí y se pide con fotoEntrega.
+     */
+    public List<Salida> historialSalidas(java.time.LocalDate desde, java.time.LocalDate hasta) throws SQLException {
+        List<Salida> l = leerSalidas("estado = 'CERRADA' AND cerrada >= ? AND cerrada < ?", false,
+                desde.atStartOfDay().toString(), hasta.plusDays(1).atStartOfDay().toString());
+        l.sort(java.util.Comparator.comparing((Salida s) -> s.creada)); // por la hora en que salieron
+        return l;
+    }
+
+    /** La foto guardada de una entrega ("" si no hay). */
+    public String fotoEntrega(long idEntrega) throws SQLException {
+        try (PreparedStatement ps = con.prepareStatement("SELECT foto FROM entregas_salida WHERE id=?")) {
+            ps.setLong(1, idEntrega);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() && rs.getString(1) != null ? rs.getString(1) : "";
+            }
+        }
+    }
+
+    private List<Salida> leerSalidas(String donde, boolean conFotos, String... valores) throws SQLException {
+        List<Salida> l = new ArrayList<>();
+        try (PreparedStatement ps = con.prepareStatement("SELECT id, codigo, uuid_nube, repartidor, creada, cerrada,"
+                + " estado, lat, lon, ubicacion_en, tipo_repartidor, aceptada_en, rechazada_en, motivo_rechazo, enviada_en"
+                + " FROM salidas WHERE " + donde + " ORDER BY id")) {
+            for (int i = 0; i < valores.length; i++) {
+                ps.setString(i + 1, valores[i]);
+            }
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    Salida s = new Salida();
+                    s.id = rs.getLong(1);
+                    s.codigo = rs.getString(2);
+                    s.uuidNube = rs.getString(3);
+                    s.repartidor = rs.getString(4);
+                    s.creada = LocalDateTime.parse(rs.getString(5));
+                    String c = rs.getString(6);
+                    s.cerrada = c == null ? null : LocalDateTime.parse(c);
+                    s.estado = Salida.Estado.valueOf(rs.getString(7));
+                    double lat = rs.getDouble(8);
+                    s.lat = rs.wasNull() ? Double.NaN : lat;
+                    double lon = rs.getDouble(9);
+                    s.lon = rs.wasNull() ? Double.NaN : lon;
+                    String u = rs.getString(10);
+                    s.ubicacionEn = u == null ? null : LocalDateTime.parse(u);
+                    s.tipoRepartidor = rs.getString(11);
+                    s.aceptadaEn = fecha(rs.getString(12));
+                    s.rechazadaEn = fecha(rs.getString(13));
+                    s.motivoRechazo = rs.getString(14);
+                    s.enviadaEn = fecha(rs.getString(15));
+                    l.add(s);
+                }
+            }
+        }
+        try (PreparedStatement pe = con.prepareStatement("SELECT id, nombre, direccion, lat, lon, nodo, telefono, valor,"
+                + " pagado, paga_con, urgente, cobrar, estado, motivo, id_nube, tiene_foto, "
+                + (conFotos ? "foto" : "CASE WHEN length(foto) > 0 THEN 'si' ELSE '' END") + ", marca_pendiente,"
+                + " marcada_en, domicilio, venta_numero, productos FROM entregas_salida"
+                + " WHERE salida_id=? ORDER BY orden");
+             PreparedStatement pm = con.prepareStatement("SELECT id_nube, de_tienda, texto, hora, leido FROM"
+                     + " mensajes_salida WHERE salida_id=? ORDER BY rowid")) {
+            for (Salida s : l) {
+                pe.setLong(1, s.id);
+                try (ResultSet rs = pe.executeQuery()) {
+                    while (rs.next()) {
+                        Parada p = new Parada(rs.getString(2), rs.getString(3), rs.getDouble(4), rs.getDouble(5));
+                        p.setNodo(rs.getInt(6));
+                        p.setTelefono(rs.getString(7));
+                        p.setValorPedido(rs.getInt(8));
+                        p.setPagado(rs.getInt(9) == 1);
+                        p.setPagaCon(rs.getInt(10));
+                        p.setUrgente(rs.getInt(11) == 1);
+                        Salida.Entrega e = new Salida.Entrega(p, rs.getInt(12));
+                        e.id = rs.getLong(1);
+                        e.estado = rs.getString(13);
+                        e.motivo = rs.getString(14);
+                        e.idNube = rs.getLong(15);
+                        e.tieneFoto = rs.getInt(16) == 1;
+                        e.foto = rs.getString(17);
+                        if (!conFotos) { // en el historial: tieneFoto = la foto está guardada aquí
+                            e.tieneFoto = !e.foto.isEmpty();
+                            e.foto = "";
+                        }
+                        e.marcaPendiente = rs.getInt(18) == 1;
+                        e.marcadaEn = rs.getLong(19);
+                        e.domicilio = rs.getInt(20);
+                        p.setVentaNumero(rs.getLong(21));
+                        p.setProductos(rs.getInt(22));
+                        s.entregas.add(e);
+                    }
+                }
+                pm.setLong(1, s.id);
+                try (ResultSet rs = pm.executeQuery()) {
+                    while (rs.next()) {
+                        s.mensajes.add(new Salida.Mensaje(rs.getLong(1), rs.getInt(2) == 1, rs.getString(3),
+                                LocalDateTime.parse(rs.getString(4)), rs.getInt(5) == 1));
+                    }
+                }
+            }
+        }
+        return l;
+    }
+
+    // ------------------------------------------------------------------
+    //  Domiciliarios
+    // ------------------------------------------------------------------
+
+    public List<rutas.modelo.Domiciliario> cargarDomiciliarios() throws SQLException {
+        List<rutas.modelo.Domiciliario> l = new ArrayList<>();
+        try (Statement st = con.createStatement();
+             ResultSet rs = st.executeQuery("SELECT id, nombre, celular, tipo, activo FROM domiciliarios"
+                     + " ORDER BY CASE tipo WHEN 'FIJO' THEN 0 WHEN 'INDEPENDIENTE' THEN 1 ELSE 2 END, nombre")) {
+            while (rs.next()) {
+                rutas.modelo.Domiciliario.Tipo t;
+                try {
+                    t = rutas.modelo.Domiciliario.Tipo.valueOf(rs.getString(4));
+                } catch (IllegalArgumentException e) {
+                    t = rutas.modelo.Domiciliario.Tipo.FIJO;
+                }
+                rutas.modelo.Domiciliario d = new rutas.modelo.Domiciliario(rs.getLong(1), rs.getString(2), rs.getString(3), t);
+                d.activo = rs.getInt(5) == 1;
+                l.add(d);
+            }
+        }
+        return l;
+    }
+
+    /** Nuevo (id 0: queda con id) o cambio de uno que ya estaba. */
+    public void guardarDomiciliario(rutas.modelo.Domiciliario d) throws SQLException {
+        if (d.id == 0) {
+            try (PreparedStatement ps = con.prepareStatement("INSERT INTO domiciliarios(nombre, celular, tipo, activo)"
+                    + " VALUES(?,?,?,?)", Statement.RETURN_GENERATED_KEYS)) {
+                ps.setString(1, d.nombre);
+                ps.setString(2, d.celular);
+                ps.setString(3, d.tipo.name());
+                ps.setInt(4, d.activo ? 1 : 0);
+                ps.executeUpdate();
+                try (ResultSet k = ps.getGeneratedKeys()) {
+                    k.next();
+                    d.id = k.getLong(1);
+                }
+            }
+        } else {
+            try (PreparedStatement ps = con.prepareStatement("UPDATE domiciliarios SET nombre=?, celular=?, tipo=?,"
+                    + " activo=? WHERE id=?")) {
+                ps.setString(1, d.nombre);
+                ps.setString(2, d.celular);
+                ps.setString(3, d.tipo.name());
+                ps.setInt(4, d.activo ? 1 : 0);
+                ps.setLong(5, d.id);
+                ps.executeUpdate();
+            }
+        }
+    }
+
+    public void eliminarDomiciliario(long id) throws SQLException {
+        try (PreparedStatement ps = con.prepareStatement("DELETE FROM domiciliarios WHERE id=?")) {
+            ps.setLong(1, id);
+            ps.executeUpdate();
         }
     }
 }

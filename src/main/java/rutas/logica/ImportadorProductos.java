@@ -132,7 +132,7 @@ public final class ImportadorProductos {
             r.creados++;
         } else {
             cat.editar(new Producto(viejo.getId(), codigo, nombre, unidad, venta, compra, stock, minimo,
-                    viejo.getFoto(), true, categoriaId));
+                    viejo.getFoto(), true, categoriaId, viejo.isManejaInventario()));
             r.actualizados++;
         }
     }
@@ -220,6 +220,23 @@ public final class ImportadorProductos {
     }
 
     // ---------------- leer el archivo ----------------
+
+    /**
+     * Lee un CSV en filas: el separador (; o ,) se escoge una sola vez con la fila de titulos y se
+     * respetan las comillas ("Calle 15 # 7-20, barrio Centro" es un solo campo).
+     */
+    public static List<String[]> leerCsv(File archivo) throws IOException {
+        List<String> lineas = leerLineas(archivo);
+        List<String[]> filas = new ArrayList<>();
+        if (lineas.isEmpty()) {
+            return filas;
+        }
+        char sep = lineas.get(0).indexOf(';') >= 0 ? ';' : ',';
+        for (String l : lineas) {
+            filas.add(partir(l, sep).toArray(new String[0]));
+        }
+        return filas;
+    }
 
     /** Lee en UTF-8; si el archivo viene del Excel de Windows (otras letras), lo lee en windows-1252. */
     private static List<String> leerLineas(File archivo) throws IOException {

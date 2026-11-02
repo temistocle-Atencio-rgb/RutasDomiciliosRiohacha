@@ -16,6 +16,11 @@ public class Parada {
     private String telefono = ""; // celular del cliente, para avisarle
     private int valorPedido;      // pesos; 0 si no se sabe
     private boolean pagado;       // ya pago por transferencia
+    private Object venta;         // marca de la venta de la caja que la creo (no se guarda); null si no es de la caja
+    private int pagaCon;          // contra entrega: billete con el que paga (para llevar el cambio); 0 si no se sabe
+    private long ventaNumero;     // número del recibo de la caja (0 si no salió de una venta): la bolsa lleva ese número
+    private int productos;        // cuántos productos lleva (los del recibo)
+    private String nota = "";     // para el domiciliario: "portón verde" (sale en el mensaje de la salida)
 
     public Parada(String nombre, String direccion, double lat, double lon) {
         this.nombre = nombre;
@@ -43,7 +48,25 @@ public class Parada {
         telefono = otra.telefono;
         valorPedido = otra.valorPedido;
         pagado = otra.pagado;
+        pagaCon = otra.pagaCon;
+        venta = otra.venta;
+        ventaNumero = otra.ventaNumero;
+        productos = otra.productos;
+        nota = otra.nota;
     }
+
+    public String getNota() { return nota; }
+    public void setNota(String nota) { this.nota = nota == null ? "" : nota.trim().replaceAll("\\s+", " "); }
+
+    public Object getVenta() { return venta; }
+    public void setVenta(Object venta) { this.venta = venta; }
+    public int getPagaCon() { return pagaCon; }
+    public void setPagaCon(int pagaCon) { this.pagaCon = Math.max(0, pagaCon); }
+
+    public long getVentaNumero() { return ventaNumero; }
+    public void setVentaNumero(long n) { this.ventaNumero = Math.max(0, n); }
+    public int getProductos() { return productos; }
+    public void setProductos(int n) { this.productos = Math.max(0, n); }
 
     public String getTelefono() { return telefono; }
     public void setTelefono(String telefono) { this.telefono = telefono == null ? "" : telefono; }

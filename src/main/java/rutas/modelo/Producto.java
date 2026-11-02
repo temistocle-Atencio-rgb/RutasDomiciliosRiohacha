@@ -18,6 +18,7 @@ public class Producto {
     private final String foto;
     private final boolean activo;
     private final Long categoriaId; // puede no tener categoria
+    private final boolean manejaInventario; // false: se vende sin contar existencias (servicios, recetas)
 
     public Producto(long id, String codigo, String nombre, Unidad unidad, long precioVenta, long precioCompra,
             long stock, long minimo, String foto, boolean activo) {
@@ -26,6 +27,12 @@ public class Producto {
 
     public Producto(long id, String codigo, String nombre, Unidad unidad, long precioVenta, long precioCompra,
             long stock, long minimo, String foto, boolean activo, Long categoriaId) {
+        this(id, codigo, nombre, unidad, precioVenta, precioCompra, stock, minimo, foto, activo, categoriaId, true);
+    }
+
+    public Producto(long id, String codigo, String nombre, Unidad unidad, long precioVenta, long precioCompra,
+            long stock, long minimo, String foto, boolean activo, Long categoriaId, boolean manejaInventario) {
+        this.manejaInventario = manejaInventario;
         this.categoriaId = categoriaId;
         this.id = id;
         this.codigo = codigo == null || codigo.isBlank() ? null : codigo.trim();
@@ -42,11 +49,12 @@ public class Producto {
     /** Copia con otro id (se usa cuando la base asigna el id). */
     public Producto conId(long nuevoId) {
         return new Producto(nuevoId, codigo, nombre, unidad, precioVenta, precioCompra, stock, minimo, foto, activo,
-                categoriaId);
+                categoriaId, manejaInventario);
     }
 
     public Producto conActivo(boolean a) {
-        return new Producto(id, codigo, nombre, unidad, precioVenta, precioCompra, stock, minimo, foto, a, categoriaId);
+        return new Producto(id, codigo, nombre, unidad, precioVenta, precioCompra, stock, minimo, foto, a, categoriaId,
+                manejaInventario);
     }
 
     public long getId() {
@@ -98,8 +106,12 @@ public class Producto {
         return activo;
     }
 
+    public boolean isManejaInventario() {
+        return manejaInventario;
+    }
+
     public boolean estaBajoMinimo() {
-        return stock < minimo;
+        return manejaInventario && stock < minimo;
     }
 
     /** Dos productos son el mismo si tienen el mismo id (aunque uno sea una version editada). */

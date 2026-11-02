@@ -62,6 +62,10 @@ public class PanelPedidos extends JPanel {
 
     private final JTextField campoCliente = Tema.campo("Cliente o referencia (opcional)");
     private final JTextField campoDireccion = Tema.campo("Dirección o lugar: Calle 15 # 10-20");
+    /** Cliente escogido de la lista: su dirección queda escrita para revisarla (Enter la agrega). */
+    private Cliente clienteElegido;
+    private boolean llenando; // mientras se llenan los campos solos no se buscan sugerencias
+    private final Tema.Parrafo ayudaElegido = Tema.parrafo("", 262);
     private final DefaultListModel<Object> modeloSugerencias = new DefaultListModel<>();
     private final JList<Object> lstSugerencias = new JList<>(modeloSugerencias);
     private final JScrollPane scrollSugerencias = new JScrollPane(lstSugerencias);
@@ -69,6 +73,10 @@ public class PanelPedidos extends JPanel {
     private final JList<Parada> lstEntregas = new Tema.Lista<>(modeloEntregas,
             "Todavía no hay entregas. Escriba una dirección arriba o pegue la lista de pedidos.");
     private final JLabel lblEntregas = Tema.etiqueta("Entregas");
+    // en el cobro a domicilio solo se ve la entrega de esa venta; las demás se cuentan aquí
+    private final Tema.Parrafo lblOtras = Tema.parrafo("", 262);
+    private Tema.Boton botonQuitarTodas;
+    private Tema.Boton botonDespacharRuta; // el de la tarjeta del resultado (no va dentro del cobro)
 
     private final JComboBox<Criterio> cbCriterio = new JComboBox<>(Criterio.values());
     private final JRadioButton rbAhora = new JRadioButton("Ahora", true);
@@ -84,6 +92,16 @@ public class PanelPedidos extends JPanel {
     private final Tema.Parrafo lblPromesa = Tema.parrafo("", 262);
     private Tema.Boton botonBase;
     private final Tema.Tarjeta tarjetaResultado = new Tema.Tarjeta();
+    private final Tema.Boton calcularAzul = Tema.botonPrimario("Calcular ruta");
+    private Tema.Boton botonCalcular;
+    private boolean enCaja;
+    private final JPanel encabezado = new JPanel() { // titulo y explicacion (en el cobro no hacen falta)
+        {
+            setOpaque(false);
+            setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
+            setAlignmentX(LEFT_ALIGNMENT);
+        }
+    };
 
     public PanelPedidos(Aplicacion app) {
         this.app = app;
@@ -91,10 +109,11 @@ public class PanelPedidos extends JPanel {
         setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
         setBorder(BorderFactory.createEmptyBorder(16, 16, 20, 16));
 
-        add(Tema.tituloPantalla("Nueva ruta de entregas"));
-        add(Tema.parrafo("Escriba las direcciones como se usan en Riohacha (Calle 15 # 10-20, "
+        encabezado.add(Tema.tituloPantalla("Nueva ruta de entregas"));
+        encabezado.add(Tema.parrafo("Escriba las direcciones como se usan en Riohacha (Calle 15 # 10-20, "
                 + "Carrera 7 con Calle 12) o el nombre de un lugar.", 272));
-        add(Tema.espacio(12));
+        encabezado.add(Tema.espacio(12));
+        add(encabezado);
         add(tarjetaSalida());
         add(Tema.espacio(10));
         add(tarjetaEntregas());
@@ -102,19 +121,31 @@ public class PanelPedidos extends JPanel {
         add(tarjetaOpciones());
         add(Tema.espacio(12));
 
-        Tema.Boton calcular = Tema.botonAccion("Calcular ruta");
+        // un solo botón: calcula la ruta, pregunta quién la lleva y abre WhatsApp en su chat
+        Tema.Boton calcular = Tema.botonAccion("Despachar  (Ctrl+Enter)");
         Tema.anchoCompleto(calcular);
-        calcular.addActionListener(e -> calcular());
-        calcular.setToolTipText("Calcular ruta (Ctrl+Enter)");
+        calcular.addActionListener(e -> despacharTodo());
+        calcular.setToolTipText("Calcula la mejor ruta, pregunta quién la lleva y le manda la ruta por WhatsApp");
+        // dentro del cobro el naranja es "Procesar": alli este boton va en azul
+        Tema.anchoCompleto(calcularAzul);
+        calcularAzul.addActionListener(e -> calcular());
+        calcularAzul.setToolTipText("Calcular ruta (Ctrl+Enter)");
+        calcularAzul.setVisible(false);
+        botonCalcular = calcular;
         getInputMap(WHEN_IN_FOCUSED_WINDOW).put(javax.swing.KeyStroke.getKeyStroke(
                 java.awt.event.KeyEvent.VK_ENTER, java.awt.event.InputEvent.CTRL_DOWN_MASK), "calcular");
         getActionMap().put("calcular", new javax.swing.AbstractAction() {
             @Override
             public void actionPerformed(java.awt.event.ActionEvent e) {
-                calcular();
+                if (enCaja) {
+                    calcular(); // en el cobro solo se calcula: sale después, con las demás
+                } else {
+                    despacharTodo();
+                }
             }
         });
         add(calcular);
+        add(calcularAzul);
         add(Tema.espacio(12));
 
         tarjetaResultado.setVisible(false);
@@ -192,6 +223,15 @@ public class PanelPedidos extends JPanel {
         t.add(campoCliente);
         t.add(Tema.espacio(6));
         t.add(campoDireccion);
+        ayudaElegido.setForeground(Tema.AZUL_PROFUNDO);
+        ayudaElegido.setVisible(false);
+        t.add(ayudaElegido);
+        campoCliente.getDocument().addDocumentListener(new DocumentListener() {
+            // si se cambia el nombre, ya no es el cliente escogido
+            public void insertUpdate(DocumentEvent e) { revisarElegido(); }
+            public void removeUpdate(DocumentEvent e) { revisarElegido(); }
+            public void changedUpdate(DocumentEvent e) { revisarElegido(); }
+        });
 
         // sugerencias mientras se escribe (clientes guardados y lugares, buscados en arboles AVL)
         lstSugerencias.setFont(Tema.texto(14));
@@ -259,7 +299,7 @@ public class PanelPedidos extends JPanel {
             @Override
             public void mouseClicked(java.awt.event.MouseEvent e) {
                 if (e.getClickCount() == 2 && lstEntregas.getSelectedIndex() >= 0) {
-                    editarEntrega(lstEntregas.getSelectedIndex());
+                    editarEntrega(real(lstEntregas.getSelectedIndex()));
                 }
             }
 
@@ -280,20 +320,25 @@ public class PanelPedidos extends JPanel {
         sc.setPreferredSize(new Dimension(300, 150));
         sc.setMaximumSize(new Dimension(Integer.MAX_VALUE, 150));
         t.add(sc);
+        lblOtras.setFont(Tema.texto(12.5f));
+        lblOtras.setForeground(Tema.GRIS_TEXTO);
+        lblOtras.setVisible(false);
+        t.add(lblOtras);
         t.add(Tema.espacio(6));
         Tema.Boton quitar = Tema.botonPequeno("Quitar");
         Tema.Boton quitarTodas = Tema.botonPequeno("Quitar todas");
         quitar.addActionListener(e -> {
-            int i = lstEntregas.getSelectedIndex();
+            int i = real(lstEntregas.getSelectedIndex());
             if (i >= 0) {
                 app.quitarEntrega(i);
             }
         });
         quitarTodas.addActionListener(e -> app.quitarTodas());
+        botonQuitarTodas = quitarTodas;
         Tema.Boton editar = Tema.botonPequeno("Editar");
         editar.setToolTipText("Cambiar el nombre o la dirección escrita (también con doble clic)");
         editar.addActionListener(e -> {
-            int i = lstEntregas.getSelectedIndex();
+            int i = real(lstEntregas.getSelectedIndex());
             if (i < 0) {
                 aviso("Seleccione la entrega que quiere editar.");
                 return;
@@ -400,12 +445,26 @@ public class PanelPedidos extends JPanel {
         }
     }
 
+    private void revisarElegido() {
+        if (!llenando && clienteElegido != null && !campoCliente.getText().trim().equals(clienteElegido.getNombre())) {
+            clienteElegido = null;
+            ayudaElegido.setVisible(false);
+        }
+    }
+
     private void sugerir() {
+        if (llenando) {
+            return;
+        }
         String texto = campoDireccion.getText().trim();
         modeloSugerencias.clear();
         if (texto.length() >= 2 && !texto.matches("(?i)^(calle|cl|cll|carrera|cra|cr|kr|k|diagonal|dg|transversal|tv|av)\\.?\\s*\\d.*")) {
-            for (Cliente c : app.getClientes().buscarPorPrefijo(Geo.normalizar(texto), 3)) {
-                modeloSugerencias.addElement(c);
+            int n = 0;
+            for (Cliente c : app.getClientes().buscarPorPrefijo(Geo.normalizar(texto), 6)) {
+                if (c.isActivo() && n < 3) { // los inactivos no salen para escoger
+                    modeloSugerencias.addElement(c);
+                    n++;
+                }
             }
             for (Lugar l : app.getBuscador().buscar(texto, 6)) {
                 modeloSugerencias.addElement(l);
@@ -425,26 +484,149 @@ public class PanelPedidos extends JPanel {
         if (o == null) {
             return;
         }
-        String cliente = campoCliente.getText().trim();
-        Parada p;
         if (o instanceof Cliente) {
-            Cliente c = (Cliente) o;
-            p = new Parada(c.getNombre(), c.getDireccion(), c.getLat(), c.getLon());
-            p.setTelefono(c.getTelefono());
-            p.setPrecision("Cliente guardado" + (c.getTelefono().isEmpty() ? "" : " · Tel. " + c.getTelefono()));
-        } else {
-            Lugar l = (Lugar) o;
-            p = new Parada(cliente.isEmpty() ? l.getNombre() : cliente, l.getNombre(), l.getLat(), l.getLon());
-            p.setPrecision("Lugar del mapa (" + l.getCategoria() + ")");
+            agregarCliente((Cliente) o, true);
+            return;
         }
+        String cliente = campoCliente.getText().trim();
+        Lugar l = (Lugar) o;
+        Parada p = new Parada(cliente.isEmpty() ? l.getNombre() : cliente, l.getNombre(), l.getLat(), l.getLon());
+        p.setPrecision("Lugar del mapa (" + l.getCategoria() + ")");
         app.getGeo().asignarNodo(p, Geo.x(p.getLon()), Geo.y(p.getLat()), null);
         terminarAgregar(p);
+    }
+
+    /**
+     * Al escoger un cliente guardado se llenan su nombre y su dirección, y el cursor queda en la
+     * dirección con todo seleccionado: Enter la agrega; si esta vez pide a otra, se escribe encima.
+     */
+    private void agregarCliente(Cliente c, boolean avisarSinDireccion) {
+        clienteElegido = c;
+        llenando = true;
+        campoCliente.setText(c.getNombre());
+        campoDireccion.setText(c.getDireccion());
+        llenando = false;
+        modeloSugerencias.clear();
+        scrollSugerencias.setVisible(false);
+        if (c.getDireccion().isEmpty()) {
+            ayudaElegido.setText(c.getNombre() + " no tiene dirección guardada: escríbala y oprima Enter.");
+            if (avisarSinDireccion) {
+                aviso(c.getNombre() + " no tiene dirección guardada. Escríbala para la entrega.");
+            }
+        } else {
+            ayudaElegido.setText("Revise la dirección y oprima Enter. Si esta vez es otra, escríbala encima.");
+        }
+        if (!c.getNota().isEmpty()) {
+            ayudaElegido.setText("<html>" + ayudaElegido.getText() + "<br>Nota: " + c.getNota().replace("<", "&lt;")
+                    + "</html>");
+        }
+        ayudaElegido.setVisible(true);
+        revalidate();
+        campoDireccion.requestFocusInWindow();
+        campoDireccion.selectAll();
+    }
+
+    // ---------------- desde la caja (venta a domicilio) ----------------
+
+    /** La caja manda el cliente de la venta: si tiene direccion se agrega de una; si no, queda escrito. */
+    public void entregaDeCliente(Cliente c) {
+        agregarCliente(c, false);
+    }
+
+    /** La caja manda solo un nombre (cliente sin guardar): queda escrito y el cursor en la direccion. */
+    public void escribirCliente(String nombre) {
+        campoCliente.setText(nombre == null ? "" : nombre);
+        campoDireccion.requestFocusInWindow();
+    }
+
+    /** Al empezar una venta a domicilio: lo que quedo escrito de antes no se mezcla con esta venta. */
+    public void limpiarCampos() {
+        campoCliente.setText("");
+        campoDireccion.setText("");
+        clienteElegido = null;
+        ayudaElegido.setVisible(false);
+    }
+
+    /** Si hay una direccion escrita sin agregar, se agrega (al procesar la venta). True si habia algo. */
+    public boolean agregarLoEscrito() {
+        if (campoDireccion.getText().isBlank()) {
+            return false;
+        }
+        agregarDesdeCampo();
+        return true;
+    }
+
+    /** Dentro del cobro "Calcular ruta" va en azul (el naranja es "Procesar"). */
+    public void modoCaja(boolean enCaja) {
+        this.enCaja = enCaja;
+        botonCalcular.setVisible(!enCaja); // en el cobro el boton va fijo abajo de la columna (siempre a la vista)
+        calcularAzul.setVisible(false);
+        encabezado.setVisible(!enCaja);
+        if (botonDespacharRuta != null) {
+            botonDespacharRuta.setVisible(!enCaja); // primero se procesa la venta; se despacha después
+        }
+        refrescar();
+    }
+
+    /** Fila de la lista -> posición en las entregas pendientes (-1 si no hay). */
+    private int real(int fila) {
+        if (fila < 0 || fila >= modeloEntregas.size()) {
+            return -1;
+        }
+        Parada p = modeloEntregas.get(fila);
+        List<Parada> l = app.getEntregas();
+        for (int k = 0; k < l.size(); k++) {
+            if (l.get(k) == p) {
+                return k;
+            }
+        }
+        return -1;
+    }
+
+    private void seleccionarReal(int k) {
+        if (k >= 0 && k < app.getEntregas().size()) {
+            int fila = modeloEntregas.indexOf(app.getEntregas().get(k));
+            if (fila >= 0) {
+                lstEntregas.setSelectedIndex(fila);
+            }
+        }
+    }
+
+    /** "Calcular ruta" fijo de la columna en el cobro. */
+    public void calcularDesdeCaja() {
+        calcular();
+    }
+
+    /** La entrega en la que se hizo clic en la lista (null si ninguna). */
+    public Parada getSeleccionada() {
+        return lstEntregas.getSelectedValue();
+    }
+
+    public int cantidadEntregas() {
+        return app.getEntregas().size();
+    }
+
+    public void enfocarDireccion() {
+        campoDireccion.requestFocusInWindow();
     }
 
     private void agregarDesdeCampo() {
         String dir = campoDireccion.getText().trim();
         if (dir.isEmpty()) {
             aviso("Escriba la dirección de la entrega.");
+            return;
+        }
+        Cliente c = clienteElegido;
+        if (c != null && app.buscarCliente(c.getNombre()) != null) {
+            c = app.buscarCliente(c.getNombre()); // por si lo cambiaron en Clientes mientras tanto
+        }
+        boolean misma = c != null && Geo.normalizar(dir).equals(Geo.normalizar(c.getDireccion()));
+        if (misma && c.tieneUbicacion()) { // la de siempre: con el punto que ya tiene guardado
+            Parada p = new Parada(c.getNombre(), c.getDireccion(), c.getLat(), c.getLon());
+            p.setTelefono(c.getTelefono());
+            p.setPrecision("Cliente guardado" + (c.getTelefono().isEmpty() ? "" : " · Tel. " + c.getTelefono()));
+            app.getGeo().asignarNodo(p, Geo.x(p.getLon()), Geo.y(p.getLat()), null);
+            terminarAgregar(p);
             return;
         }
         try {
@@ -454,7 +636,19 @@ public class PanelPedidos extends JPanel {
                     encontrada.getLat(), encontrada.getLon());
             p.setNodo(encontrada.getNodo());
             p.setPrecision(encontrada.getPrecision());
+            if (c != null) {
+                p.setTelefono(c.getTelefono());
+            }
             terminarAgregar(p);
+            if (c != null && misma) { // se creó en la caja sin punto: ahora queda con su punto del mapa
+                try {
+                    app.guardarCliente(c.conDireccion(c.getDireccion(), p.getLat(), p.getLon()));
+                } catch (java.io.IOException ex) {
+                    // no es grave: se vuelve a buscar la próxima vez
+                }
+            } else if (c != null) {
+                preguntarNuevaDireccion(c, dir, p);
+            }
         } catch (IllegalArgumentException e) {
             Object[] opciones = {"Marcarla en el mapa", "Corregir lo escrito"};
             int r = JOptionPane.showOptionDialog(this, e.getMessage()
@@ -493,6 +687,10 @@ public class PanelPedidos extends JPanel {
         form.add(ayuda);
         form.add(new JLabel("Celular (opcional, para avisarle)"));
         form.add(cTel);
+        javax.swing.JTextField cNota = new javax.swing.JTextField(vieja.getNota(), 26);
+        cNota.setFont(Tema.texto(14));
+        form.add(new JLabel("Nota para el domiciliario (opcional: portón verde…)"));
+        form.add(cNota);
         javax.swing.JTextField cValor = new javax.swing.JTextField(
                 vieja.getValorPedido() > 0 ? String.valueOf(vieja.getValorPedido()) : "", 26);
         cValor.setFont(Tema.texto(14));
@@ -512,7 +710,7 @@ public class PanelPedidos extends JPanel {
             String nombre = cNombre.getText().trim();
             String dir = cDir.getText().trim();
             if (r == 1) { // el punto quedo mal: se marca en el mapa y se recuerda
-                aplicarFormulario(vieja, cUrgente, cTel, cValor, cPagado);
+                aplicarFormulario(vieja, cUrgente, cTel, cValor, cPagado, cNota);
                 app.limpiarRuta();
                 app.avisar();
                 app.empezarCorreccion(dir.isEmpty() ? vieja.getDireccion() : dir, nombre, i);
@@ -532,9 +730,13 @@ public class PanelPedidos extends JPanel {
                         vieja.getLat(), vieja.getLon());
                 igual.setNodo(vieja.getNodo());
                 igual.setPrecision(vieja.getPrecision());
-                aplicarFormulario(igual, cUrgente, cTel, cValor, cPagado);
+                igual.copiarDatosDe(vieja); // numero de venta, productos y billete no se pierden
+                aplicarFormulario(igual, cUrgente, cTel, cValor, cPagado, cNota);
                 app.reemplazarEntrega(i, igual);
-                lstEntregas.setSelectedIndex(i);
+                seleccionarReal(i);
+                if (!igual.getNota().equals(vieja.getNota())) {
+                    guardarNotaCliente(igual); // solo si la cambiaron aqui (no se pisa una nota mas nueva)
+                }
                 return;
             }
             Parada encontrada;
@@ -548,7 +750,7 @@ public class PanelPedidos extends JPanel {
                     continue;
                 }
                 if (o == 1) {
-                    aplicarFormulario(vieja, cUrgente, cTel, cValor, cPagado);
+                    aplicarFormulario(vieja, cUrgente, cTel, cValor, cPagado, cNota);
                     app.limpiarRuta();
                     app.avisar();
                     app.empezarCorreccion(dir, nombre, i);
@@ -559,18 +761,38 @@ public class PanelPedidos extends JPanel {
                     encontrada.getLat(), encontrada.getLon());
             nueva.setNodo(encontrada.getNodo());
             nueva.setPrecision(encontrada.getPrecision());
-            aplicarFormulario(nueva, cUrgente, cTel, cValor, cPagado);
+            nueva.copiarDatosDe(vieja);
+            aplicarFormulario(nueva, cUrgente, cTel, cValor, cPagado, cNota);
             app.reemplazarEntrega(i, nueva);
-            lstEntregas.setSelectedIndex(i);
+            seleccionarReal(i);
+            if (!nueva.getNota().equals(vieja.getNota())) {
+                guardarNotaCliente(nueva);
+            }
             app.getPanelMapa().resaltar(nueva.getLat(), nueva.getLon(), null);
             ofrecerActualizarCliente(nombre, dir, nueva);
             return;
         }
     }
 
+    /** Si la entrega es de un cliente guardado y le escribieron otra nota, queda guardada en el cliente. */
+    private void guardarNotaCliente(Parada p) {
+        Cliente c = app.buscarCliente(p.getNombre());
+        if (c == null || p.getNota().isEmpty() || p.getNota().equals(c.getNota())) {
+            return;
+        }
+        try {
+            app.guardarCliente(c.conNota(p.getNota()));
+        } catch (java.io.IOException e) {
+            aviso("No se pudo guardar la nota en el cliente: " + e.getMessage());
+        }
+    }
+
     /** Pasa a la parada lo que se escribio en el formulario de edicion (igual en todos los caminos). */
+
     private static void aplicarFormulario(Parada p, javax.swing.JCheckBox urgente, javax.swing.JTextField tel,
-                                          javax.swing.JTextField valor, javax.swing.JCheckBox pagado) {
+                                          javax.swing.JTextField valor, javax.swing.JCheckBox pagado,
+                                          javax.swing.JTextField nota) {
+        p.setNota(nota.getText());
         p.setUrgente(urgente.isSelected());
         p.setTelefono(Avisos.extraerCelular(tel.getText()));
         p.setValorPedido(soloNumero(valor.getText()));
@@ -581,11 +803,12 @@ public class PanelPedidos extends JPanel {
         if (!e.isPopupTrigger()) {
             return;
         }
-        int i = lstEntregas.locationToIndex(e.getPoint());
+        int fila = lstEntregas.locationToIndex(e.getPoint());
+        int i = real(fila);
         if (i < 0) {
             return;
         }
-        lstEntregas.setSelectedIndex(i);
+        lstEntregas.setSelectedIndex(fila);
         javax.swing.JPopupMenu m = new javax.swing.JPopupMenu();
         javax.swing.JMenuItem editar = new javax.swing.JMenuItem("Editar");
         javax.swing.JMenuItem urgente = new javax.swing.JMenuItem(
@@ -602,6 +825,19 @@ public class PanelPedidos extends JPanel {
         m.add(editar);
         m.add(urgente);
         m.add(quitar);
+        List<rutas.modelo.Salida> abiertas = app.salidasAbiertas();
+        if (!abiertas.isEmpty() && !enCaja) { // en el cobro: primero se procesa la venta
+            m.addSeparator();
+            for (rutas.modelo.Salida s : abiertas) {
+                if (s.subiendo) {
+                    continue;
+                }
+                javax.swing.JMenuItem en = new javax.swing.JMenuItem("Mandar con la salida de las "
+                        + Ruta.FORMATO_HORA.format(s.creada) + (s.repartidor.isEmpty() ? "" : " (" + s.repartidor + ")"));
+                en.addActionListener(a -> mandarEnSalida(app.getEntregas().get(i), s));
+                m.add(en);
+            }
+        }
         m.show(lstEntregas, e.getX(), e.getY());
     }
 
@@ -619,7 +855,23 @@ public class PanelPedidos extends JPanel {
                 JOptionPane.YES_NO_OPTION);
         if (r == JOptionPane.YES_OPTION) {
             try {
-                app.guardarCliente(new Cliente(c.getNombre(), c.getTelefono(), dir, c.getNota(), p.getLat(), p.getLon()));
+                app.guardarCliente(c.conDireccion(dir, p.getLat(), p.getLon()));
+            } catch (java.io.IOException e) {
+                aviso("No se pudo actualizar el cliente: " + e.getMessage());
+            }
+        }
+    }
+
+    /** Escribió otra dirección para un cliente guardado: ¿es su nueva dirección o solo para este pedido? */
+    private void preguntarNuevaDireccion(Cliente c, String dir, Parada p) {
+        Object[] op = {"Sí, es su nueva dirección", "No, solo este pedido"};
+        String antes = c.getDireccion().isEmpty() ? "no tenía dirección guardada" : "tenía guardada " + c.getDireccion();
+        int r = JOptionPane.showOptionDialog(this, c.getNombre() + " " + antes + ".\n¿Guardar " + dir
+                + " como su dirección?", "Dirección del cliente", JOptionPane.DEFAULT_OPTION,
+                JOptionPane.QUESTION_MESSAGE, null, op, op[1]);
+        if (r == 0) {
+            try {
+                app.guardarCliente(c.conDireccion(dir, p.getLat(), p.getLon()));
             } catch (java.io.IOException e) {
                 aviso("No se pudo actualizar el cliente: " + e.getMessage());
             }
@@ -627,6 +879,11 @@ public class PanelPedidos extends JPanel {
     }
 
     private void terminarAgregar(Parada p) {
+        if (p.getNota().isEmpty() && !p.getNombre().equals(p.getDireccion())) {
+            p.setNota(app.notaDe(p.getNombre())); // la nota guardada del cliente va con la entrega
+        }
+        clienteElegido = null;
+        ayudaElegido.setVisible(false);
         p.setUrgente(chkUrgente.isSelected());
         chkUrgente.setSelected(false);
         completarTelefono(p);
@@ -646,6 +903,11 @@ public class PanelPedidos extends JPanel {
         List<Ruta> rutas = app.calcular((Criterio) cbCriterio.getSelectedItem(), horaSalida(), chkVolver.isSelected(),
                 (Integer) spRepartidores.getValue());
         mostrarResultado(rutas, 0);
+        if (enCaja) { // en el cobro la columna baja sola hasta el resultado (no hay que buscarlo)
+            SwingUtilities.invokeLater(() -> SwingUtilities.invokeLater(() -> tarjetaResultado.scrollRectToVisible(
+                    new java.awt.Rectangle(0, 0, tarjetaResultado.getWidth(),
+                            Math.min(tarjetaResultado.getHeight(), getVisibleRect().height)))));
+        }
     }
 
     /** Agrega varios pedidos pegados de una vez (uno por linea). */
@@ -847,23 +1109,16 @@ public class PanelPedidos extends JPanel {
         t.add(sc);
         t.add(Tema.espacio(10));
 
-        Tema.Boton maps = Tema.botonPrimario("Abrir en Google Maps");
-        Tema.Boton whatsapp = Tema.botonSecundario("Copiar ruta para WhatsApp");
-        Tema.anchoCompleto(whatsapp);
-        maps.addActionListener(e -> {
-            abrirGoogleMaps(r);
-            guardarDespachada();
-        });
-        whatsapp.addActionListener(e -> {
-            Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(
-                    r.textoParaCompartir() + "\n" + r.enlaceGoogleMaps()), null);
-            guardarDespachada();
-            aviso("Ruta copiada. Péguela en el chat del repartidor.\nQuedó guardada en el historial.");
-        });
-        Tema.anchoCompleto(maps);
-        t.add(maps);
-        t.add(Tema.espacio(6));
-        t.add(whatsapp);
+        // por si se canceló al escoger quién la lleva (el enlace de Google Maps va dentro del mensaje)
+        Tema.Boton enviarWhatsapp = Tema.botonSecundario(rutas.size() > 1 ? "Despachar Moto " + (activa + 1) : "Despachar");
+        enviarWhatsapp.setIcon(new CapaCobro.LogoPago("/imagenes/archivos/whatsapp.png", 20));
+        enviarWhatsapp.setIconTextGap(8);
+        enviarWhatsapp.setToolTipText("Escoger quién la lleva y mandarle la ruta por WhatsApp");
+        Tema.anchoCompleto(enviarWhatsapp);
+        enviarWhatsapp.addActionListener(e -> elegirYDespachar(java.util.List.of(r), 0));
+        enviarWhatsapp.setVisible(!enCaja); // en el cobro: primero «Procesar» (la venta), después se despacha
+        botonDespacharRuta = enviarWhatsapp;
+        t.add(enviarWhatsapp);
         t.add(Tema.espacio(8));
         Tema.Boton matriz = Tema.botonPequeno("Ver matriz de adyacencia");
         matriz.addActionListener(e -> verMatriz(r));
@@ -1039,10 +1294,10 @@ public class PanelPedidos extends JPanel {
             }
         }
         String nombre = p.getNombre().equals(p.getDireccion()) ? "" : p.getNombre();
-        String enlace = Avisos.enlaceWhatsApp(tel,
-                Avisos.mensaje(nombre, negocio, llega, app.domicilioDe(p), app.cobrarEnPuerta(p)));
+        String texto = Avisos.mensaje(nombre, negocio, llega, app.domicilioDe(p), app.cobrarEnPuerta(p));
+        String enlace = Avisos.enlaceWhatsApp(tel, texto);
         try {
-            Desktop.getDesktop().browse(new URI(enlace));
+            AbrirWhatsApp.abrir(tel, texto);
         } catch (Exception ex) {
             Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(enlace), null);
             aviso("No se pudo abrir WhatsApp. El enlace quedó copiado.");
@@ -1057,7 +1312,7 @@ public class PanelPedidos extends JPanel {
         Cliente c = app.buscarCliente(p.getNombre());
         try {
             if (c != null) {
-                app.guardarCliente(new Cliente(c.getNombre(), tel, c.getDireccion(), c.getNota(), c.getLat(), c.getLon()));
+                app.guardarCliente(c.conTelefono(tel));
             } else if (JOptionPane.showConfirmDialog(this, "¿Guardar a " + p.getNombre() + " como cliente con este celular?",
                     "Guardar cliente", JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
                 app.guardarCliente(new Cliente(p.getNombre(), tel, p.getDireccion(), "", p.getLat(), p.getLon()));
@@ -1067,22 +1322,174 @@ public class PanelPedidos extends JPanel {
         }
     }
 
-    /** Cuando la ruta se manda al repartidor queda en el historial (una sola vez por calculo). */
-    private void guardarDespachada() {
-        try {
-            app.guardarRutaEnHistorial();
-        } catch (java.io.IOException ex) {
-            aviso("No se pudo guardar en el historial: " + ex.getMessage());
+    /** Botón «Despachar»: calcula la ruta y pregunta quién lleva cada una (una por moto). */
+    /** Despacha desde otra pantalla (la caja) sin cambiar de pestaña: el cuadro sale encima de ella. */
+    public void despacharDesde(javax.swing.JComponent pantalla) {
+        desde = pantalla;
+        hacerDespacho();
+    }
+
+    public void despacharTodo() {
+        desde = null;
+        hacerDespacho();
+    }
+
+    // la pantalla sobre la que salen el cuadro y los avisos del despacho (null = esta)
+    private javax.swing.JComponent desde;
+
+    private javax.swing.JComponent sitio() {
+        return desde != null && desde.isShowing() ? desde : this;
+    }
+
+    private void hacerDespacho() {
+        if (app.getEntregas().isEmpty()) {
+            aviso("No hay entregas esperando salir.");
+            return;
+        }
+        calcular();
+        List<Ruta> rs = new java.util.ArrayList<>(app.getRutas());
+        rs.removeIf(x -> x.getParadas().isEmpty());
+        if (!rs.isEmpty()) {
+            elegirYDespachar(rs, 0);
         }
     }
 
-    private void abrirGoogleMaps(Ruta r) {
-        try {
-            Desktop.getDesktop().browse(new URI(r.enlaceGoogleMaps()));
-        } catch (Exception ex) {
-            Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(r.enlaceGoogleMaps()), null);
-            aviso("No se pudo abrir el navegador. El enlace quedó copiado.");
+    /** Pregunta quién lleva la ruta i y sigue con la siguiente (si hay varias motos). */
+    private void elegirYDespachar(List<Ruta> rs, int i) {
+        Ruta r = rs.get(i);
+        if (!app.getRutas().contains(r)) {
+            return; // ya salió o se volvió a calcular
         }
+        int n = r.getParadas().size();
+        String sub = (rs.size() > 1 ? "Moto " + (i + 1) + " de " + rs.size() + " · " : "") + n
+                + (n == 1 ? " entrega" : " entregas") + " · termina como a las " + r.horaFin().format(Ruta.FORMATO_HORA);
+        ElegirDomiciliario.abrir(sitio(), app, sub, d -> {
+            if (!app.getRutas().contains(r)) {
+                return; // mientras se escogía, la ruta cambió
+            }
+            despachar(r, d);
+            if (i + 1 < rs.size()) {
+                SwingUtilities.invokeLater(() -> elegirYDespachar(rs, i + 1));
+            }
+        });
+    }
+
+    /**
+     * Sale la ruta con el domiciliario escogido: las entregas pasan a «Salidas», se sube a internet
+     * (si está configurado) y se abre WhatsApp en su chat con el enlace para marcar cada entrega.
+     * Sin internet sale igual, sin enlace, y al volver se cierra con «Volvió».
+     */
+    private void despachar(Ruta r, rutas.modelo.Domiciliario d) {
+        rutas.modelo.Salida s;
+        try {
+            s = app.despachar(r, d.nombre);
+        } catch (java.io.IOException ex) {
+            aviso("No se pudo guardar la salida: " + ex.getMessage());
+            return;
+        }
+        s.tipoRepartidor = d.tipo.name();
+        nombreUltimo = d.nombre;
+        rutas.logica.NubeRepartidor nube = app.getNube();
+        rutas.logica.NubeRepartidor.Ajustes aj = app.getAjustesNube();
+        String mapa = r.enlaceGoogleMaps();
+        java.time.LocalTime hora = r.getSalida();
+        if (nube == null) {
+            s.errorNube = "No estaba configurada la conexión (Configuración › Conexión).";
+            guardarSilencio(s);
+            abrirWhatsApp(d.celular, rutas.logica.MensajesWhatsApp.salida(app.getNegocio(), hora, d.nombre, s.entregas,
+                    "", mapa), null);
+            return;
+        }
+        String codigo = rutas.logica.NubeRepartidor.nuevoCodigo();
+        java.util.List<rutas.modelo.Salida.Entrega> copia = new java.util.ArrayList<>();
+        for (rutas.modelo.Salida.Entrega e : s.entregas) {
+            copia.add(e.copia()); // el otro hilo no lee lo que la pantalla puede cambiar
+        }
+        s.subiendo = true; // mientras tanto no se cierra ni se le agregan entregas
+        app.avisar();
+        new javax.swing.SwingWorker<rutas.logica.NubeRepartidor.Subida, Void>() {
+            @Override
+            protected rutas.logica.NubeRepartidor.Subida doInBackground() throws Exception {
+                return nube.subir(codigo, d.nombre, app.getNegocio(), copia);
+            }
+
+            @Override
+            protected void done() {
+                s.subiendo = false;
+                String error = null;
+                try {
+                    get().aplicar(s); // aquí, en el hilo de la pantalla
+                    s.codigo = codigo;
+                    s.errorNube = "";
+                    s.enviadaEn = java.time.LocalDateTime.now();
+                } catch (Exception ex) {
+                    Throwable c = ex.getCause() == null ? ex : ex.getCause();
+                    error = c.getMessage();
+                    s.errorNube = error;
+                }
+                guardarSilencio(s);
+                app.avisar();
+                String enlace = s.enLinea() ? rutas.logica.NubeRepartidor.enlace(aj.pagina, codigo) : "";
+                String texto = rutas.logica.MensajesWhatsApp.salida(app.getNegocio(), hora, d.nombre, s.entregas, enlace, mapa);
+                abrirWhatsApp(d.celular, texto, s.enLinea() ? null : "No se pudo crear el enlace (" + error
+                        + "). La ruta va por WhatsApp; en «Salidas» puede volver a enviar el enlace.");
+            }
+        }.execute();
+    }
+
+    private String nombreUltimo = "";
+
+    private void guardarSilencio(rutas.modelo.Salida s) {
+        try {
+            app.guardarSalida(s);
+        } catch (java.io.IOException ex) {
+            Aviso.mostrar(sitio(), Aviso.Tipo.ERROR, "Salidas", ex.getMessage());
+        }
+    }
+
+    static String primerNombre(String nombre) {
+        String n = nombre == null ? "" : nombre.trim();
+        int i = n.indexOf(' ');
+        return i > 0 ? n.substring(0, i) : n;
+    }
+
+    private void abrirWhatsApp(String celular, String texto, String nota) {
+        try {
+            // en el chat del repartidor si su celular es válido; si no, WhatsApp pregunta a quién
+            AbrirWhatsApp.abrir(Avisos.numeroWhatsApp(celular == null ? "" : celular).isEmpty() ? "" : celular, texto);
+        } catch (Exception ex) {
+            Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(texto), null);
+            nota = "No se pudo abrir WhatsApp. El mensaje quedó copiado: péguelo en el chat del repartidor."
+                    + (nota == null ? "" : "\n\n" + nota);
+        }
+        if (!app.getRutas().isEmpty()) { // quedan otras motos por enviar
+            mostrarResultado(app.getRutas(), 0);
+        } else {
+            tarjetaResultado.setVisible(false);
+            revalidate();
+        }
+        if (nota != null) {
+            aviso(nota);
+        } else {
+            Aviso.mostrar(sitio(), Aviso.Tipo.BIEN, nombreUltimo.isEmpty() ? "Salió el domiciliario" : "Salió " + primerNombre(nombreUltimo), "Siga sus entregas en «Salidas»");
+        }
+    }
+
+    /** Una entrega pendiente se manda con una salida que ya va en camino. */
+    private void mandarEnSalida(Parada p, rutas.modelo.Salida s) {
+        try {
+            app.agregarASalida(s, p);
+        } catch (java.io.IOException ex) {
+            aviso("No se pudo agregar: " + ex.getMessage());
+            return;
+        }
+        if (!s.enLinea()) {
+            aviso(p.getNombre() + " quedó en la salida de las " + Ruta.FORMATO_HORA.format(s.creada)
+                    + ". Esa salida no está en internet: avísele al repartidor por WhatsApp o llamando.");
+            return;
+        }
+        app.revisarYa(); // la revisión la sube; si no hay internet, lo reintenta sola
+        Aviso.mostrar(this, Aviso.Tipo.BIEN, "Entrega agregada", p.getNombre() + " le aparece al repartidor");
     }
 
     /** Muestra la matriz de adyacencia entre paradas (minutos o metros). */
@@ -1147,15 +1554,30 @@ public class PanelPedidos extends JPanel {
         Parada b = app.getBase();
         lblBase.setText(b.getDireccion());
         lblBasePrecision.setText(b.getPrecision());
-        int sel = lstEntregas.getSelectedIndex();
+        Parada sel = lstEntregas.getSelectedValue(); // se vuelve a escoger la misma, no la misma fila
         modeloEntregas.clear();
+        Object venta = enCaja ? app.getVentaEnCurso() : null; // en el cobro: solo la de esta venta
+        int otras = 0;
         for (Parada p : app.getEntregas()) {
-            modeloEntregas.addElement(p);
+            if (venta != null && p.getVenta() != venta) {
+                otras++;
+            } else {
+                modeloEntregas.addElement(p);
+            }
         }
-        if (sel >= 0 && sel < modeloEntregas.size()) {
-            lstEntregas.setSelectedIndex(sel);
+        int fila = sel == null ? -1 : modeloEntregas.indexOf(sel);
+        if (fila >= 0) {
+            lstEntregas.setSelectedIndex(fila);
+        } else {
+            lstEntregas.clearSelection();
         }
-        lblEntregas.setText("Entregas (" + app.getEntregas().size() + ")");
+        lblEntregas.setText(venta != null ? "Entrega de esta venta" : "Entregas (" + app.getEntregas().size() + ")");
+        lblOtras.setText(otras == 1 ? "Hay 1 entrega más esperando salir (se ve en Ruta)."
+                : "Hay " + otras + " entregas más esperando salir (se ven en Ruta).");
+        lblOtras.setVisible(otras > 0);
+        if (botonQuitarTodas != null) {
+            botonQuitarTodas.setVisible(venta == null); // en el cobro no se borran los pedidos de otros
+        }
         lblPromesa.setVisible(false); // se vuelve a mostrar justo despues de agregar
         if (app.getRuta() == null) {
             tarjetaResultado.setVisible(false);
@@ -1165,7 +1587,7 @@ public class PanelPedidos extends JPanel {
     }
 
     private void aviso(String msg) {
-        JOptionPane.showMessageDialog(this, msg, "DomiRuta", JOptionPane.INFORMATION_MESSAGE);
+        JOptionPane.showMessageDialog(sitio(), msg, "DomiRuta", JOptionPane.INFORMATION_MESSAGE);
     }
 
     /** Muestra la ruta en el panel (por ejemplo desde el historial). */
@@ -1185,7 +1607,8 @@ public class PanelPedidos extends JPanel {
             return Tema.celda(list, (index + 1) + ". " + (p.isUrgente() ? "URGENTE · " : "") + p.etiqueta(),
                     Tema.textoFuerte(14), p.isUrgente() ? Tema.ERROR_TEXTO : Tema.AZUL_PROFUNDO,
                     p.getPrecision() + (p.getValorPedido() > 0 ? " · pedido " + Tarifa.pesos(p.getValorPedido()) : "")
-                            + (p.isPagado() ? " · ya pagó" : ""), sel,
+                            + (p.isPagado() ? " · ya pagó" : "")
+                            + (p.getPagaCon() > 0 ? " · paga con " + Tarifa.pesos(p.getPagaCon()) : ""), sel,
                     Color.WHITE);
         }
     }

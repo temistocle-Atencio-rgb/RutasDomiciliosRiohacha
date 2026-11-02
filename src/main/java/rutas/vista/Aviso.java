@@ -4,7 +4,6 @@ import java.awt.AlphaComposite;
 import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Dimension;
-import java.awt.FontMetrics;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.Point;
@@ -18,10 +17,12 @@ import javax.swing.Timer;
 /**
  * Aviso que no interrumpe: aparece abajo a la derecha de un panel, dibuja un circulo
  * que se completa y un chulito, y se va solo (1,5 s en total). No recibe clics.
+ * Los importantes (algo que hay que hacer) duran 8 s, y ninguno se va mientras el mouse esté encima.
+ * Lo que llega del domiciliario queda además en la campana de avisos (arriba).
  */
 public class Aviso extends javax.swing.JPanel {
 
-    public enum Tipo { BIEN, AVISO, ERROR }
+    public enum Tipo { BIEN, AVISO, ERROR, MENSAJE }
 
     private static final int ANCHO = 340;
     private static final int ALTO = 76;
@@ -29,19 +30,26 @@ public class Aviso extends javax.swing.JPanel {
     private final String titulo;
     private final String texto;
     private final Tipo tipo;
-    private final long inicio = System.currentTimeMillis();
+    private final boolean importante;
+    private long inicio = System.currentTimeMillis();
     private Timer timer;
 
-    private Aviso(String titulo, String texto, Tipo tipo) {
+    private Aviso(String titulo, String texto, Tipo tipo, boolean importante) {
         this.titulo = titulo;
         this.texto = texto;
         this.tipo = tipo;
+        this.importante = importante;
         setOpaque(false);
         getAccessibleContext().setAccessibleName(titulo + ". " + texto);
     }
 
     /** Muestra el aviso en la esquina de abajo a la derecha del panel indicado. */
     public static void mostrar(JComponent panel, Tipo tipo, String titulo, String texto) {
+        mostrar(panel, tipo, titulo, texto, false);
+    }
+
+    /** importante = dura 8 s (no puede llevarla, debe plata, mensaje nuevo). */
+    public static void mostrar(JComponent panel, Tipo tipo, String titulo, String texto, boolean importante) {
         JRootPane raiz = SwingUtilities.getRootPane(panel);
         if (raiz == null || !panel.isShowing()) {
             return;
@@ -52,11 +60,15 @@ public class Aviso extends javax.swing.JPanel {
                 ((Aviso) k).quitar();
             }
         }
-        Aviso a = new Aviso(titulo, texto, tipo);
+        Aviso a = new Aviso(titulo, texto, tipo, importante);
         Point p = SwingUtilities.convertPoint(panel, panel.getWidth() - ANCHO - 20, panel.getHeight() - ALTO - 20, lp);
         a.setBounds(p.x, p.y, ANCHO, ALTO);
         lp.add(a, JLayeredPane.PALETTE_LAYER);
         a.timer = new Timer(16, e -> {
+            long t = System.currentTimeMillis() - a.inicio;
+            if (t > 400 && a.mouseEncima()) { // mientras lo lee no se va (queda entero)
+                a.inicio = System.currentTimeMillis() - 400;
+            }
             a.repaint();
             if (System.currentTimeMillis() - a.inicio > a.duracion()) {
                 a.quitar();
@@ -66,7 +78,24 @@ public class Aviso extends javax.swing.JPanel {
     }
 
     private long duracion() {
+        if (importante) {
+            return 8000;
+        }
         return tipo == Tipo.BIEN ? 1500 : 3200; // los avisos y errores se leen con calma
+    }
+
+    private boolean mouseEncima() {
+        try {
+            java.awt.PointerInfo pi = java.awt.MouseInfo.getPointerInfo();
+            if (pi == null || !isShowing()) {
+                return false;
+            }
+            Point p = pi.getLocation();
+            SwingUtilities.convertPointFromScreen(p, this);
+            return p.x >= 0 && p.y >= 0 && p.x < getWidth() && p.y < getHeight();
+        } catch (RuntimeException ex) { // sin mouse (por ejemplo, en las pruebas)
+            return false;
+        }
     }
 
     private void quitar() {
@@ -96,6 +125,8 @@ public class Aviso extends javax.swing.JPanel {
                 return Tema.AVISO_TEXTO;
             case ERROR:
                 return Tema.ERROR;
+            case MENSAJE:
+                return Tema.AZUL;
             default:
                 return Tema.EXITO;
         }
@@ -145,26 +176,11 @@ public class Aviso extends javax.swing.JPanel {
         }
 
         int tx = 66, ancho = w - tx - 8;
-        g.setFont(Tema.textoFuerte(14));
         g.setColor(Tema.GRIS_OSCURO);
-        g.drawString(recortar(g.getFontMetrics(), titulo, ancho), tx, cy - 4);
-        g.setFont(Tema.texto(13));
-        g.setColor(tipo == Tipo.BIEN ? Tema.GRIS_TEXTO : c == Tema.ERROR ? Tema.ERROR_TEXTO : c);
-        g.drawString(recortar(g.getFontMetrics(), texto, ancho), tx, cy + 15);
+        java.awt.Font ft = Tema.textoFuerte(14), fx = Tema.texto(13);
+        TextoEmoji.dibujar(g, TextoEmoji.recortar(titulo, ft, ancho), ft, tx, cy - 4);
+        g.setColor(tipo == Tipo.BIEN || tipo == Tipo.MENSAJE ? Tema.GRIS_TEXTO : c == Tema.ERROR ? Tema.ERROR_TEXTO : c);
+        TextoEmoji.dibujar(g, TextoEmoji.recortar(texto, fx, ancho), fx, tx, cy + 15); // el mensaje puede traer emojis
         g.dispose();
-    }
-
-    private static String recortar(FontMetrics fm, String s, int ancho) {
-        if (s == null) {
-            return "";
-        }
-        if (fm.stringWidth(s) <= ancho) {
-            return s;
-        }
-        String r = s;
-        while (r.length() > 1 && fm.stringWidth(r + "…") > ancho) {
-            r = r.substring(0, r.length() - 1);
-        }
-        return r + "…";
     }
 }

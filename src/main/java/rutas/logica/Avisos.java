@@ -74,37 +74,50 @@ public final class Avisos {
     }
 
     public static String mensaje(String cliente, String negocio, LocalTime llegada) {
+        return mensaje(cliente, negocio, llegada, 0, 0);
+    }
+
+    /**
+     * Mensaje al cliente con formato de WhatsApp: hora de llegada en negrita, el valor del domicilio y
+     * cuánto debe tener listo. Si totalACobrar es 0 es porque ya pagó.
+     */
+    public static String mensaje(String cliente, String negocio, LocalTime llegada, long domicilio, long totalACobrar) {
         StringBuilder sb = new StringBuilder("Hola");
         if (cliente != null && !cliente.isBlank()) {
             sb.append(' ').append(primerNombre(cliente));
         }
         sb.append(", su pedido");
         if (negocio != null && !negocio.isBlank()) {
-            sb.append(" de ").append(negocio.trim());
+            sb.append(" de *").append(negocio.trim()).append('*');
         }
-        sb.append(" ya va en camino. Le llega ").append(textoVentana(llegada)).append(" ¡Gracias!");
+        sb.append(" ya va en camino.\nLe llega *").append(textoVentana(llegada)).append("*");
+        if (domicilio > 0) {
+            sb.append("\n\nDomicilio: ").append(Tarifa.pesos(domicilio));
+            sb.append(totalACobrar > 0 ? "\nTotal a pagar: " + Tarifa.pesos(totalACobrar) : "\n_Su pago ya quedó registrado._");
+        }
+        sb.append("\n\n¡Gracias!");
         return sb.toString();
-    }
-
-    /**
-     * Mensaje con la plata: el valor del domicilio y cuanto debe tener listo el cliente.
-     * Si totalACobrar es 0 es porque ya pago por transferencia.
-     */
-    public static String mensaje(String cliente, String negocio, LocalTime llegada, long domicilio, long totalACobrar) {
-        String base = mensaje(cliente, negocio, llegada);
-        if (domicilio <= 0) {
-            return base;
-        }
-        String plata = " Domicilio: " + Tarifa.pesos(domicilio) + "."
-                + (totalACobrar > 0 ? " Total a pagar: " + Tarifa.pesos(totalACobrar) + "." : " Su pago ya quedó registrado.");
-        int i = base.lastIndexOf(" ¡Gracias!");
-        return base.substring(0, i) + plata + base.substring(i);
     }
 
     private static String primerNombre(String nombre) {
         String n = nombre.trim();
         int esp = n.indexOf(' ');
         return esp > 0 ? n.substring(0, esp) : n;
+    }
+
+    /**
+     * Enlace directo a la app de WhatsApp de escritorio (sin pasar por el navegador). telefono puede ser ""
+     * (entonces WhatsApp pregunta a qué chat se manda).
+     */
+    public static String enlaceWhatsAppApp(String telefono, String mensaje) {
+        String num = telefono == null || telefono.isBlank() ? "" : numeroWhatsApp(telefono);
+        return "whatsapp://send?" + (num.isEmpty() ? "" : "phone=" + num + "&") + "text="
+                + URLEncoder.encode(mensaje, StandardCharsets.UTF_8).replace("+", "%20");
+    }
+
+    /** Enlace que abre WhatsApp con el mensaje escrito; WhatsApp pregunta a qué chat se manda. */
+    public static String enlaceWhatsAppSinNumero(String mensaje) {
+        return "https://wa.me/?text=" + URLEncoder.encode(mensaje, StandardCharsets.UTF_8).replace("+", "%20");
     }
 
     /** Enlace que abre el chat con el mensaje escrito. */

@@ -44,7 +44,7 @@ public final class Alerta {
         t.add(icono);
         t.add(Tema.espacio(20));
         JLabel lt = new JLabel(titulo, SwingConstants.CENTER);
-        lt.setFont(Tema.titulo(22));
+        lt.setFont(Tema.subtitulo(18));
         lt.setForeground(Tema.GRIS_OSCURO);
         lt.setAlignmentX(Component.CENTER_ALIGNMENT);
         t.add(lt);
@@ -149,10 +149,14 @@ public final class Alerta {
         private final Tipo tipo;
 
         Icono(Tipo tipo) {
+            this(tipo, 64);
+        }
+
+        Icono(Tipo tipo, int lado) {
             this.tipo = tipo;
             setOpaque(false);
-            setPreferredSize(new Dimension(76, 76));
-            setMaximumSize(new Dimension(76, 76));
+            setPreferredSize(new Dimension(lado, lado));
+            setMaximumSize(new Dimension(lado, lado));
         }
 
         static Color color(Tipo t) {
@@ -171,7 +175,11 @@ public final class Alerta {
             Graphics2D g = (Graphics2D) g0.create();
             Tema.suavizar(g);
             Color c = color(tipo);
-            int d = 72, x = (getWidth() - d) / 2, y = (getHeight() - d) / 2;
+            int lado = Math.min(getWidth(), getHeight());
+            double k = (lado - 4) / 72.0; // se dibuja a 72 y se escala al tamano pedido
+            g.translate((getWidth() - 72 * k) / 2, (getHeight() - 72 * k) / 2);
+            g.scale(k, k);
+            int d = 72, x = 0, y = 0;
             g.setColor(Tema.mezclar(c, Color.WHITE, 0.88));
             g.fillOval(x, y, d, d);
             g.setColor(c);
