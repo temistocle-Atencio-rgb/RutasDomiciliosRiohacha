@@ -67,6 +67,7 @@ public final class ImportadorProductos {
             throw new IllegalArgumentException("Faltan columnas: " + String.join(", ", faltan));
         }
 
+        cat.exigirEditar(); // antes de leer nada: importar es crear y editar productos (y categorias)
         Resultado r = new Resultado();
         Map<String, Long> categorias = new HashMap<>();
         try {

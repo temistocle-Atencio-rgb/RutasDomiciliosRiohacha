@@ -894,6 +894,9 @@ public class Aplicacion {
         this.tienda = tienda;
         this.catalogo = catalogo;
         this.sesion = sesion;
+        if (catalogo != null) {
+            catalogo.setSesion(sesion); // los permisos se revisan tambien en el catalogo, no solo en la pantalla
+        }
         this.ordenes = null; // otra base: se vuelve a crear
     }
 

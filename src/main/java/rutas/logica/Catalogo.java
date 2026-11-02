@@ -29,6 +29,25 @@ public class Catalogo {
         recargar();
     }
 
+    /**
+     * Quien esta usando el programa. Con una sesion, crear, editar, importar, desactivar y
+     * reactivar exigen el permiso de editar productos tambien aqui (no solo en la pantalla), y el
+     * costo solo lo cambia quien puede verlo. Sin sesion (pruebas, antes del ingreso) no se revisa.
+     * Es una capa mas: quien abra tienda.db con otro programa no pasa por aqui.
+     */
+    public void setSesion(Sesion sesion) {
+        this.sesion = sesion;
+    }
+
+    private Sesion sesion;
+
+    /** Lanza IllegalArgumentException (con un mensaje para el usuario) si la sesion no puede editar productos. */
+    public void exigirEditar() {
+        if (sesion != null && !sesion.puede(Permiso.EDITAR_PRODUCTOS)) {
+            throw new IllegalArgumentException("Su usuario no tiene permiso para crear ni editar productos");
+        }
+    }
+
     /** Vuelve a armar los arboles con lo que hay en la base (por ejemplo, si una importacion se deshizo). */
     public final void recargar() throws SQLException {
         porCodigo = new ArbolAVL<>();
@@ -169,6 +188,10 @@ public class Catalogo {
     }
 
     public Producto crear(Producto p) throws SQLException {
+        exigirEditar();
+        if (sesion != null && !sesion.puede(Permiso.VER_COSTOS) && p.getPrecioCompra() != 0) {
+            throw new IllegalArgumentException("Su usuario no puede poner el costo del producto");
+        }
         p = conNombreLimpio(conCodigoMayus(p));
         validar(p, null);
         Producto guardado = bd.insertarProducto(p.conActivo(true));
@@ -178,10 +201,14 @@ public class Catalogo {
 
     /** Primero se guarda en la base; solo si salio bien se cambian los arboles. */
     public Producto editar(Producto p) throws SQLException {
+        exigirEditar();
         p = conNombreLimpio(conCodigoMayus(p));
         Producto viejo = bd.buscarProductoPorId(p.getId());
         if (viejo == null) {
             throw new IllegalArgumentException("Ese producto ya no existe");
+        }
+        if (sesion != null && !sesion.puede(Permiso.VER_COSTOS) && p.getPrecioCompra() != viejo.getPrecioCompra()) {
+            throw new IllegalArgumentException("Su usuario no puede cambiar el costo del producto");
         }
         validar(p, viejo);
         Producto nuevo = p.conActivo(viejo.isActivo());
@@ -194,6 +221,7 @@ public class Catalogo {
     }
 
     public void desactivar(long id) throws SQLException {
+        exigirEditar();
         Producto p = bd.buscarProductoPorId(id);
         if (p == null || !p.isActivo()) {
             return;
@@ -203,6 +231,7 @@ public class Catalogo {
     }
 
     public Producto reactivar(long id) throws SQLException {
+        exigirEditar();
         Producto p = bd.buscarProductoPorId(id);
         if (p == null) {
             throw new IllegalArgumentException("Ese producto ya no existe");

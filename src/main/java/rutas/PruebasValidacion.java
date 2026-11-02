@@ -20,6 +20,58 @@ public class PruebasValidacion {
         probarMensajes();
         probarFotoLocal();
         probarEnlaceImagen();
+        probarPermisos();
+    }
+
+    /** H7: los permisos se revisan tambien en el catalogo (no solo en la pantalla). */
+    private static void probarPermisos() throws Exception {
+        try (rutas.logica.BaseTienda bd = PruebasCaja.baseTemporal()) {
+            rutas.logica.Catalogo cat = new rutas.logica.Catalogo(bd);
+            rutas.modelo.Producto pan = cat.crear(new rutas.modelo.Producto(0, "900", "Pan", Unidad.UNIDAD, 500, 300, 0, 0,
+                    null, true));
+            rutas.modelo.Usuario cajero = new rutas.modelo.Usuario(2, "caja", "Caja", rutas.modelo.Rol.CAJERO, true, "");
+            cat.setSesion(new rutas.logica.Sesion(cajero));
+            revisar("H7: un cajero sin permiso no puede crear desde la lógica",
+                    String.valueOf(crearConCodigo(cat, "901")).contains("no tiene permiso") && cat.buscarCodigo("901") == null);
+            revisar("H7: ni editar, ni desactivar", lanza("no tiene permiso", () -> {
+                try {
+                    cat.editar(new rutas.modelo.Producto(pan.getId(), "900", "Pan", Unidad.UNIDAD, 600, 300, 0, 0, null, true));
+                } catch (java.sql.SQLException e) {
+                    throw new IllegalStateException(e);
+                }
+            }) && lanza("no tiene permiso", () -> {
+                try {
+                    cat.desactivar(pan.getId());
+                } catch (java.sql.SQLException e) {
+                    throw new IllegalStateException(e);
+                }
+            }));
+            revisar("H7: ni importar (no se guarda nada)", lanza("no tiene permiso", () -> {
+                try {
+                    importar(cat, "nombre;precio_venta\nLeche;3000\n");
+                } catch (Exception e) {
+                    throw new IllegalStateException(e);
+                }
+            }) && cat.buscarNombre("leche", 1).isEmpty());
+            rutas.modelo.Usuario editor = new rutas.modelo.Usuario(3, "edi", "Edi", rutas.modelo.Rol.CAJERO, true,
+                    "EDITAR_PRODUCTOS");
+            cat.setSesion(new rutas.logica.Sesion(editor));
+            revisar("H7: con permiso de editar sí cambia el precio, pero no el costo si no ve costos",
+                    noLanza(() -> {
+                        try {
+                            cat.editar(new rutas.modelo.Producto(pan.getId(), "900", "Pan", Unidad.UNIDAD, 600, 300, 0, 0, null, true));
+                        } catch (java.sql.SQLException e) {
+                            throw new IllegalStateException(e);
+                        }
+                    }) && lanza("costo", () -> {
+                        try {
+                            cat.editar(new rutas.modelo.Producto(pan.getId(), "900", "Pan", Unidad.UNIDAD, 600, 350, 0, 0, null, true));
+                        } catch (java.sql.SQLException e) {
+                            throw new IllegalStateException(e);
+                        }
+                    }));
+            cat.setSesion(null);
+        }
     }
 
     static String direccion(String url) {
