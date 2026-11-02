@@ -20,9 +20,18 @@ public final class Textos {
     private Textos() {
     }
 
-    /** Sin espacios a los lados y sin espacios dobles (los saltos de linea tambien quedan como un espacio). */
+    /**
+     * Sin espacios a los lados y sin espacios dobles (los saltos de linea tambien quedan como un
+     * espacio). Los espacios raros que trae lo copiado de internet (sin corte, finos) pasan a espacio
+     * normal y los invisibles (de ancho cero) se quitan.
+     */
     public static String limpiar(String s) {
-        return s == null ? "" : s.trim().replaceAll("\\s+", " ");
+        return s == null ? "" : sinInvisibles(s).trim().replaceAll("\\s+", " ");
+    }
+
+    /** Espacios raros a espacio normal; quita los de ancho cero y la marca BOM. */
+    static String sinInvisibles(String s) {
+        return s.replaceAll("[\\u00A0\\u2007\\u202F\\u2000-\\u200A]", " ").replaceAll("[\\u200B\\u200C\\u200D\\u2060\\uFEFF]", "");
     }
 
     /** Para textos de varias lineas (descripcion, garantia): sin espacios a los lados ni dobles en cada linea. */
@@ -31,7 +40,7 @@ public final class Textos {
             return "";
         }
         StringBuilder b = new StringBuilder();
-        for (String linea : s.trim().split("\\r?\\n|\\r")) {
+        for (String linea : sinInvisibles(s).trim().split("\\r?\\n|\\r")) {
             if (b.length() > 0) {
                 b.append('\n');
             }
@@ -100,6 +109,8 @@ public final class Textos {
             case Character.MATH_SYMBOL:           // + = < > ×
             case Character.CURRENCY_SYMBOL:       // $
                 return c != 0xFE0F;               // selector de emoji
+            case Character.MODIFIER_SYMBOL:       // ´ ` ^ ¨ (Kellogg´s); los tonos de piel de los emojis no
+                return c < 0x10000;
             default:
                 return false;                     // emojis, dibujos, caracteres invisibles
         }

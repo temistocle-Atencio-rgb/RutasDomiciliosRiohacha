@@ -209,8 +209,12 @@ public class PruebasValidacion {
                     && cat.buscarNombre("' or 1=1", 1).size() == 1);
             String emoji = crearConNombre(cat, "Torta \uD83C\uDF82");
             revisar("H4: emojis en el nombre se rechazan: " + emoji, emoji != null && emoji.contains("emojis"));
-            revisar("H4: también el corazón ❤ y el invisible de los emojis",
-                    crearConNombre(cat, "Amor ❤️") != null && crearConNombre(cat, "Uno\u200DDos") != null);
+            revisar("H4: también el corazón ❤ y los tonos de piel de los emojis",
+                    crearConNombre(cat, "Amor ❤️") != null && crearConNombre(cat, "Mano \uD83D\uDC4D\uD83C\uDFFD") != null);
+            revisar("H4: «Kellogg´s» (tilde suelta del teclado) sí se permite", crearConNombre(cat, "Zucaritas Kellogg´s 300g") == null);
+            revisar("H4: espacios invisibles o sin corte copiados de internet se limpian",
+                    crearConNombre(cat, "Leche\u200B\u00A0\u00A0entera") == null
+                    && cat.buscarNombre("leche entera", 1).size() == 1);
             revisar("H4: ° ® ™ ½ y tildes sí se permiten", crearConNombre(cat, "Aguardiente 29° Néctar® ½ lt™") == null);
             revisar("H4: caracteres de control se rechazan", crearConNombre(cat, "Pa\u0007n") != null);
             rutas.modelo.FichaProducto f = new rutas.modelo.FichaProducto();
