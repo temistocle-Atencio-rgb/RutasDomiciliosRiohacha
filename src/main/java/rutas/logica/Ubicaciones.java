@@ -75,7 +75,6 @@ public final class Ubicaciones {
         }
     }
 
-    /** Escribe un error en errores.log para poder dar soporte. */
     /**
      * Para mostrarle al usuario un error de la base o de un archivo sin detalles tecnicos (OWASP,
      * Error Handling): el detalle completo queda en errores.log y la pantalla dice que paso y que hacer.
@@ -87,6 +86,7 @@ public final class Ubicaciones {
                 : ". Intente otra vez; si sigue pasando, el detalle quedó en el registro de errores (errores.log).");
     }
 
+    /** Escribe un error en errores.log para poder dar soporte. */
     public static void registrarError(Throwable t) {
         try (PrintWriter pw = new PrintWriter(new FileWriter(new File(carpetaUsuario(), "errores.log"),
                 StandardCharsets.UTF_8, true))) {
