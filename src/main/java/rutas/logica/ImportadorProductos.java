@@ -34,7 +34,10 @@ public final class ImportadorProductos {
     private ImportadorProductos() {
     }
 
-    /** Lo que paso al importar. */
+    /**
+     * Lo que paso al importar. Es todo o nada: si alguna fila tiene error, no se guarda ninguna
+     * (creados y actualizados quedan en 0) y errores dice cuales revisar.
+     */
     public static class Resultado {
         public int creados;
         public int actualizados;
@@ -83,8 +86,20 @@ public final class ImportadorProductos {
                         r.errores.add("Fila " + (i + 1) + ": " + e.getMessage());
                     }
                 }
+                if (!r.errores.isEmpty()) {
+                    throw new FilasConError(); // todo o nada: se deshace lo de las filas buenas
+                }
                 return null;
             });
+        } catch (FilasConError e) {
+            r.creados = 0;
+            r.actualizados = 0;
+            try {
+                cat.recargar(); // la base se deshizo: los arboles vuelven a quedar como la base
+            } catch (SQLException e2) {
+                throw new IOException("No se pudo volver a leer la lista de productos", e2);
+            }
+            return r;
         } catch (Exception e) {
             try {
                 cat.recargar(); // la base se deshizo: los arboles vuelven a quedar como la base
@@ -94,6 +109,13 @@ public final class ImportadorProductos {
             throw new IOException("No se pudo guardar la lista: " + e.getMessage(), e);
         }
         return r;
+    }
+
+    /** Señal para deshacer la importacion cuando alguna fila tiene error (no sale de esta clase). */
+    private static final class FilasConError extends RuntimeException {
+        FilasConError() {
+            super(null, null, false, false);
+        }
     }
 
     private static void importarFila(List<String> f, Map<String, Integer> col, Catalogo cat, Resultado r,

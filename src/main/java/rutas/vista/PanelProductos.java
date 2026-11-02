@@ -636,12 +636,12 @@ public class PanelProductos extends JPanel {
             ImportadorProductos.Resultado r = ImportadorProductos.importar(archivo, cat);
             refrescarCategorias();
             refrescar();
-            String resumen = r.creados + " creados, " + r.actualizados + " actualizados"
-                    + (r.errores.isEmpty() ? "" : ", " + r.errores.size() + " con error");
             if (r.errores.isEmpty()) {
-                Aviso.mostrar(this, Aviso.Tipo.BIEN, "Lista importada", resumen);
+                Aviso.mostrar(this, Aviso.Tipo.BIEN, "Lista importada", r.creados + " creados, " + r.actualizados
+                        + " actualizados");
             } else {
-                mostrarErrores(resumen, r.errores);
+                mostrarErrores(r.errores.size() + (r.errores.size() == 1 ? " fila tiene error" : " filas tienen error"),
+                        r.errores);
             }
         } catch (IllegalArgumentException | IOException e) {
             Alerta.mostrar(this, Alerta.Tipo.AVISO, "No se pudo importar", e.getMessage(), null);
@@ -653,8 +653,8 @@ public class PanelProductos extends JPanel {
     private void mostrarErrores(String resumen, List<String> errores) {
         JPanel t = Capa.tarjeta(600, 24, 28);
         t.add(Tema.tituloPantalla("Filas con error"));
-        t.add(Tema.parrafo(resumen + ". Las demás filas sí se guardaron. Corrija estas en el archivo y vuelva a importarlo.",
-                540));
+        t.add(Tema.parrafo(resumen + ". No se guardó ninguna fila. Corrija estas en el archivo y vuelva a importarlo"
+                + " completo.", 540));
         t.add(Tema.espacio(10));
         JTextArea area = new JTextArea(String.join("\n", errores), 10, 40);
         area.setEditable(false);

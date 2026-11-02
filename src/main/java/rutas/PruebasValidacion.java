@@ -13,6 +13,26 @@ public class PruebasValidacion {
         probarCantidades();
         probarPrecioCero();
         probarCsvFormulas();
+        probarTodoONada();
+    }
+
+    /** H5 caso 20: 3 filas con la del medio mala: no se guarda ninguna, ni la categoria nueva. */
+    private static void probarTodoONada() throws Exception {
+        try (rutas.logica.BaseTienda bd = PruebasCaja.baseTemporal()) {
+            rutas.logica.Catalogo cat = new rutas.logica.Catalogo(bd);
+            cat.crear(new rutas.modelo.Producto(0, "500", "Sal", Unidad.UNIDAD, 1000, 0, 0, 0, null, true));
+            ImportadorProductos.Resultado r = importar(cat, "nombre;codigo;precio_venta;categoria\n"
+                    + "Leche;501;3000;Lácteos\n;502;2000;\nSal refinada;500;1200;\n");
+            revisar("H5 caso 20: la fila mala se informa y no se guarda ninguna: " + r.errores, r.errores.size() == 1
+                    && r.errores.get(0).startsWith("Fila 3") && r.creados == 0 && r.actualizados == 0
+                    && cat.buscarCodigo("501") == null && bd.buscarPorCodigoEnBase("501") == null);
+            revisar("H5: lo que ya existía queda como estaba (base y árboles) y la categoría nueva no se crea",
+                    cat.buscarCodigo("500").getNombre().equals("Sal") && bd.buscarPorCodigoEnBase("500").getPrecioVenta() == 1000
+                    && bd.listarCategorias(true).isEmpty());
+            ImportadorProductos.Resultado bien = importar(cat, "nombre;codigo;precio_venta\nLeche;501;3000\nPan;502;500\n");
+            revisar("H5: un archivo sin errores sí entra completo", bien.errores.isEmpty() && bien.creados == 2
+                    && cat.buscarCodigo("502") != null);
+        }
     }
 
     /** H1: el CSV exportado no deja formulas vivas (caso 3), y la lista va y vuelve igual. */

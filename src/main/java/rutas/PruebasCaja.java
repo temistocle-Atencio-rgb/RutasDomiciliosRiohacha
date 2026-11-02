@@ -371,10 +371,18 @@ public class PruebasCaja {
         try (BaseTienda bd = baseTemporal()) {
             Catalogo cat = new Catalogo(bd);
             ImportadorProductos.Resultado r = ImportadorProductos.importar(csv1, cat);
-            revisar("3 creados y 2 con error: " + r.creados + " / " + r.errores, r.creados == 3 && r.errores.size() == 2);
+            // todo o nada: con 2 filas malas no se guarda ninguna y se dicen las dos
+            revisar("con 2 filas malas no se guarda nada: " + r.creados + " / " + r.errores, r.creados == 0
+                    && r.errores.size() == 2 && cat.buscarNombre("azucar", 0).isEmpty() && cat.buscarNombre("queso", 0).isEmpty());
             revisar("la fila sin nombre se nombra", r.errores.size() == 2 && r.errores.get(0).startsWith("Fila 5: "));
             revisar("la fila con codigo de Excel explica el problema", r.errores.size() == 2
                     && r.errores.get(1).equals("Fila 6: Excel cambió el código; formatee la columna como texto"));
+            // corregido el archivo (sin las 2 filas malas) entran las 3
+            String[] partes = texto1.split("\r\n");
+            Files.write(csv1.toPath(), (partes[0] + "\r\n" + partes[1] + "\r\n" + partes[2] + "\r\n" + partes[3] + "\r\n")
+                    .getBytes("windows-1252"));
+            r = ImportadorProductos.importar(csv1, cat);
+            revisar("corregido el archivo: 3 creados: " + r.creados + " / " + r.errores, r.creados == 3 && r.errores.isEmpty());
             revisar("tilde bien leida del archivo de Excel", cat.buscarNombre("azucar", 0).size() == 1
                     && cat.buscarNombre("azucar", 0).get(0).getNombre().equals("Azúcar"));
             Producto az = cat.buscarNombre("azucar", 0).get(0);
@@ -696,18 +704,23 @@ public class PruebasCaja {
                 otra.crearCategoria("Granos", null, 0);
                 Catalogo cat2 = new Catalogo(otra);
                 ImportadorProductos.Resultado r = ImportadorProductos.importar(archivo, cat2);
-                Producto az = cat2.buscarNombre("azucar", 1).get(0);
                 // un stock negativo (por ventas) no se pasa a una tienda nueva: se pide corregirlo
+                // un stock negativo (por ventas) no se pasa a una tienda nueva: se informa y no se guarda nada
                 revisar("exportar e importar en otra tienda: el stock negativo se informa: " + r.creados + " " + r.errores,
-                        r.creados == 3 && r.errores.size() == 1 && r.errores.get(0).contains("no puede ser negativo")
-                        && az.getStock() == 2000 && az.getUnidad() == Unidad.LIBRA
-                        && az.getPrecioVenta() == 2200 && az.getCategoriaId() != null
-                        && cat2.buscarCodigo("7703") == null);
+                        r.creados == 0 && r.errores.size() == 1 && r.errores.get(0).contains("no puede ser negativo")
+                        && cat2.buscarCodigo("7703") == null && cat2.buscarNombre("azucar", 1).isEmpty());
+                java.nio.file.Files.write(archivo.toPath(), csv.replace(";-3;", ";0;").getBytes("UTF-8"));
+                r = ImportadorProductos.importar(archivo, cat2);
+                Producto az2 = cat2.buscarNombre("azucar", 1).get(0);
+                revisar("con el stock corregido la lista entra completa: " + r.creados + " " + r.errores,
+                        r.creados == 4 && r.errores.isEmpty() && az2.getStock() == 2000 && az2.getUnidad() == Unidad.LIBRA
+                        && az2.getPrecioVenta() == 2200 && az2.getCategoriaId() != null);
+                java.nio.file.Files.write(archivo.toPath(), csv.getBytes("UTF-8"));
             }
             // en la misma tienda, la lista exportada se vuelve a importar igual (el negativo no cambio)
             ImportadorProductos.Resultado mismo = ImportadorProductos.importar(archivo, cat);
-            revisar("volver a importar la lista exportada en la misma tienda: " + mismo.actualizados + " " + mismo.errores,
-                    mismo.errores.stream().noneMatch(e -> e.contains("negativo")) && mismo.actualizados == 2
+            revisar("volver a importar la lista exportada en la misma tienda: el negativo sin cambios no es error: "
+                    + mismo.errores, mismo.errores.stream().noneMatch(e -> e.contains("negativo"))
                     && cat.buscarCodigo("7703").getStock() == -3000);
         }
     }
