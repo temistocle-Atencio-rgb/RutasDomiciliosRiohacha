@@ -11,9 +11,11 @@ echo "Class-Path: sqlite-jdbc-3.50.3.0.jar" > target/empaque/manifiesto.txt
 jar --create --file target/empaque/entrada/DomiRuta.jar --main-class rutas.Main --manifest=target/empaque/manifiesto.txt -C target/empaque/clases .
 cp lib/sqlite-jdbc-3.50.3.0.jar target/empaque/entrada/
 cp -r datos target/empaque/entrada/
+# lector del celular: adb (platform-tools) y la app DomiRuta-Lector.apk, si estan en la carpeta lector
+[ -d lector ] && cp -r lector target/empaque/entrada/
 jpackage --type app-image --name DomiRuta --app-version $VERSION --input target/empaque/entrada \
   --main-jar DomiRuta.jar --main-class rutas.Main \
-  --add-modules java.base,java.desktop,java.sql,java.net.http,jdk.crypto.ec,jdk.localedata \
+  --add-modules java.base,java.desktop,java.sql,java.net.http,jdk.httpserver,jdk.crypto.ec,jdk.localedata \
   --jlink-options "--strip-debug --no-header-files --no-man-pages --include-locales=es,en" --dest dist
 cp empaque/LEEME.txt dist/DomiRuta/ 2>/dev/null || cp empaque/LEEME.txt dist/
 echo "Listo: dist/DomiRuta"

@@ -57,6 +57,7 @@ public class VentanaPrincipal extends JFrame {
     private PanelConfiguracion panelConfiguracion; // null si quien entró no es administrador
     private PanelCompras panelNuevaCompra;          // null si no puede registrar compras
     private final Notificaciones notificaciones = new Notificaciones(); // la campana de arriba
+    private Runnable oyenteLector; // el estado del lector de arriba (se quita al cerrar la ventana)
     private Seguimiento seguimiento;
     private JPanel zonaDomicilio;            // mapa + Ruta/Buscar prestados al cobro a domicilio
     private final List<javax.swing.JButton> pestanasDomicilio = new ArrayList<>();
@@ -212,6 +213,9 @@ public class VentanaPrincipal extends JFrame {
     @Override
     public void dispose() {
         reloj.stop();
+        if (oyenteLector != null) {
+            Lector.get().quitarOyente(oyenteLector);
+        }
         if (seguimiento != null) {
             seguimiento.parar();
         }
@@ -243,6 +247,8 @@ public class VentanaPrincipal extends JFrame {
         der.setOpaque(false);
         der.setLayout(new BoxLayout(der, BoxLayout.X_AXIS));
         der.add(lblTrafico);
+        der.add(Box.createHorizontalStrut(16));
+        der.add(botonLector());
         der.add(Box.createHorizontalStrut(10));
         der.add(notificaciones.getCampana());
         rutas.logica.Sesion sesion = app.getSesion();
@@ -261,6 +267,27 @@ public class VentanaPrincipal extends JFrame {
         }
         h.add(der, BorderLayout.EAST);
         return h;
+    }
+
+    /** Estado del lector de codigos (celular o USB); al tocarlo se abre "Probar el lector". */
+    private JComponent botonLector() {
+        javax.swing.JButton b = new javax.swing.JButton();
+        b.setContentAreaFilled(false);
+        b.setBorder(BorderFactory.createEmptyBorder(4, 6, 4, 6));
+        b.setFont(Tema.textoFuerte(13.5f));
+        b.setForeground(Color.WHITE);
+        b.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
+        b.setToolTipText("Ver si el lector está conectado y probarlo");
+        Lector lector = Lector.get();
+        Runnable pintar = () -> {
+            b.setText(lector.textoCorto());
+            b.getAccessibleContext().setAccessibleName(lector.textoCorto() + ". Probar el lector");
+        };
+        pintar.run();
+        lector.alCambiar(pintar);
+        oyenteLector = pintar;
+        b.addActionListener(e -> PruebaLector.mostrar((JComponent) getContentPane()));
+        return b;
     }
 
     /** Nombre de la ciudad con menu para cambiar de municipio o actualizar el mapa. */

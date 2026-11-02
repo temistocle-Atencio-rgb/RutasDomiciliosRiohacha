@@ -18,6 +18,13 @@ Otros municipios
   Haga clic en el nombre de la ciudad (arriba) y escoja otro municipio de La Guajira.
   El mapa se descarga de OpenStreetMap (necesita internet la primera vez).
 
+Lector de códigos con el celular
+  Active la depuración USB en el celular (Ajustes > Acerca del teléfono, toque 7 veces
+  "Número de compilación"; luego Opciones de desarrollador > Depuración USB) y conéctelo
+  con el cable. DomiRuta le instala la app DomiRuta Lector, la abre y lo que lea la cámara
+  entra directo a la venta. Arriba, en la barra azul, "Lector" dice cómo va; al tocarlo se
+  puede probar. Los lectores USB normales (pistola) funcionan sin configurar nada.
+
 Dónde quedan sus datos
   Clientes, historial y novedades se guardan en %APPDATA%\DomiRuta.
   Para hacer copia de seguridad, copie esa carpeta.

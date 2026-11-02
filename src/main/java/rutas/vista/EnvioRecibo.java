@@ -14,11 +14,11 @@ import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JTextField;
-import javax.swing.SwingWorker;
 import rutas.logica.AjustesCorreo;
 import rutas.logica.CorreoSmtp;
 import rutas.logica.PdfImagen;
 import rutas.logica.Tarifa;
+import rutas.logica.Ubicaciones;
 
 /** El recibo como PDF (para guardarlo o mandarlo) y la ventanita para enviarlo por correo. */
 final class EnvioRecibo {
@@ -342,6 +342,26 @@ final class EnvioRecibo {
     /** Ventanita "Enviar recibo por correo": ya llena con el correo del cliente, asunto, mensaje y el PDF. */
     static void abrir(JComponent dentroDe, Aplicacion app, Comprobante comp, rutas.modelo.Cliente cliente,
             java.util.function.Consumer<rutas.modelo.Cliente> alActualizarCliente) {
+        abrir(dentroDe, app, comp, cliente, alActualizarCliente, null);
+    }
+
+    /** Lo que se habia escrito en un envio que fallo, para reintentar sin escribir todo otra vez. */
+    private static final class Borrador {
+        final String para;
+        final String asunto;
+        final String mensaje;
+        final String error;
+
+        Borrador(String para, String asunto, String mensaje, String error) {
+            this.para = para;
+            this.asunto = asunto;
+            this.mensaje = mensaje;
+            this.error = error;
+        }
+    }
+
+    private static void abrir(JComponent dentroDe, Aplicacion app, Comprobante comp, rutas.modelo.Cliente cliente,
+            java.util.function.Consumer<rutas.modelo.Cliente> alActualizarCliente, Borrador borrador) {
         String correoCliente = cliente == null ? "" : cliente.getCorreo();
         AjustesCorreo aj;
         try {
@@ -382,6 +402,11 @@ final class EnvioRecibo {
         mensaje.getArea().setText(saludo + "\n\nGracias por su compra en " + negocio + ". Le enviamos el recibo de su"
                 + " compra No. " + Comprobante.numeroTexto(comp.numero) + " por " + Tarifa.pesos(comp.total)
                 + ".\n\nCordialmente,\n" + negocio);
+        if (borrador != null) { // reintento: lo que se habia escrito
+            para.setText(borrador.para);
+            asunto.setText(borrador.asunto);
+            mensaje.getArea().setText(borrador.mensaje);
+        }
         mensaje.getArea().setCaretPosition(0); // que se vea desde el saludo
         t.add(campo("Para", para));
         // sugerencias: los correos de los clientes guardados (escribe "marce" y sale marcela@...)
@@ -425,7 +450,7 @@ final class EnvioRecibo {
         adj.setForeground(Tema.GRIS_OSCURO);
         adj.setAlignmentX(Component.LEFT_ALIGNMENT);
         t.add(adj);
-        JLabel error = new JLabel(" ");
+        JLabel error = new JLabel(borrador == null ? " " : "<html>" + borrador.error + "</html>");
         error.setFont(Tema.textoFuerte(13));
         error.setForeground(Tema.ERROR_TEXTO);
         error.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -505,65 +530,38 @@ final class EnvioRecibo {
                 error.setText("Revise el correo del cliente (ej. nombre@gmail.com)");
                 return;
             }
-            enviar.setEnabled(false);
-            cancelar.setEnabled(false);
-            enviar.setText("Enviando…");
-            error.setForeground(Tema.GRIS_TEXTO);
-            error.setText("Enviando el correo, espere un momento…");
+            // la ventanita se cierra ya: el correo sale por detras y la caja sigue vendiendo
             String remitente = ajustes.remitente.isBlank() ? negocio : ajustes.remitente;
             String asuntoTxt = asunto.getText();
             String texto = mensaje.getArea().getText();
-            new SwingWorker<String, Void>() {
-                @Override
-                protected String doInBackground() {
+            boolean guardarCorreo = guardar.isVisible() && guardar.isSelected() && cliente != null;
+            JComponent ventana = ColaCorreos.contenido(dentroDe); // la venta se cierra; la ventana queda
+            capa.cerrar();
+            ColaCorreos.enviar(ventana, "el recibo No. " + Comprobante.numeroTexto(comp.numero), destino, () -> {
+                try {
+                    // el detalle de la compra va tambien en el cuerpo (texto y HTML): un recibo con solo
+                    // un PDF adjunto se parece a un engaño y Gmail lo manda a spam
+                    CorreoSmtp.gmail(ajustes.cuenta, ajustes.clave).enviar(remitente, destino, asuntoTxt,
+                            texto + "\n\n" + detalleTexto(comp), html(texto, comp), ReciboCarta.logoPng(comp),
+                            nombreArchivo(comp), pdf(comp), "application/pdf");
+                    return null;
+                } catch (CorreoSmtp.ErrorCorreo ex) {
+                    return ex.getMessage();
+                } catch (IOException | RuntimeException ex) {
+                    return "No se pudo armar el PDF: " + ex.getMessage();
+                }
+            }, () -> {
+                if (guardarCorreo) {
                     try {
-                        // el detalle de la compra va tambien en el cuerpo (texto y HTML): un recibo con solo
-                        // un PDF adjunto se parece a un engaño y Gmail lo manda a spam
-                        CorreoSmtp.gmail(ajustes.cuenta, ajustes.clave).enviar(remitente, destino, asuntoTxt,
-                                texto + "\n\n" + detalleTexto(comp), html(texto, comp), ReciboCarta.logoPng(comp),
-                                nombreArchivo(comp), pdf(comp),
-                                "application/pdf");
-                        return null;
-                    } catch (CorreoSmtp.ErrorCorreo ex) {
-                        return ex.getMessage();
-                    } catch (IOException | RuntimeException ex) {
-                        return "No se pudo armar el PDF: " + ex.getMessage();
+                        rutas.modelo.Cliente nuevo = cliente.conCorreo(destino);
+                        app.guardarCliente(nuevo);
+                        alActualizarCliente.accept(nuevo);
+                    } catch (IOException ex) {
+                        Ubicaciones.registrarError(ex);
                     }
                 }
-
-                @Override
-                protected void done() {
-                    String r;
-                    try {
-                        r = get();
-                    } catch (Exception ex) {
-                        r = "No se pudo enviar: " + ex.getMessage();
-                    }
-                    if (r == null) {
-                        capa.cerrar();
-                        String extra = "";
-                        if (guardar.isVisible() && guardar.isSelected() && cliente != null) {
-                            try {
-                                rutas.modelo.Cliente nuevo = cliente.conCorreo(destino);
-                                app.guardarCliente(nuevo);
-                                alActualizarCliente.accept(nuevo);
-                                extra = "  ·  correo guardado en el cliente";
-                            } catch (IOException ex) {
-                                extra = "  ·  no se pudo guardar el correo en el cliente";
-                            }
-                        }
-                        Aviso.mostrar(dentroDe, Aviso.Tipo.BIEN, "Recibo enviado", destino + extra
-                                + "  ·  si le llega a spam, que marque «No es spam» una vez");
-                    } else {
-                        enviar.setText("Enviar");
-                        enviar.setEnabled(true);
-                        cancelar.setEnabled(true);
-                        error.setForeground(Tema.ERROR_TEXTO);
-                        error.setText("<html>" + r + "</html>");
-                        capa.reacomodar();
-                    }
-                }
-            }.execute();
+            }, motivo -> abrir(ventana, app, comp, cliente, alActualizarCliente,
+                    new Borrador(destino, asuntoTxt, texto, motivo)));
         });
         capa.mostrar(para.getText().isEmpty() ? para : enviar);
     }

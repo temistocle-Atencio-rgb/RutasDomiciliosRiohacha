@@ -61,7 +61,7 @@ import rutas.modelo.Unidad;
  * escaner), tabla por paginas, exportar a Excel (CSV) o PDF, y el formulario para crear o
  * editar como capa encima de la tabla.
  */
-public class PanelProductos extends JPanel {
+public class PanelProductos extends JPanel implements RecibeCodigo {
 
     private static final Categoria TODAS = new Categoria(0, "Todas", null, 0, true);
     private static final Categoria SIN_CATEGORIA = new Categoria(0, "Sin categoría", null, 0, true);
@@ -455,6 +455,22 @@ public class PanelProductos extends JPanel {
     private void irA(int n) {
         numeroPagina = n;
         mostrarPagina();
+    }
+
+    /** Lo que lee el celular o un lector USB que cayo fuera del buscador: igual que escanear en el buscador. */
+    @Override
+    public void codigoEscaneado(String codigo) {
+        if (Capa.hayAbierta(this)) {
+            return;
+        }
+        campoBuscar.setText(codigo);
+        enterEnBuscador();
+        campoBuscar.requestFocusInWindow();
+    }
+
+    @Override
+    public boolean esBuscador(java.awt.Component c) {
+        return c == campoBuscar;
     }
 
     /** Enter en el buscador (o el escaner): abre el producto o prepara uno nuevo con ese codigo. */

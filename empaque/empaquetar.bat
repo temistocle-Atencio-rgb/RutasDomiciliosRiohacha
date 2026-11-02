@@ -30,13 +30,15 @@ rem el jar de SQLite va al lado y se enlaza desde el manifiesto
 "%JDK%jar" --create --file target\empaque\entrada\DomiRuta.jar --main-class rutas.Main --manifest=target\empaque\manifiesto.txt -C target\empaque\clases . || goto error
 copy /y lib\sqlite-jdbc-3.50.3.0.jar target\empaque\entrada\ >nul
 xcopy /e /i /q datos target\empaque\entrada\datos >nul
+rem lector del celular: adb (platform-tools) y la app DomiRuta-Lector.apk, si estan en la carpeta lector
+if exist lector xcopy /e /i /q lector target\empaque\entrada\lector >nul
 
 echo [3/4] Creando la aplicacion con Java incluido (jpackage)...
 if exist dist rmdir /s /q dist
 "%JDK%jpackage" --type app-image --name DomiRuta --app-version %VERSION% --vendor "DomiRuta" ^
   --description "Rutas de domicilios para La Guajira" --icon empaque\domiruta.ico ^
   --input target\empaque\entrada --main-jar DomiRuta.jar --main-class rutas.Main ^
-  --add-modules java.base,java.desktop,java.sql,java.net.http,jdk.crypto.ec,jdk.localedata ^
+  --add-modules java.base,java.desktop,java.sql,java.net.http,jdk.httpserver,jdk.crypto.ec,jdk.localedata ^
   --jlink-options "--strip-debug --no-header-files --no-man-pages --include-locales=es,en" ^
   --java-options "-Dfile.encoding=UTF-8" --dest dist || goto error
 

@@ -12,7 +12,6 @@ import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JTextField;
-import javax.swing.SwingWorker;
 import rutas.logica.AjustesCorreo;
 import rutas.logica.Compra;
 import rutas.logica.CorreoSmtp;
@@ -149,6 +148,11 @@ final class OrdenDocumento {
 
     /** Para, asunto y mensaje; el PDF va adjunto y el pedido tambien en el cuerpo. */
     static void enviarCorreo(JComponent dentro, Aplicacion app, OrdenCompra o) {
+        enviarCorreo(dentro, app, o, null);
+    }
+
+    /** borrador = {para, asunto, mensaje, motivo} de un envio que fallo (null la primera vez). */
+    private static void enviarCorreo(JComponent dentro, Aplicacion app, OrdenCompra o, String[] borrador) {
         AjustesCorreo aj;
         try {
             aj = AjustesCorreo.leer(app.getTienda());
@@ -171,15 +175,22 @@ final class OrdenDocumento {
         mensaje.getArea().setText(saludo + "\n\nLe enviamos la orden de compra No. " + num + " (va en el PDF)."
                 + (o.getFechaEstimada() == null ? "" : "\nLa necesitamos para el " + o.getFechaEstimada().format(FECHA) + ".")
                 + "\n\nQuedamos atentos. Gracias.\n" + negocio);
+        if (borrador != null) { // reintento: lo que se habia escrito
+            para.setText(borrador[0]);
+            asunto.setText(borrador[1]);
+            mensaje.getArea().setText(borrador[2]);
+            mensaje.getArea().setCaretPosition(0);
+        }
         t.add(campo("Para", para));
         t.add(Tema.espacio(10));
         t.add(campo("Asunto", asunto));
         t.add(Tema.espacio(10));
         mensaje.setPreferredSize(new java.awt.Dimension(500, 120));
         t.add(campo("Mensaje", mensaje));
-        JLabel estado = new JLabel(ajustes.listo() ? " " : "Primero configure el correo en Configuración › Correo");
+        JLabel estado = new JLabel(!ajustes.listo() ? "Primero configure el correo en Configuración › Correo"
+                : borrador != null ? "<html><div style='width:520px'>" + borrador[3] + "</div></html>" : " ");
         estado.setFont(Tema.textoFuerte(13));
-        estado.setForeground(ajustes.listo() ? Tema.GRIS_TEXTO : Tema.ERROR_TEXTO);
+        estado.setForeground(ajustes.listo() && borrador == null ? Tema.GRIS_TEXTO : Tema.ERROR_TEXTO);
         estado.setAlignmentX(Component.LEFT_ALIGNMENT);
         t.add(Tema.espacio(8));
         t.add(estado);
@@ -202,59 +213,36 @@ final class OrdenDocumento {
                 estado.setText("Revise el correo del proveedor (ej. ventas@proveedor.com)");
                 return;
             }
-            enviar.setEnabled(false);
-            cancelar.setEnabled(false);
-            enviar.setText("Enviando…");
-            estado.setForeground(Tema.GRIS_TEXTO);
-            estado.setText("Enviando el correo, espere un momento…");
+            // la ventanita se cierra ya: el correo sale por detras y se puede seguir trabajando
             String remitente = ajustes.remitente.isBlank() ? negocio : ajustes.remitente;
             String asuntoTxt = asunto.getText();
-            String texto = mensaje.getArea().getText() + "\n\n" + MensajesWhatsApp.orden(negocio, num, o, pv)
+            String escrito = mensaje.getArea().getText();
+            String texto = escrito + "\n\n" + MensajesWhatsApp.orden(negocio, num, o, pv)
                     .replace("*", "").replace("_", "");
             DocumentoLista doc = documento(app, o);
-            new SwingWorker<String, Void>() {
-                @Override
-                protected String doInBackground() {
-                    try {
-                        CorreoSmtp.gmail(ajustes.cuenta, ajustes.clave).enviar(remitente, destino, asuntoTxt, texto, null,
-                                "Orden-de-compra-" + num + ".pdf", pdf(doc), "application/pdf");
-                        return null;
-                    } catch (CorreoSmtp.ErrorCorreo ex) {
-                        return ex.getMessage();
-                    } catch (IOException | RuntimeException ex) {
-                        return "No se pudo armar el PDF: " + ex.getMessage();
-                    }
+            JComponent ventana = ColaCorreos.contenido(dentro);
+            capa[0].cerrar();
+            ColaCorreos.enviar(ventana, "la orden No. " + num, destino, () -> {
+                try {
+                    CorreoSmtp.gmail(ajustes.cuenta, ajustes.clave).enviar(remitente, destino, asuntoTxt, texto, null,
+                            "Orden-de-compra-" + num + ".pdf", pdf(doc), "application/pdf");
+                    return null;
+                } catch (CorreoSmtp.ErrorCorreo ex) {
+                    return ex.getMessage();
+                } catch (IOException | RuntimeException ex) {
+                    return "No se pudo armar el PDF: " + ex.getMessage();
                 }
-
-                @Override
-                protected void done() {
-                    String r;
+            }, () -> {
+                // si el proveedor no tenia correo, queda guardado para la proxima
+                if (pv != null && pv.correo.isBlank()) {
+                    pv.correo = destino;
                     try {
-                        r = get();
+                        app.getOrdenes().guardarProveedor(pv);
                     } catch (Exception ex) {
-                        r = "No se pudo enviar: " + ex.getMessage();
-                    }
-                    if (r == null) {
-                        // si el proveedor no tenia correo, queda guardado para la proxima
-                        if (pv != null && pv.correo.isBlank()) {
-                            pv.correo = destino;
-                            try {
-                                app.getOrdenes().guardarProveedor(pv);
-                            } catch (Exception ex) {
-                                Ubicaciones.registrarError(ex);
-                            }
-                        }
-                        capa[0].cerrar();
-                        Aviso.mostrar(dentro, Aviso.Tipo.BIEN, "Correo enviado", "Orden No. " + num + " a " + destino);
-                    } else {
-                        enviar.setEnabled(true);
-                        cancelar.setEnabled(true);
-                        enviar.setText("Enviar");
-                        estado.setForeground(Tema.ERROR_TEXTO);
-                        estado.setText("<html><div style='width:520px'>" + r + "</div></html>");
+                        Ubicaciones.registrarError(ex);
                     }
                 }
-            }.execute();
+            }, motivo -> enviarCorreo(ventana, app, o, new String[]{destino, asuntoTxt, escrito, motivo}));
         });
         capa[0].mostrar(para.getText().isEmpty() ? para : enviar);
     }

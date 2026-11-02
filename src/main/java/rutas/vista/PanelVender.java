@@ -62,7 +62,7 @@ import rutas.modelo.Unidad;
  * categorias y buscador que sirve con el escaner) y la venta a la derecha con el
  * total grande. Abajo, las ventas en espera.
  */
-public class PanelVender extends JPanel {
+public class PanelVender extends JPanel implements RecibeCodigo {
 
     /** Para que la pantalla no se ponga lenta con miles de productos. */
     private static final int MAX_TARJETAS = 120;
@@ -272,6 +272,22 @@ public class PanelVender extends JPanel {
         }
         rejilla.revalidate();
         rejilla.repaint();
+    }
+
+    /** Lo que lee el celular o un lector USB que cayo fuera del buscador: igual que escanear en el buscador. */
+    @Override
+    public void codigoEscaneado(String codigo) {
+        if (Capa.hayAbierta(this)) {
+            return;
+        }
+        buscador.setText(codigo);
+        enterEnBuscador();
+        enfocar();
+    }
+
+    @Override
+    public boolean esBuscador(java.awt.Component c) {
+        return c == buscador;
     }
 
     /** Enter en el buscador: el escaner (codigo exacto), o un solo resultado. */

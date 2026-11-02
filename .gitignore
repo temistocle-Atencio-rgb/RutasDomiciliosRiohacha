@@ -8,3 +8,5 @@ datos/clientes.txt
 datos/novedades.txt
 datos/historial_rutas.txt
 dist/
+# adb y la app del celular: se copian a mano para empaquetar (no van en git)
+lector/

@@ -66,7 +66,7 @@ import rutas.modelo.Unidad;
  * Guardar borrador, Procesar orden, Ver PDF, Enviar correo, WhatsApp y Cancelar. La orden no
  * mueve el inventario: eso pasa al recibirla (se vuelve una compra).
  */
-public class PanelCompras extends JPanel {
+public class PanelCompras extends JPanel implements RecibeCodigo {
 
     private static final int MAX_FILAS = 120; // para que no se ponga lenta con miles de productos
 
@@ -279,6 +279,22 @@ public class PanelCompras extends JPanel {
         }
         lista.revalidate();
         lista.repaint();
+    }
+
+    /** Lo que lee el celular o un lector USB que cayo fuera del buscador: igual que escanear en el buscador. */
+    @Override
+    public void codigoEscaneado(String codigo) {
+        if (Capa.hayAbierta(this)) {
+            return;
+        }
+        buscador.setText(codigo);
+        enterEnBuscador();
+        buscador.requestFocusInWindow();
+    }
+
+    @Override
+    public boolean esBuscador(java.awt.Component c) {
+        return c == buscador;
     }
 
     /** Enter: el escaner (codigo exacto) o un solo resultado. Un codigo que no existe ofrece crearlo. */

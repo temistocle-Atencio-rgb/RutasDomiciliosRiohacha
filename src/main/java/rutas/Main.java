@@ -53,6 +53,7 @@ public class Main {
         SwingUtilities.invokeLater(() -> {
             abrirTienda();
             pedirIngreso();
+            rutas.vista.Lector.get().empezar(); // celular por cable y lectores USB, para todas las ventanas
             abrir(Ubicaciones.ultimaCiudad());
         });
     }

@@ -101,6 +101,35 @@ código ya existe, ese producto se actualiza. Las filas con error no detienen a 
 al final se dice cuáles fallaron y por qué. Si Excel muestra el código como `7,70E+12`,
 la columna del código debe formatearse como texto antes de guardar.
 
+## Lector de códigos (celular o USB)
+
+Arriba, en la barra azul, **Lector** dice cómo va el lector; al tocarlo se abre **Probar el
+lector**, donde se ve cada código que llega (mientras está abierta, nada entra a la venta).
+
+**Celular por cable USB.** Con la depuración USB activa en el celular (una sola vez),
+DomiRuta lo detecta cada 5 segundos, hace `adb reverse tcp:8765 tcp:8765` (así el
+`localhost:8765` del celular llega al computador por el cable), le instala la app
+**DomiRuta Lector** si no la tiene y la abre. La app lee con la cámara y manda cada código
+a `http://127.0.0.1:8765/api/codigo`. DomiRuta busca `adb` y la app (`DomiRuta-Lector.apk`)
+en la carpeta `lector` junto al programa, en el programa DomiRuta Lector instalado y en el
+SDK de Android. Sin la app, también sirve Chrome del celular en `localhost:8765`.
+
+- **Seguridad:** el servidor solo escucha en 127.0.0.1 (nadie del wifi puede mandar
+  códigos), exige la cabecera `X-Lector` y rechaza otro `Host` u `Origin` (una página web
+  cualquiera no puede usarlo). Cada código trae un id: si el celular reintenta, no se cuenta
+  dos veces. Sin conexión, la app guarda los códigos y los manda al volver.
+- **Adónde va el código:** si el cursor está en un campo de texto (por ejemplo "Código de
+  barras" del formulario) se escribe ahí, como un lector USB. Si no, va a la pantalla que se
+  ve: Vender, Compras o Productos (`RecibeCodigo`), igual que si se escaneara en su buscador.
+- Si el programa **DomiRuta Lector** aparte ya está abierto, él atiende el celular y
+  escribe los códigos; DomiRuta no abre otro servidor en el mismo puerto.
+
+**Lectores USB (pistola).** Escriben como un teclado. DomiRuta reconoce la ráfaga
+(`Rafagas`: menos de 60 ms entre teclas y Enter al final; una persona deja más). Si la
+ráfaga cae donde no debe en Vender, Compras o Productos —una celda de la tabla, un botón—
+se deshace lo que alcanzó a escribir, el Enter no oprime nada y el código va al buscador.
+En un campo de texto aparte (factura, nota) o en un formulario, el código se queda donde cayó.
+
 ## Estructuras de datos
 
 | Estructura | Clase | Uso en el proyecto |
@@ -256,6 +285,11 @@ y un `DomiRuta.exe` con el ícono del cubo, más un `.zip` listo para enviar. El
 solo descomprime y abre `DomiRuta.exe`; no tiene que instalar Java. Pesa unos 87 MB
 (Java recortado a los módulos que usa el programa).
 
+Para que el paquete traiga el lector del celular, antes de empaquetar se crea la carpeta
+`lector` (no va en git) con `platform-tools` (adb.exe, AdbWinApi.dll y AdbWinUsbApi.dll, de
+las herramientas de Android) y `DomiRuta-Lector.apk`. Sin ella, DomiRuta igual funciona con
+lectores USB y busca adb en el SDK de Android o en el programa DomiRuta Lector instalado.
+
 ## Archivos de datos
 
 Datos que vienen con el programa (solo lectura):
@@ -295,11 +329,14 @@ src/main/java/rutas/
   logica/       CargadorMapa, Dijkstra, PlanificadorRutas, ModeloTrafico, Geocodificador,
                 InferenciaNombres, BuscadorLugares, GeneradorIndicaciones, BaseDatos,
                 Avisos (hora prometida y WhatsApp), Tarifa, Cuadre,
-                ArchivosDatos (lee los .txt de la versión anterior), Ubicaciones
+                ArchivosDatos (lee los .txt de la versión anterior), Ubicaciones,
+                ServidorLector, PuenteCelular, Rafagas (lector de códigos)
   osm/          Json, ProcesadorOSM, DescargadorOSM (descarga de mapas de OpenStreetMap)
   vista/        VentanaPrincipal, PanelMapa, PanelPedidos, PanelExplorar, PanelClientes,
-                PanelNovedades, PanelHistorial, DialogoDescarga, Tema, Logo
+                PanelNovedades, PanelHistorial, DialogoDescarga, Tema, Logo,
+                Lector, RecibeCodigo, PruebaLector (lector de códigos)
 src/main/resources/fuentes/   Poppins e Inter (licencia SIL OFL)
+src/main/resources/lector/    página para leer con Chrome del celular (si no tiene la app)
 lib/                          conector SQLite para Java (sqlite-jdbc, licencia Apache 2.0)
 empaque/                      scripts para armar la versión con Java incluido, ícono y LEEME
 ```
