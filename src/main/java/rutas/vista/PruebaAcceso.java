@@ -17,6 +17,15 @@ public final class PruebaAcceso {
                 "riohacha", credito, true, "");
     }
 
+    /** Bajar una imagen por enlace (lo que revisa antes de conectarse). */
+    public static byte[] bajarImagen(String url) {
+        return FormularioProducto.bajarImagen(url);
+    }
+
+    public static void revisarDireccionPublica(String url) throws java.net.MalformedURLException {
+        FormularioProducto.revisarDireccionPublica(java.net.URI.create(url).toURL());
+    }
+
     /** La revision de una foto del computador (por su contenido). */
     public static byte[] leerImagenLocal(java.io.File f) throws java.io.IOException {
         return FormularioProducto.leerImagenLocal(f);

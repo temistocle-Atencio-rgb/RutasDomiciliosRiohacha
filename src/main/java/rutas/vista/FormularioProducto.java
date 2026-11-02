@@ -1323,6 +1323,50 @@ final class FormularioProducto {
         }.execute();
     }
 
+    /**
+     * La imagen debe venir de un sitio publico: http o https y un servidor que no sea de la red
+     * interna (este computador, el router, otros equipos del negocio). Se revisan todas las IP a las
+     * que apunta el nombre. Queda un riesgo menor (que el nombre cambie de IP justo despues de
+     * revisarlo): en un programa de escritorio se acepta.
+     */
+    static void revisarDireccionPublica(java.net.URL url) {
+        String p = url.getProtocol().toLowerCase(java.util.Locale.ROOT);
+        if (!p.equals("http") && !p.equals("https")) {
+            throw new IllegalArgumentException("La dirección de imagen debe empezar por http:// o https://");
+        }
+        String host = url.getHost();
+        if (host == null || host.isBlank()) {
+            throw new IllegalArgumentException("Esa dirección de imagen no está bien escrita");
+        }
+        java.net.InetAddress[] ips;
+        try {
+            ips = java.net.InetAddress.getAllByName(host);
+        } catch (java.net.UnknownHostException e) {
+            throw new IllegalArgumentException("No se encontró ese sitio (revise internet y la dirección)");
+        }
+        for (java.net.InetAddress ip : ips) {
+            if (esInterna(ip)) {
+                throw new IllegalArgumentException("Esa dirección es de la red interna (este equipo o la red del negocio)."
+                        + " Use un enlace público de internet");
+            }
+        }
+    }
+
+    /** Este equipo, la red local, enlace local, multidifusion y las IPv6 privadas (fc00::/7). */
+    static boolean esInterna(java.net.InetAddress ip) {
+        if (ip.isLoopbackAddress() || ip.isAnyLocalAddress() || ip.isSiteLocalAddress() || ip.isLinkLocalAddress()
+                || ip.isMulticastAddress()) {
+            return true;
+        }
+        byte[] b = ip.getAddress();
+        if (b.length == 4) {
+            int a0 = b[0] & 0xFF, a1 = b[1] & 0xFF;
+            return a0 == 0 || (a0 == 100 && a1 >= 64 && a1 <= 127) // 0.0.0.0/8 y 100.64.0.0/10 (red del proveedor)
+                    || (a0 == 198 && (a1 == 18 || a1 == 19));        // 198.18.0.0/15 (pruebas)
+        }
+        return (b[0] & 0xFE) == 0xFC; // fc00::/7
+    }
+
     /** Baja una imagen JPG o PNG de hasta 1 MB. */
     static byte[] bajarImagen(String direccion) {
         java.net.URL url;
@@ -1331,15 +1375,27 @@ final class FormularioProducto {
         } catch (IllegalArgumentException | java.net.MalformedURLException e) {
             throw new IllegalArgumentException("Esa dirección de imagen no está bien escrita");
         }
+        revisarDireccionPublica(url); // nada de la red interna (OWASP, SSRF)
         byte[] datos;
         try {
-            java.net.URLConnection con = url.openConnection();
+            java.net.HttpURLConnection con = (java.net.HttpURLConnection) url.openConnection();
+            con.setInstanceFollowRedirects(false); // una redireccion podria llevar a la red interna
             con.setConnectTimeout(6000);
             con.setReadTimeout(8000);
             con.setRequestProperty("User-Agent", "DomiRuta");
+            int codigo = con.getResponseCode();
+            if (codigo >= 300 && codigo < 400) {
+                throw new IllegalArgumentException("Esa dirección lleva a otra. Abra la imagen en el navegador y copie la"
+                        + " dirección final (clic derecho › Copiar dirección de imagen)");
+            }
+            if (codigo != 200) {
+                throw new IllegalArgumentException("El sitio no entregó la imagen (respondió " + codigo + ")");
+            }
             try (InputStream in = con.getInputStream()) {
                 datos = in.readNBytes((int) MAXIMO_FOTO + 1);
             }
+        } catch (java.net.UnknownHostException e) {
+            throw new IllegalArgumentException("No se encontró ese sitio (revise internet y la dirección)");
         } catch (IOException e) {
             throw new IllegalArgumentException("No se pudo bajar la imagen (revise internet y la dirección)");
         }

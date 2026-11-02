@@ -19,6 +19,59 @@ public class PruebasValidacion {
         probarTextos();
         probarMensajes();
         probarFotoLocal();
+        probarEnlaceImagen();
+    }
+
+    static String direccion(String url) {
+        try {
+            rutas.vista.PruebaAcceso.revisarDireccionPublica(url);
+            return null;
+        } catch (IllegalArgumentException e) {
+            return e.getMessage();
+        } catch (java.net.MalformedURLException e) {
+            return "mal escrita";
+        }
+    }
+
+    /** H8 caso 17: imagen por enlace: nada de la red interna ni redirecciones. */
+    private static void probarEnlaceImagen() throws Exception {
+        String e17 = null;
+        try {
+            rutas.vista.PruebaAcceso.bajarImagen("http://127.0.0.1/");
+        } catch (IllegalArgumentException e) {
+            e17 = e.getMessage();
+        }
+        revisar("H8 caso 17: http://127.0.0.1/ se rechaza antes de conectarse: " + e17, e17 != null && e17.contains("red interna"));
+        boolean internas = true;
+        for (String u : new String[]{"http://localhost/x.png", "http://192.168.1.1/x.png", "http://10.0.0.5/x.png",
+            "http://172.16.0.1/x.png", "http://169.254.169.254/latest", "http://[::1]/x.png", "http://0.0.0.0/x.png",
+            "http://100.64.0.1/x.png", "http://[fd00::1]/x.png"}) {
+            String m = direccion(u);
+            internas &= m != null && m.contains("red interna");
+        }
+        revisar("H8: localhost, 192.168, 10., 172.16, 169.254, ::1, 0.0.0.0, 100.64 y fd00:: se rechazan", internas);
+        revisar("H8: solo http y https", direccion("ftp://8.8.8.8/x.png") != null && direccion("file:///C:/x.png") != null);
+        revisar("H8: una IP pública sí pasa la revisión", direccion("http://8.8.8.8/x.png") == null);
+        // un servidor local que redirige: igual se rechaza por ser interno (no se llega a seguir la redireccion)
+        com.sun.net.httpserver.HttpServer srv = com.sun.net.httpserver.HttpServer.create(
+                new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+        srv.createContext("/", x -> {
+            x.getResponseHeaders().add("Location", "http://127.0.0.1/secreto");
+            x.sendResponseHeaders(302, -1);
+            x.close();
+        });
+        srv.start();
+        try {
+            String m = null;
+            try {
+                rutas.vista.PruebaAcceso.bajarImagen("http://127.0.0.1:" + srv.getAddress().getPort() + "/foto.png");
+            } catch (IllegalArgumentException e) {
+                m = e.getMessage();
+            }
+            revisar("H8: un servidor de este equipo no se consulta: " + m, m != null && m.contains("red interna"));
+        } finally {
+            srv.stop(0);
+        }
     }
 
     static java.io.File imagen(String formato, String nombre) throws Exception {
