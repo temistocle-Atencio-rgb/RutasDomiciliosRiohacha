@@ -554,7 +554,7 @@ public class PanelClientes extends JPanel {
                 Aviso.mostrar(this, Aviso.Tipo.BIEN, c.isActivo() ? "Cliente desactivado" : "Cliente activado",
                         c.getNombre());
             } catch (java.io.IOException e) {
-                Alerta.mostrar(this, Alerta.Tipo.AVISO, "No se pudo cambiar", e.getMessage(), null);
+                Alerta.mostrar(this, Alerta.Tipo.AVISO, "No se pudo cambiar", Ubicaciones.paraUsuario(e, "No se guardó"), null);
             }
             refrescar();
         };
@@ -579,7 +579,8 @@ public class PanelClientes extends JPanel {
                         refrescar();
                         Aviso.mostrar(this, Aviso.Tipo.BIEN, "Cliente eliminado", c.getNombre());
                     } catch (java.io.IOException e) {
-                        Alerta.mostrar(this, Alerta.Tipo.AVISO, "No se pudo eliminar", e.getMessage(), null);
+                        Alerta.mostrar(this, Alerta.Tipo.AVISO, "No se pudo eliminar",
+                                Ubicaciones.paraUsuario(e, "No se borró"), null);
                     }
                 });
     }
@@ -606,8 +607,8 @@ public class PanelClientes extends JPanel {
         try {
             ventas = app.getTienda().ventasDeCliente(c.getNombre(), 50);
         } catch (SQLException e) {
-            Ubicaciones.registrarError(e);
-            Alerta.mostrar(this, Alerta.Tipo.AVISO, "No se pudieron leer las compras", e.getMessage(), null);
+            Alerta.mostrar(this, Alerta.Tipo.AVISO, "No se pudieron leer las compras",
+                    Ubicaciones.paraUsuario(e, "La base de datos no respondió"), null);
             return;
         }
         Capa[] capa = new Capa[1];
@@ -771,13 +772,20 @@ public class PanelClientes extends JPanel {
 
     private void importar(File f, Capa capa, Tema.Parrafo msg) {
         ImportadorClientes.Resultado r;
+        if (f.getName().toLowerCase().endsWith(".xls")) {
+            msg.setForeground(Tema.ERROR_TEXTO);
+            msg.setText("Ese es el formato viejo de Excel (.xls). Ábralo en Excel y guárdelo como .xlsx");
+            capa.reacomodar();
+            return;
+        }
         try {
             List<String[]> filas = f.getName().toLowerCase().endsWith(".csv") || f.getName().toLowerCase().endsWith(".txt")
                     ? rutas.logica.ImportadorProductos.leerCsv(f) : rutas.logica.ImportadorCategorias.leerArchivo(f);
             r = ImportadorClientes.revisar(filas, app.getClientes().enOrden());
         } catch (Exception e) {
             msg.setForeground(Tema.ERROR_TEXTO);
-            msg.setText("No se pudo leer el archivo: " + e.getMessage());
+            msg.setText(e instanceof IllegalArgumentException ? "No se pudo leer el archivo: " + e.getMessage()
+                    : Ubicaciones.paraUsuario(e, "No se pudo leer el archivo"));
             capa.reacomodar();
             return;
         }
@@ -798,7 +806,7 @@ public class PanelClientes extends JPanel {
             app.guardarClientes(r.todos());
         } catch (java.io.IOException e) {
             msg.setForeground(Tema.ERROR_TEXTO);
-            msg.setText("No se guardó nada: " + e.getMessage());
+            msg.setText(Ubicaciones.paraUsuario(e, "No se guardó nada"));
             capa.reacomodar();
             return;
         }
@@ -823,7 +831,8 @@ public class PanelClientes extends JPanel {
             Xlsx.escribir(f, "Clientes", ImportadorClientes.COLUMNAS, ejemplo);
             Aviso.mostrar(this, Aviso.Tipo.BIEN, "Formato guardado", f.getName() + ": borre las filas de ejemplo y llénelo");
         } catch (java.io.IOException e) {
-            Alerta.mostrar(this, Alerta.Tipo.AVISO, "No se pudo guardar", e.getMessage(), null);
+            Alerta.mostrar(this, Alerta.Tipo.AVISO, "No se pudo guardar", Ubicaciones.paraUsuario(e, "No se guardó el formato"),
+                    null);
         }
     }
 
@@ -871,7 +880,7 @@ public class PanelClientes extends JPanel {
             Aviso.mostrar(this, Aviso.Tipo.BIEN, "Excel guardado", filas.size() + " clientes en " + f.getName());
         } catch (java.io.IOException e) {
             Alerta.mostrar(this, Alerta.Tipo.AVISO, "No se pudo guardar el Excel",
-                    "Revise que el archivo no esté abierto en Excel. Detalle: " + e.getMessage(), null);
+                    Ubicaciones.paraUsuario(e, "Revise que el archivo no esté abierto en Excel"), null);
         }
     }
 

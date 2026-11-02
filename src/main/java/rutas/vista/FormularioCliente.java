@@ -199,7 +199,7 @@ final class FormularioCliente {
                 error.setText(ex.getMessage());
                 return;
             } catch (java.io.IOException ex) {
-                error.setText("No se pudo guardar: " + ex.getMessage());
+                error.setText(rutas.logica.Ubicaciones.paraUsuario(ex, "No se pudo guardar el cliente"));
                 return;
             }
             capa[0].cerrar();

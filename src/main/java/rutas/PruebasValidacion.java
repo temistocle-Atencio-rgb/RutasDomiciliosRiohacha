@@ -17,6 +17,29 @@ public class PruebasValidacion {
         probarFormatoCodigo();
         probarMayusculas();
         probarTextos();
+        probarMensajes();
+    }
+
+    /** H6: al usuario no le llegan los detalles tecnicos (quedan en errores.log). */
+    private static void probarMensajes() throws Exception {
+        java.sql.SQLException sql = new java.sql.SQLException("[SQLITE_CONSTRAINT_UNIQUE] UNIQUE constraint failed: productos.codigo");
+        String m = rutas.logica.Ubicaciones.paraUsuario(sql, "No se pudo guardar el producto");
+        revisar("H6: el mensaje de la base no muestra el detalle técnico: " + m, !m.contains("SQLITE") && !m.contains("constraint")
+                && m.startsWith("No se pudo guardar el producto") && m.contains("errores.log"));
+        String a = rutas.logica.Ubicaciones.paraUsuario(new java.nio.file.AccessDeniedException("C:\\x\\p.csv"), "No se pudo escribir p.csv");
+        revisar("H6: un archivo bloqueado dice qué hacer, sin la ruta interna: " + a, !a.contains("C:\\x") && a.contains("abierto"));
+        try (rutas.logica.BaseTienda bd = PruebasCaja.baseTemporal()) {
+            rutas.logica.Catalogo cat = new rutas.logica.Catalogo(bd);
+            bd.close(); // la base se cierra: guardar falla con un error de SQLite
+            String err = null;
+            try {
+                importar(cat, "nombre;precio_venta\nPan;500\n");
+            } catch (java.io.IOException e) {
+                err = e.getMessage();
+            }
+            revisar("H6: si la base falla al importar, el mensaje no trae el texto de SQLite: " + err,
+                    err != null && !err.toLowerCase().contains("sqlite") && !err.contains("closed"));
+        }
     }
 
     static String crearConNombre(rutas.logica.Catalogo cat, String nombre) {

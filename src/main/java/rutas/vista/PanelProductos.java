@@ -406,7 +406,8 @@ public class PanelProductos extends JPanel {
             todos = cat.todosConInactivos();
             vencimientos = app.getTienda().vencimientos();
         } catch (SQLException e) {
-            Aviso.mostrar(this, Aviso.Tipo.ERROR, "No se pudieron leer los productos", e.getMessage());
+            Aviso.mostrar(this, Aviso.Tipo.ERROR, "No se pudieron leer los productos",
+                    Ubicaciones.paraUsuario(e, "La base de datos no respondió"));
             return;
         }
         Categoria c = (Categoria) filtroCategoria.getSelectedItem();
@@ -550,7 +551,8 @@ public class PanelProductos extends JPanel {
                             refrescar();
                             Aviso.mostrar(this, Aviso.Tipo.BIEN, "Producto desactivado", p.getNombre());
                         } catch (SQLException e) {
-                            Alerta.mostrar(this, Alerta.Tipo.AVISO, "No se pudo desactivar", e.getMessage(), null);
+                            Alerta.mostrar(this, Alerta.Tipo.AVISO, "No se pudo desactivar",
+                                    Ubicaciones.paraUsuario(e, "No se guardó el cambio"), null);
                         }
                     });
         } else {
@@ -558,8 +560,11 @@ public class PanelProductos extends JPanel {
                 cat.reactivar(p.getId());
                 refrescar();
                 Aviso.mostrar(this, Aviso.Tipo.BIEN, "Producto reactivado", p.getNombre());
-            } catch (IllegalArgumentException | SQLException e) {
+            } catch (IllegalArgumentException e) {
                 Alerta.mostrar(this, Alerta.Tipo.AVISO, "No se pudo reactivar", e.getMessage(), null);
+            } catch (SQLException e) {
+                Alerta.mostrar(this, Alerta.Tipo.AVISO, "No se pudo reactivar",
+                        Ubicaciones.paraUsuario(e, "No se guardó el cambio"), null);
             }
         }
     }
@@ -669,8 +674,11 @@ public class PanelProductos extends JPanel {
                 mostrarErrores(r.errores.size() + (r.errores.size() == 1 ? " fila tiene error" : " filas tienen error"),
                         r.errores);
             }
-        } catch (IllegalArgumentException | IOException e) {
-            Alerta.mostrar(this, Alerta.Tipo.AVISO, "No se pudo importar", e.getMessage(), null);
+        } catch (IllegalArgumentException e) {
+            Alerta.mostrar(this, Alerta.Tipo.AVISO, "No se pudo importar", e.getMessage(), null); // mensajes nuestros
+        } catch (IOException e) {
+            Alerta.mostrar(this, Alerta.Tipo.AVISO, "No se pudo importar",
+                    Ubicaciones.paraUsuario(e, "No se guardó nada de la lista"), null);
         } finally {
             setCursor(Cursor.getDefaultCursor());
         }
@@ -708,7 +716,8 @@ public class PanelProductos extends JPanel {
             Files.write(f.toPath(), ListadoProductos.aCsv(filtrados, nombresCategoria, verCompra).getBytes(StandardCharsets.UTF_8));
             Aviso.mostrar(this, Aviso.Tipo.BIEN, "Lista exportada", filtrados.size() + " productos en " + f.getName());
         } catch (IOException e) {
-            Alerta.mostrar(this, Alerta.Tipo.AVISO, "No se pudo guardar el archivo", e.getMessage(), null);
+            Alerta.mostrar(this, Alerta.Tipo.AVISO, "No se pudo guardar el archivo",
+                    Ubicaciones.paraUsuario(e, "No se pudo escribir " + f.getName()), null);
         }
     }
 
@@ -729,7 +738,8 @@ public class PanelProductos extends JPanel {
             t.print(JTable.PrintMode.FIT_WIDTH, new java.text.MessageFormat("Listado de productos"),
                     new java.text.MessageFormat("DomiRuta · página {0}"));
         } catch (java.awt.print.PrinterException e) {
-            Alerta.mostrar(this, Alerta.Tipo.AVISO, "No se pudo imprimir", e.getMessage(), null);
+            Alerta.mostrar(this, Alerta.Tipo.AVISO, "No se pudo imprimir",
+                    Ubicaciones.paraUsuario(e, "La impresora no respondió"), null);
         }
     }
 

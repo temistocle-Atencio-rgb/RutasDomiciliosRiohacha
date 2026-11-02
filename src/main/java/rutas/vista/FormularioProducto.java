@@ -161,7 +161,8 @@ final class FormularioProducto {
         try {
             f.ficha = p == null ? new FichaProducto() : f.bd.leerFicha(p.getId());
         } catch (SQLException e) {
-            Alerta.mostrar(panel, Alerta.Tipo.AVISO, "No se pudo abrir el producto", e.getMessage(), null);
+            Alerta.mostrar(panel, Alerta.Tipo.AVISO, "No se pudo abrir el producto",
+                    Ubicaciones.paraUsuario(e, "No se pudo leer la ficha del producto"), null);
             return;
         }
         f.editando = p;
@@ -1152,7 +1153,7 @@ final class FormularioProducto {
         } catch (IllegalArgumentException e) {
             decir(e.getMessage(), false);
         } catch (SQLException | IOException e) {
-            decir("No se pudo guardar: " + e.getMessage(), false);
+            decir(Ubicaciones.paraUsuario(e, "No se pudo guardar el producto"), false);
         }
     }
 
@@ -1462,7 +1463,7 @@ final class FormularioProducto {
                 msg.setText(e.getMessage());
             } catch (SQLException e) {
                 msg.setForeground(Tema.ERROR_TEXTO);
-                msg.setText("No se pudo crear: " + e.getMessage());
+                msg.setText(Ubicaciones.paraUsuario(e, "No se pudo crear"));
             }
         };
         crear.addActionListener(e -> hacer.run());

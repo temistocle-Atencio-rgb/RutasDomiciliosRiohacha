@@ -74,7 +74,7 @@ public final class ImportadorProductos {
                 categorias.put(Geo.normalizar(c.getNombre()), c.getId());
             }
         } catch (SQLException e) {
-            throw new IOException("No se pudieron leer las categorías: " + e.getMessage(), e);
+            throw new IOException("No se pudieron leer las categorías", e);
         }
         try {
             cat.base().enTransaccion(() -> {
@@ -111,7 +111,7 @@ public final class ImportadorProductos {
             } catch (SQLException e2) {
                 e.addSuppressed(e2);
             }
-            throw new IOException("No se pudo guardar la lista: " + e.getMessage(), e);
+            throw new IOException("No se pudo guardar la lista", e); // el detalle va en la causa (errores.log)
         }
         return r;
     }

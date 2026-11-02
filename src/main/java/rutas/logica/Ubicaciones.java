@@ -76,6 +76,17 @@ public final class Ubicaciones {
     }
 
     /** Escribe un error en errores.log para poder dar soporte. */
+    /**
+     * Para mostrarle al usuario un error de la base o de un archivo sin detalles tecnicos (OWASP,
+     * Error Handling): el detalle completo queda en errores.log y la pantalla dice que paso y que hacer.
+     */
+    public static String paraUsuario(Throwable t, String queNoSePudo) {
+        registrarError(t);
+        boolean archivo = t instanceof java.io.FileNotFoundException || t instanceof java.nio.file.FileSystemException;
+        return queNoSePudo + (archivo ? ". Revise que el archivo exista y no esté abierto en otro programa."
+                : ". Intente otra vez; si sigue pasando, el detalle quedó en el registro de errores (errores.log).");
+    }
+
     public static void registrarError(Throwable t) {
         try (PrintWriter pw = new PrintWriter(new FileWriter(new File(carpetaUsuario(), "errores.log"),
                 StandardCharsets.UTF_8, true))) {
