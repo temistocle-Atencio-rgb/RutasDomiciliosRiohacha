@@ -569,6 +569,43 @@ public class NubeRepartidor {
         return r;
     }
 
+    /**
+     * Las correcciones de ubicación que todavía no ha tomado DomiRuta, con el nombre, la dirección y el
+     * punto viejo de la entrega (hay que tomarlas antes de borrar la salida: se van con ella).
+     */
+    public List<rutas.modelo.Correccion> correccionesNuevas() throws IOException {
+        List<rutas.modelo.Correccion> r = new ArrayList<>();
+        for (Map<?, ?> m : filas(llamar("GET", "correcciones?procesada=is.false&order=id&select=id,lat,lon,distancia_m,"
+                + "estado,repartidor,creada,entregas_salida(nombre,direccion,lat,lon)", null))) {
+            rutas.modelo.Correccion c = new rutas.modelo.Correccion();
+            c.idNube = Json.entero(m, "id");
+            c.lat = Json.decimal(m, "lat");
+            c.lon = Json.decimal(m, "lon");
+            c.distanciaM = (int) Json.entero(m, "distancia_m");
+            c.estado = Json.texto(m, "estado");
+            c.repartidor = Json.texto(m, "repartidor");
+            LocalDateTime h = horaLocal(Json.texto(m, "creada"));
+            c.creada = h == null ? LocalDateTime.now() : h;
+            Object e = m.get("entregas_salida");
+            if (e instanceof Map) {
+                Map<?, ?> en = (Map<?, ?>) e;
+                c.nombre = Json.texto(en, "nombre");
+                c.direccion = Json.texto(en, "direccion");
+                c.latViejo = Json.decimal(en, "lat");
+                c.lonViejo = Json.decimal(en, "lon");
+            }
+            if (!Double.isNaN(c.lat) && !Double.isNaN(c.lon)) {
+                r.add(c);
+            }
+        }
+        return r;
+    }
+
+    /** DomiRuta ya la tomó (queda guardada en este computador). */
+    public void correccionTomada(long id) throws IOException {
+        llamar("PATCH", "correcciones?id=eq." + id, "{\"procesada\":true}");
+    }
+
     /** Borra lo viejo de Supabase (recorridos de más de 30 días, intentos, salidas cerradas olvidadas). */
     public void limpiarViejo() throws IOException {
         llamar("POST", "rpc/limpiar_viejo", "{}");

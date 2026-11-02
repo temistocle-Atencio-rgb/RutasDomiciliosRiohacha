@@ -33,6 +33,29 @@ public class PruebasEnVivo {
         probarBaseDatos();
         probarMensajes();
         probarConexion();
+        probarCorrecciones();
+    }
+
+    private static void probarCorrecciones() throws Exception {
+        NubeRepartidor.Transporte t = (m, u, c, b) -> u.contains("/correcciones?procesada=is.false")
+                ? new NubeRepartidor.Respuesta(200, "[{\"id\":7,\"lat\":11.5451,\"lon\":-72.9061,\"distancia_m\":85,"
+                        + "\"estado\":\"pendiente\",\"repartidor\":\"Carlos Pérez\",\"creada\":\"2026-11-02T15:00:00+00:00\","
+                        + "\"entregas_salida\":{\"nombre\":\"Elianis\",\"direccion\":\"Calle 15 # 7-20\",\"lat\":11.5444,\"lon\":-72.9066}},"
+                        + "{\"id\":8,\"lat\":null,\"lon\":null,\"estado\":\"aplicada\"}]")
+                : new NubeRepartidor.Respuesta(204, "");
+        List<rutas.modelo.Correccion> l = new NubeRepartidor("https://p.supabase.co", "sb_secret_x", t).correccionesNuevas();
+        rutas.modelo.Correccion c = l.isEmpty() ? null : l.get(0);
+        revisar("correcciones: lee el punto nuevo, el viejo, la dirección y quién la movió (y salta las dañadas)",
+                l.size() == 1 && c.idNube == 7 && c.lat == 11.5451 && c.latViejo == 11.5444 && c.nombre.equals("Elianis")
+                && c.direccion.equals("Calle 15 # 7-20") && c.distanciaM == 85 && c.pendiente() && c.repartidor.equals("Carlos Pérez"));
+        File tmp = java.nio.file.Files.createTempDirectory("corr").toFile();
+        try (BaseDatos bd = new BaseDatos(new File(tmp, "domiruta.db"))) {
+            boolean nueva = bd.guardarCorreccion(c), otraVez = bd.guardarCorreccion(c);
+            revisar("correcciones: se guarda una sola vez aunque llegue dos veces", nueva && !otraVez
+                    && bd.correccionesPendientes().size() == 1);
+            bd.marcarCorreccion(7, rutas.modelo.Correccion.DESCARTADA);
+            revisar("correcciones: al descartarla ya no queda pendiente", bd.correccionesPendientes().isEmpty());
+        }
     }
 
     private static void probarConexion() {

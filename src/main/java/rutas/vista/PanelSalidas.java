@@ -80,6 +80,11 @@ public class PanelSalidas extends JPanel {
 
     void refrescar() {
         lista.removeAll();
+        java.util.List<rutas.modelo.Correccion> porRevisar = app.correccionesPendientes();
+        if (!porRevisar.isEmpty()) {
+            lista.add(tarjetaCorrecciones(porRevisar));
+            lista.add(Tema.espacio(10));
+        }
         tarjetas.clear();
         lista.add(tarjetaPendientes());
         List<Salida> abiertas = app.salidasAbiertas();
@@ -380,6 +385,61 @@ public class PanelSalidas extends JPanel {
         dir.addMouseListener(clic); // el texto de la dirección no deja pasar el clic
         dir.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         return f;
+    }
+
+    /** «Ubicaciones por revisar»: lo que movieron los repartidores y no coincidía con su GPS. */
+    private JComponent tarjetaCorrecciones(java.util.List<rutas.modelo.Correccion> l) {
+        Tema.Tarjeta t = new Tema.Tarjeta();
+        JLabel tit = new JLabel("Ubicaciones por revisar (" + l.size() + ")");
+        tit.setFont(Tema.textoFuerte(14.5f));
+        tit.setForeground(Tema.AZUL_PROFUNDO);
+        tit.setAlignmentX(LEFT_ALIGNMENT);
+        t.add(tit);
+        t.add(Tema.parrafo("El repartidor dijo «La casa no está aquí» y movió el pin. Si lo aprueba, el cliente queda"
+                + " con el punto nuevo para las próximas rutas.", 300));
+        for (rutas.modelo.Correccion c : l) {
+            t.add(Tema.espacio(8));
+            JLabel n = new JLabel(c.nombre.isEmpty() ? "(sin nombre)" : c.nombre);
+            n.setFont(Tema.textoFuerte(13.5f));
+            n.setForeground(Tema.GRIS_OSCURO);
+            n.setAlignmentX(LEFT_ALIGNMENT);
+            t.add(n);
+            String quien = c.repartidor.isEmpty() ? "" : " · lo movió " + PanelPedidos.primerNombre(c.repartidor);
+            Tema.Parrafo d = Tema.parrafo(c.direccion + " · a " + c.distanciaM + " m del punto que tenía" + quien, 300);
+            d.setForeground(Tema.GRIS_TEXTO);
+            t.add(d);
+            Tema.Boton ver = Tema.botonPequeno("Ver en el mapa");
+            ver.addActionListener(e -> {
+                if (app.getPanelMapa() != null) {
+                    app.getPanelMapa().resaltar(c.lat, c.lon, "Punto nuevo de " + c.nombre);
+                    if (app.getVentana() != null) {
+                        app.getVentana().irARuta();
+                    }
+                }
+            });
+            Tema.Boton aprobar = Tema.botonPequeno("Aprobar");
+            aprobar.addActionListener(e -> {
+                try {
+                    app.aprobarCorreccion(c);
+                    Aviso.mostrar(this, Aviso.Tipo.BIEN, "Ubicación corregida", c.nombre + " queda con el punto nuevo");
+                } catch (java.io.IOException ex) {
+                    Aviso.mostrar(this, Aviso.Tipo.ERROR, "No se pudo guardar", ex.getMessage());
+                }
+            });
+            Tema.Boton descartar = Tema.botonPequeno("Descartar");
+            descartar.addActionListener(e -> {
+                try {
+                    app.descartarCorreccion(c);
+                } catch (java.io.IOException ex) {
+                    Aviso.mostrar(this, Aviso.Tipo.ERROR, "No se pudo guardar", ex.getMessage());
+                }
+            });
+            JComponent fila = Tema.fila(8, ver, aprobar, descartar);
+            fila.setAlignmentX(LEFT_ALIGNMENT);
+            t.add(Tema.espacio(4));
+            t.add(fila);
+        }
+        return t;
     }
 
     /** WhatsApp al cliente con su enlace y su código (en su chat si el celular es válido). */

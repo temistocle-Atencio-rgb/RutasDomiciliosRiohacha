@@ -582,6 +582,12 @@ public class BaseDatos implements AutoCloseable {
         columnaSiFalta(st, "salidas", "vence_en", "TEXT");
         columnaSiFalta(st, "domiciliarios", "id_nube", "TEXT NOT NULL DEFAULT ''");
         columnaSiFalta(st, "domiciliarios", "enlace", "TEXT NOT NULL DEFAULT ''");
+        // ubicaciones que corrigieron los repartidores («La casa no está aquí»)
+        st.execute("CREATE TABLE IF NOT EXISTS correcciones_ubicacion ("
+                + " id_nube INTEGER PRIMARY KEY, nombre TEXT NOT NULL, direccion TEXT NOT NULL,"
+                + " lat_viejo REAL, lon_viejo REAL, lat REAL NOT NULL, lon REAL NOT NULL,"
+                + " distancia INTEGER NOT NULL DEFAULT 0, estado TEXT NOT NULL, repartidor TEXT NOT NULL DEFAULT '',"
+                + " creada TEXT NOT NULL)");
     }
 
     /** Las tablas de salidas ya pueden existir de la versión anterior: se les agrega lo nuevo. */
@@ -953,6 +959,65 @@ public class BaseDatos implements AutoCloseable {
                 ps.setLong(5, d.id);
                 ps.executeUpdate();
             }
+        }
+    }
+
+    /** Guarda una corrección que llegó de Supabase (si ya estaba, no la duplica). True si es nueva. */
+    public boolean guardarCorreccion(rutas.modelo.Correccion c) throws SQLException {
+        try (PreparedStatement ps = con.prepareStatement("INSERT OR IGNORE INTO correcciones_ubicacion(id_nube, nombre,"
+                + " direccion, lat_viejo, lon_viejo, lat, lon, distancia, estado, repartidor, creada) VALUES(?,?,?,?,?,?,?,?,?,?,?)")) {
+            ps.setLong(1, c.idNube);
+            ps.setString(2, c.nombre);
+            ps.setString(3, c.direccion);
+            if (Double.isNaN(c.latViejo)) {
+                ps.setNull(4, java.sql.Types.REAL);
+                ps.setNull(5, java.sql.Types.REAL);
+            } else {
+                ps.setDouble(4, c.latViejo);
+                ps.setDouble(5, c.lonViejo);
+            }
+            ps.setDouble(6, c.lat);
+            ps.setDouble(7, c.lon);
+            ps.setInt(8, c.distanciaM);
+            ps.setString(9, c.estado);
+            ps.setString(10, c.repartidor);
+            ps.setString(11, c.creada.toString());
+            return ps.executeUpdate() == 1;
+        }
+    }
+
+    /** Las que esperan que la tienda las apruebe o las descarte (la más vieja primero). */
+    public List<rutas.modelo.Correccion> correccionesPendientes() throws SQLException {
+        List<rutas.modelo.Correccion> l = new ArrayList<>();
+        try (Statement st = con.createStatement();
+             ResultSet rs = st.executeQuery("SELECT id_nube, nombre, direccion, lat_viejo, lon_viejo, lat, lon, distancia,"
+                     + " estado, repartidor, creada FROM correcciones_ubicacion WHERE estado = 'pendiente' ORDER BY creada")) {
+            while (rs.next()) {
+                rutas.modelo.Correccion c = new rutas.modelo.Correccion();
+                c.idNube = rs.getLong(1);
+                c.nombre = rs.getString(2);
+                c.direccion = rs.getString(3);
+                double la = rs.getDouble(4);
+                c.latViejo = rs.wasNull() ? Double.NaN : la;
+                double lo = rs.getDouble(5);
+                c.lonViejo = rs.wasNull() ? Double.NaN : lo;
+                c.lat = rs.getDouble(6);
+                c.lon = rs.getDouble(7);
+                c.distanciaM = rs.getInt(8);
+                c.estado = rs.getString(9);
+                c.repartidor = rs.getString(10);
+                c.creada = LocalDateTime.parse(rs.getString(11));
+                l.add(c);
+            }
+        }
+        return l;
+    }
+
+    public void marcarCorreccion(long idNube, String estado) throws SQLException {
+        try (PreparedStatement ps = con.prepareStatement("UPDATE correcciones_ubicacion SET estado=? WHERE id_nube=?")) {
+            ps.setString(1, estado);
+            ps.setLong(2, idNube);
+            ps.executeUpdate();
         }
     }
 

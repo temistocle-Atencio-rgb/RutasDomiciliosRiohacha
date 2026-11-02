@@ -126,6 +126,26 @@ public class Seguimiento {
         return IndicadorConexion.Estado.SIN_BASE; // respondió mal (clave, tablas, servidor)
     }
 
+    /** Las guarda aquí, aplica las que ya vienen aplicadas y avisa las que hay que revisar. */
+    void recibirCorrecciones(List<rutas.modelo.Correccion> l) {
+        for (rutas.modelo.Correccion c : l) {
+            try {
+                if (app.recibirCorreccion(c)) {
+                    String quien = c.repartidor.isEmpty() ? "El repartidor" : PanelPedidos.primerNombre(c.repartidor);
+                    for (Oyente o : oyentes) {
+                        o.aviso(null, "Ubicación por revisar", quien + " movió la casa de " + c.nombre
+                                + " (" + c.distanciaM + " m). Revísela en «Salidas».", false);
+                    }
+                }
+            } catch (IOException ex) {
+                error = ex.getMessage();
+            }
+        }
+        if (!l.isEmpty()) {
+            app.avisar();
+        }
+    }
+
     /** Para las pruebas (el enum es de este paquete). */
     public static String clasificarParaPruebas(String error, java.util.function.BooleanSupplier internet) {
         return clasificar(error, internet).name();
@@ -248,6 +268,8 @@ public class Seguimiento {
         revisando = true;
         Object[] reps = new Object[1]; // lo lee el hilo de internet; se aplica en el de la pantalla
         Object[] conexion = new Object[2]; // {Estado, detalle}
+        List<rutas.modelo.Correccion> correcciones = new ArrayList<>();
+        boolean leerCorrecciones = !abiertas.isEmpty() || !cerradas.isEmpty();
         hilo.execute(() -> {
             String err = "";
             try {
@@ -289,6 +311,16 @@ public class Seguimiento {
                         err = ex.getMessage();
                     }
                 }
+                if (leerCorrecciones) { // antes de borrar las cerradas: las correcciones se van con la salida
+                    try {
+                        for (rutas.modelo.Correccion c : nube.correccionesNuevas()) {
+                            nube.correccionTomada(c.idNube);
+                            correcciones.add(c);
+                        }
+                    } catch (IOException ex) {
+                        err = ex.getMessage();
+                    }
+                }
                 for (Cerrada c : cerradas) {
                     try {
                         nube.cerrar(c.uuid); // desde aquí el enlace ya no muestra nada
@@ -307,6 +339,7 @@ public class Seguimiento {
                 conexion[1] = errFinal;
                 SwingUtilities.invokeLater(() -> {
                     ponerConexion((IndicadorConexion.Estado) conexion[0], (String) conexion[1]);
+                    recibirCorrecciones(correcciones);
                     if (reps[0] != null) {
                         @SuppressWarnings("unchecked")
                         Map<String, NubeRepartidor.EstadoRepartidor> m = (Map<String, NubeRepartidor.EstadoRepartidor>) reps[0];

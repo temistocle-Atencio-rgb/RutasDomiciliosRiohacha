@@ -28,6 +28,7 @@ import rutas.modelo.Cliente;
 import rutas.modelo.Geo;
 import rutas.modelo.Parada;
 import rutas.modelo.Ruta;
+import rutas.modelo.Correccion;
 import rutas.modelo.Salida;
 import rutas.logica.NubeRepartidor;
 import rutas.logica.RutaNube;
@@ -734,6 +735,58 @@ public class Aplicacion {
 
     void setSeguimiento(Seguimiento s) {
         seguimiento = s;
+    }
+
+    // ---------------- correcciones de ubicación (etapa G) ----------------
+
+    /**
+     * Guarda la corrección que llegó; si ya viene aplicada (coincidía con el GPS), corrige al cliente de una.
+     * Devuelve true si es nueva y queda pendiente (para avisar).
+     */
+    boolean recibirCorreccion(Correccion c) throws IOException {
+        boolean[] nueva = {false};
+        guardar(() -> nueva[0] = bd.guardarCorreccion(c));
+        if (!nueva[0]) {
+            return false;
+        }
+        if (CORRECCION_APLICADA.equals(c.estado)) {
+            aplicarAlCliente(c);
+            return false;
+        }
+        return c.pendiente();
+    }
+
+    private static final String CORRECCION_APLICADA = Correccion.APLICADA;
+
+    public List<Correccion> correccionesPendientes() {
+        try {
+            return bd.correccionesPendientes();
+        } catch (SQLException e) {
+            Ubicaciones.registrarError(e);
+            return new ArrayList<>();
+        }
+    }
+
+    /** La tienda la aprobó: el cliente queda con el punto nuevo. */
+    public void aprobarCorreccion(Correccion c) throws IOException {
+        aplicarAlCliente(c);
+        guardar(() -> bd.marcarCorreccion(c.idNube, Correccion.APLICADA));
+        avisar();
+    }
+
+    public void descartarCorreccion(Correccion c) throws IOException {
+        guardar(() -> bd.marcarCorreccion(c.idNube, Correccion.DESCARTADA));
+        avisar();
+    }
+
+    /** Si el cliente está guardado con esa misma dirección, se le pone el punto nuevo. True si lo cambió. */
+    boolean aplicarAlCliente(Correccion c) throws IOException {
+        Cliente cl = buscarCliente(c.nombre);
+        if (cl == null || !Geo.normalizar(cl.getDireccion()).equals(Geo.normalizar(c.direccion))) {
+            return false; // sin cliente guardado (o ya tiene otra dirección): no hay nada que corregir aquí
+        }
+        guardarCliente(cl.conDireccion(cl.getDireccion(), c.lat, c.lon));
+        return true;
     }
 
     // ---------------- repartidor en vivo ----------------
