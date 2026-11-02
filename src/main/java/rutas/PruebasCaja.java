@@ -697,11 +697,18 @@ public class PruebasCaja {
                 Catalogo cat2 = new Catalogo(otra);
                 ImportadorProductos.Resultado r = ImportadorProductos.importar(archivo, cat2);
                 Producto az = cat2.buscarNombre("azucar", 1).get(0);
-                revisar("exportar y volver a importar da los mismos productos: " + r.creados + " " + r.errores,
-                        r.creados == 4 && r.errores.isEmpty() && az.getStock() == 2000 && az.getUnidad() == Unidad.LIBRA
+                // un stock negativo (por ventas) no se pasa a una tienda nueva: se pide corregirlo
+                revisar("exportar e importar en otra tienda: el stock negativo se informa: " + r.creados + " " + r.errores,
+                        r.creados == 3 && r.errores.size() == 1 && r.errores.get(0).contains("no puede ser negativo")
+                        && az.getStock() == 2000 && az.getUnidad() == Unidad.LIBRA
                         && az.getPrecioVenta() == 2200 && az.getCategoriaId() != null
-                        && cat2.buscarCodigo("7703").getStock() == -3000);
+                        && cat2.buscarCodigo("7703") == null);
             }
+            // en la misma tienda, la lista exportada se vuelve a importar igual (el negativo no cambio)
+            ImportadorProductos.Resultado mismo = ImportadorProductos.importar(archivo, cat);
+            revisar("volver a importar la lista exportada en la misma tienda: " + mismo.actualizados + " " + mismo.errores,
+                    mismo.errores.stream().noneMatch(e -> e.contains("negativo")) && mismo.actualizados == 2
+                    && cat.buscarCodigo("7703").getStock() == -3000);
         }
     }
 

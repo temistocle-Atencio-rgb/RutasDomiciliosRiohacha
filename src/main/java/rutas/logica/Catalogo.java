@@ -200,6 +200,12 @@ public class Catalogo {
         if (p.getPrecioVenta() < 0 || p.getPrecioCompra() < 0) {
             throw new IllegalArgumentException("El precio no puede ser negativo");
         }
+        if (p.getPrecioVenta() == 0) {
+            throw new IllegalArgumentException("El precio de venta debe ser mayor que $0");
+        }
+        if (p.getPrecioVenta() > ImportadorProductos.PRECIO_MAXIMO || p.getPrecioCompra() > ImportadorProductos.PRECIO_MAXIMO) {
+            throw new IllegalArgumentException("El valor máximo es $99.999.999");
+        }
         if (p.getCodigo() != null) {
             Producto otro = bd.buscarPorCodigoEnBase(p.getCodigo());
             if (otro != null && otro.getId() != p.getId()) {

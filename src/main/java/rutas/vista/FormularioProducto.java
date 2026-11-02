@@ -1052,15 +1052,24 @@ final class FormularioProducto {
             long venta = ImportadorProductos.leerPesos(campoVenta.getText());
             long compra = !verCompra ? (editando == null ? 0 : editando.getPrecioCompra())
                     : campoCompra.getText().isBlank() ? 0 : ImportadorProductos.leerPesos(campoCompra.getText());
-            long stock = leerCantidadOCero(campoStock, "el stock del punto de venta");
+            rutas.modelo.Unidad unidad = FichaProducto.unidadDe(medida);
+            long stock;
             if (editando != null && campoStock.getText().trim().equals(stockAlAbrir)) {
-                // no tocaron la cantidad: se guarda la de la base (pudo bajar por ventas mientras tanto)
+                // no tocaron la cantidad: se guarda la de la base (pudo bajar por ventas mientras tanto,
+                // y puede estar negativa por ventas: eso no se revisa aqui)
                 Producto actual = bd.buscarProductoPorId(editando.getId());
-                if (actual != null) {
-                    stock = actual.getStock();
-                }
+                stock = actual != null ? actual.getStock() : editando.getStock();
+            } else {
+                stock = leerCantidadOCero(campoStock, "el stock del punto de venta");
+                ImportadorProductos.revisarCantidadEscrita(stock, unidad, "El stock del punto de venta");
             }
-            long minimo = leerCantidadOCero(campoMinimo, "el stock mínimo del punto de venta");
+            long minimo;
+            if (editando != null && campoMinimo.getText().trim().equals(PanelProductos.cantidad(editando.getMinimo()))) {
+                minimo = editando.getMinimo(); // sin cambios: se respeta lo que ya estaba
+            } else {
+                minimo = leerCantidadOCero(campoMinimo, "el stock mínimo del punto de venta");
+                ImportadorProductos.revisarCantidadEscrita(minimo, unidad, "El stock mínimo");
+            }
             FichaProducto f = leerFicha(venta);
             f.validar(venta);
             byte[] desdeUrl = null;
@@ -1190,15 +1199,23 @@ final class FormularioProducto {
                 } catch (IllegalArgumentException e) {
                     throw new IllegalArgumentException("Lote " + l.numero.getText().trim() + ": " + e.getMessage());
                 }
-                f.lotes.add(new Lote(l.numero.getText(), v, leerCantidadOCero(l.cantidad, "la cantidad del lote")));
+                long cantLote = leerCantidadOCero(l.cantidad, "la cantidad del lote");
+                ImportadorProductos.revisarCantidadEscrita(cantLote, FichaProducto.unidadDe(f.medida),
+                        "La cantidad del lote " + l.numero.getText().trim());
+                f.lotes.add(new Lote(l.numero.getText(), v, cantLote));
             }
         }
         java.util.Map<Long, long[]> enBase = null; // lo que hay hoy en la base (pudo entrar una compra)
         for (FilaBodega b : filasBodega) {
             if (!b.bodega.esPuntoDeVenta()) {
-                long st = leerCantidadOCero(b.stock, "el stock de " + b.bodega.getNombre());
                 long[] antes = ficha.bodegas.get(b.bodega.getId());
                 String alAbrir = antes == null ? "" : PanelProductos.cantidad(antes[0]);
+                boolean igual = editando != null && b.stock.getText().trim().equals(alAbrir);
+                long st = igual && antes != null ? antes[0] : leerCantidadOCero(b.stock, "el stock de " + b.bodega.getNombre());
+                if (!igual) {
+                    ImportadorProductos.revisarCantidadEscrita(st, FichaProducto.unidadDe(f.medida),
+                            "El stock de " + b.bodega.getNombre());
+                }
                 if (editando != null && b.stock.getText().trim().equals(alAbrir)) {
                     // no tocaron esa cantidad: se guarda la de la base
                     try {

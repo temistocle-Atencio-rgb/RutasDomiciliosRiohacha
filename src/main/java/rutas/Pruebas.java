@@ -38,6 +38,7 @@ public class Pruebas {
         PruebasRepartidor.correr();
         PruebasOrdenes.correr();
         PruebasClientes.correr();
+        PruebasValidacion.correr();
         probarAvl();
         probarMonticulo();
         probarGrafoPequeno();

@@ -116,6 +116,14 @@ public final class ImportadorProductos {
         long compra = valor(celda(f, col, "precio_compra"), viejo == null ? 0 : viejo.getPrecioCompra(), true);
         long stock = valor(celda(f, col, "stock"), viejo == null ? 0 : viejo.getStock(), false);
         long minimo = valor(celda(f, col, "minimo"), viejo == null ? 0 : viejo.getMinimo(), false);
+        // lo que viene escrito en el archivo y cambia algo; una lista exportada con un stock negativo
+        // (por ventas) se puede volver a importar igual
+        if (!celda(f, col, "stock").isEmpty() && (viejo == null || stock != viejo.getStock())) {
+            revisarCantidadEscrita(stock, unidad, "El stock");
+        }
+        if (!celda(f, col, "minimo").isEmpty() && (viejo == null || minimo != viejo.getMinimo())) {
+            revisarCantidadEscrita(minimo, unidad, "El mínimo");
+        }
 
         String textoCategoria = celda(f, col, "categoria");
         Long categoriaId = viejo == null ? null : viejo.getCategoriaId();
@@ -175,24 +183,65 @@ public final class ImportadorProductos {
             throw new IllegalArgumentException(s.matches("[\\d.,]+") ? "Los precios van sin centavos"
                     : "Precio no válido: " + texto.trim());
         }
-        return Long.parseLong(s.replace(".", ""));
+        String cifras = s.replace(".", "").replaceFirst("^0+(?=\\d)", "");
+        if (cifras.length() > 8 || Long.parseLong(cifras) > PRECIO_MAXIMO) { // antes de convertir: sin desbordes
+            throw new IllegalArgumentException("El valor máximo es $99.999.999");
+        }
+        return Long.parseLong(cifras);
     }
+
+    /** Lo mas alto que se puede escribir como precio o valor (pesos). */
+    public static final long PRECIO_MAXIMO = 99_999_999L;
+    /** Lo mas alto que se puede escribir como cantidad: 999.999 (en milesimas). */
+    public static final long CANTIDAD_MAXIMA = 999_999_000L;
 
     /**
      * Cantidad en milesimas: "1,5" y "1.5" son 1500; "3" es 3000.
      * Un punto seguido de 3 cifras es de miles, como en los precios: "1.200" son 1200.
+     * Se rechaza (en vez de adivinar): "0.500" (¿medio o quinientos?), la notacion cientifica de
+     * Excel ("7,7E+12"), mas de 3 decimales y mas de 999.999.
      */
     public static long leerCantidad(String texto) {
-        String s = texto.replace(" ", "");
-        if (s.matches("\\d{1,3}(\\.\\d{3})+(,\\d+)?")) {
+        String s = texto == null ? "" : texto.replace(" ", "");
+        if (!s.matches("-?[0-9.,]{1,16}")) { // lista blanca: solo cifras, punto y coma (y el signo)
+            throw new IllegalArgumentException("Cantidad no válida: " + (texto == null ? "" : texto.trim()));
+        }
+        String sinSigno = s.startsWith("-") ? s.substring(1) : s;
+        if (sinSigno.matches("0+\\.\\d{3}")) {
+            throw new IllegalArgumentException("Escriba «" + sinSigno.replaceFirst("^0+", "0").replace('.', ',')
+                    .replaceFirst(",?0+$", "").replaceFirst(",$", "") + "» con coma: «0.500» se confunde con quinientos");
+        }
+        if (sinSigno.matches("\\d{1,3}(\\.\\d{3})+(,\\d+)?")) {
             s = s.replace(".", ""); // "1.200" o "1.200,5": los puntos separan miles
         }
         s = s.replace(',', '.');
+        BigDecimal b;
         try {
-            return new BigDecimal(s).multiply(BigDecimal.valueOf(1000)).setScale(0, RoundingMode.HALF_UP)
-                    .longValueExact();
-        } catch (NumberFormatException | ArithmeticException e) {
+            b = new BigDecimal(s);
+        } catch (NumberFormatException e) {
             throw new IllegalArgumentException("Cantidad no válida: " + texto.trim());
+        }
+        if (b.stripTrailingZeros().scale() > 3) {
+            throw new IllegalArgumentException("La cantidad lleva máximo 3 decimales");
+        }
+        long m = b.movePointRight(3).setScale(0, RoundingMode.UNNECESSARY).longValue();
+        if (Math.abs(m) > CANTIDAD_MAXIMA) {
+            throw new IllegalArgumentException("La cantidad máxima es 999.999");
+        }
+        return m;
+    }
+
+    /**
+     * Revisa una cantidad que el usuario escribio para guardar (stock, minimo): no negativa y, si
+     * el producto va por unidades, sin decimales. Las ventas no pasan por aqui (pueden dejar el
+     * stock negativo).
+     */
+    public static void revisarCantidadEscrita(long milesimas, Unidad unidad, String que) {
+        if (milesimas < 0) {
+            throw new IllegalArgumentException(que + " no puede ser negativo");
+        }
+        if (unidad == Unidad.UNIDAD && milesimas % 1000 != 0) {
+            throw new IllegalArgumentException(que + " va en unidades enteras (el producto no es a granel)");
         }
     }
 
