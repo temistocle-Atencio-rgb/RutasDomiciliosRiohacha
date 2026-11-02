@@ -90,18 +90,34 @@ class TarjetaProducto extends javax.swing.JPanel {
         return Tarifa.pesos(p.getPrecioVenta()) + (p.getUnidad() == Unidad.UNIDAD ? "" : " / " + p.getUnidad().getCorto());
     }
 
-    /** Texto del estado del inventario, o null si no hay nada que decir. */
+    /**
+     * Cuanto queda, siempre a la vista: "24 und", "Quedan 3 und" (bajo el minimo) o "Agotado".
+     * null si el producto no maneja inventario (servicios, recetas): ahi el numero no dice nada.
+     */
     static String estado(Producto p) {
         if (!p.isManejaInventario()) {
             return null;
         }
         if (p.getStock() <= 0) {
-            return "Sin existencias";
+            return "Agotado";
         }
-        if (p.estaBajoMinimo()) {
-            return "Quedan " + PanelProductos.cantidad(p.getStock()) + " " + p.getUnidad().getCorto();
+        String cuanto = cantidadCorta(p) + " " + p.getUnidad().getCorto();
+        return p.estaBajoMinimo() ? "Quedan " + cuanto : cuanto;
+    }
+
+    /** Gris si hay suficiente, color de aviso si queda poco, rojo si se acabo. */
+    static java.awt.Color colorEstado(Producto p) {
+        return p.getStock() <= 0 ? Tema.ERROR_TEXTO : p.estaBajoMinimo() ? Tema.AVISO_TEXTO : Tema.GRIS_TEXTO;
+    }
+
+    /** Unidades enteras; a granel, un decimal ("10,1 lb" y no "10,124 lb"). */
+    static String cantidadCorta(Producto p) {
+        if (p.getUnidad() == Unidad.UNIDAD) {
+            return PanelProductos.cantidad(p.getStock());
         }
-        return null;
+        java.math.BigDecimal b = java.math.BigDecimal.valueOf(p.getStock(), 3)
+                .setScale(1, java.math.RoundingMode.HALF_UP).stripTrailingZeros();
+        return (b.scale() < 0 ? b.setScale(0) : b).toPlainString().replace('.', ',');
     }
 
     @Override
@@ -137,7 +153,7 @@ class TarjetaProducto extends javax.swing.JPanel {
         g.drawString(recortar(g.getFontMetrics(), precio(producto), ancho), tx, y + 25);
         if (est != null) {
             g.setFont(Tema.texto(12));
-            g.setColor(producto.getStock() <= 0 ? Tema.ERROR_TEXTO : Tema.AVISO_TEXTO);
+            g.setColor(colorEstado(producto));
             g.drawString(est, tx, y + 42);
         }
 
@@ -145,12 +161,16 @@ class TarjetaProducto extends javax.swing.JPanel {
         int fy = y + CABEZA, fh = ch - CABEZA - FRANJA - 8;
         int fx = x + 14, fw = cw - 28;
         Image img = Fotos.cargar(producto.getFoto(), fw, fh);
+        if (producto.isManejaInventario() && producto.getStock() <= 0) {
+            g.setComposite(java.awt.AlphaComposite.getInstance(java.awt.AlphaComposite.SRC_OVER, 0.4f)); // agotado: apagada
+        }
         if (img != null) {
             Fotos.dibujar(g, img, fx, fy, fw, fh);
         } else {
             Fotos.paquete(g, fx + fw / 2, fy + fh / 2, 44);
         }
 
+        g.setComposite(java.awt.AlphaComposite.SrcOver);
         // abajo: franja gris con el nombre centrado, dos renglones como maximo
         int by = y + ch - FRANJA;
         java.awt.Shape antes = g.getClip();
