@@ -135,16 +135,23 @@ public final class ImportadorProductos {
         if (codigo.toUpperCase().matches(".*\\d[.,]?\\d*E\\+\\d+")) {
             throw new IllegalArgumentException("Excel cambió el código; formatee la columna como texto");
         }
-        Producto viejo = codigo.isEmpty() ? null : cat.buscarCodigo(codigo);
+        // tambien los desactivados: una lista exportada con «Todos» se puede volver a importar
+        Producto viejo = codigo.isEmpty() ? null : cat.base().buscarPorCodigoEnBase(codigo);
         String textoPrecio = celda(f, col, "precio_venta");
         if (textoPrecio.isEmpty() && viejo == null) {
             throw new IllegalArgumentException("Falta el precio de venta");
         }
         Unidad unidad = leerUnidad(celda(f, col, "unidad"), viejo == null ? Unidad.UNIDAD : viejo.getUnidad());
-        long venta = textoPrecio.isEmpty() ? viejo.getPrecioVenta() : leerPesos(textoPrecio);
-        long compra = valor(celda(f, col, "precio_compra"), viejo == null ? 0 : viejo.getPrecioCompra(), true);
-        long stock = valor(celda(f, col, "stock"), viejo == null ? 0 : viejo.getStock(), false);
-        long minimo = valor(celda(f, col, "minimo"), viejo == null ? 0 : viejo.getMinimo(), false);
+        // si la celda dice lo mismo que se exporto, se deja el valor de antes sin volver a leerlo
+        // (asi un dato viejo fuera de las reglas nuevas no impide volver a importar la lista)
+        long venta = textoPrecio.isEmpty() || viejo != null && textoPrecio.equals(String.valueOf(viejo.getPrecioVenta()))
+                ? viejo.getPrecioVenta() : leerPesos(textoPrecio);
+        long compra = igualQueAntes(celda(f, col, "precio_compra"), viejo == null ? null : String.valueOf(viejo.getPrecioCompra()))
+                ? viejo.getPrecioCompra() : valor(celda(f, col, "precio_compra"), viejo == null ? 0 : viejo.getPrecioCompra(), true);
+        long stock = igualQueAntes(celda(f, col, "stock"), viejo == null ? null : ListadoProductos.cantidad(viejo.getStock()))
+                ? viejo.getStock() : valor(celda(f, col, "stock"), viejo == null ? 0 : viejo.getStock(), false);
+        long minimo = igualQueAntes(celda(f, col, "minimo"), viejo == null ? null : ListadoProductos.cantidad(viejo.getMinimo()))
+                ? viejo.getMinimo() : valor(celda(f, col, "minimo"), viejo == null ? 0 : viejo.getMinimo(), false);
         // lo que viene escrito en el archivo y cambia algo; una lista exportada con un stock negativo
         // (por ventas) se puede volver a importar igual
         if (!celda(f, col, "stock").isEmpty() && (viejo == null || stock != viejo.getStock())) {
@@ -173,6 +180,10 @@ public final class ImportadorProductos {
             r.actualizados++;
         }
         return codigo;
+    }
+
+    private static boolean igualQueAntes(String texto, String comoSeExporto) {
+        return comoSeExporto != null && !texto.isEmpty() && texto.equals(comoSeExporto);
     }
 
     private static long valor(String texto, long siFalta, boolean esPlata) {

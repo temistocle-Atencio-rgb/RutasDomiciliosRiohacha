@@ -345,6 +345,16 @@ public class PruebasValidacion {
             revisar("H5: lo que ya existía queda como estaba (base y árboles) y la categoría nueva no se crea",
                     cat.buscarCodigo("500").getNombre().equals("Sal") && bd.buscarPorCodigoEnBase("500").getPrecioVenta() == 1000
                     && bd.listarCategorias(true).isEmpty());
+            // la lista exportada (con desactivados y datos viejos fuera de las reglas) vuelve a entrar completa
+            bd.insertarProducto(new rutas.modelo.Producto(0, "600", "Bodega grande", Unidad.UNIDAD, 0, 0, 2_000_000_000L,
+                    0, null, true));
+            cat.recargar();
+            cat.desactivar(cat.buscarCodigo("500").getId());
+            String exportada = rutas.logica.ListadoProductos.aCsv(cat.todosConInactivos(), new java.util.HashMap<>());
+            ImportadorProductos.Resultado otraVez = importar(cat, exportada);
+            revisar("H5: la lista exportada (desactivado, stock de 2.000.000 y precio $0 de antes) vuelve a entrar: "
+                    + otraVez.errores, otraVez.errores.isEmpty() && otraVez.actualizados == 2
+                    && !bd.buscarPorCodigoEnBase("500").isActivo());
             ImportadorProductos.Resultado bien = importar(cat, "nombre;codigo;precio_venta\nLeche;501;3000\nPan;502;500\n");
             revisar("H5: un archivo sin errores sí entra completo", bien.errores.isEmpty() && bien.creados == 2
                     && cat.buscarCodigo("502") != null);
