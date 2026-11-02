@@ -336,9 +336,12 @@ final class FormularioCategoria {
             decir("Esa imagen pesa " + (f.length() / 1024) + " KB. El máximo es 1 MB.", false);
             return;
         }
-        Image img = new ImageIcon(f.getAbsolutePath()).getImage();
-        if (img.getWidth(null) <= 0) {
-            decir("No se pudo abrir esa imagen. Use JPG o PNG.", false);
+        Image img;
+        try {
+            // la misma revision que al guardar (por el contenido): asi no falla despues de crear la categoria
+            img = javax.imageio.ImageIO.read(new ByteArrayInputStream(FormularioProducto.leerImagenLocal(f)));
+        } catch (IllegalArgumentException | IOException e) {
+            decir(e instanceof IllegalArgumentException ? e.getMessage() : "No se pudo abrir esa imagen. Use JPG o PNG.", false);
             return;
         }
         fotoElegida = f;

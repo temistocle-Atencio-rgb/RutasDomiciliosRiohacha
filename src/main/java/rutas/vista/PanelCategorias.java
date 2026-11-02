@@ -211,6 +211,13 @@ final class PanelCategorias {
     private void elegirFoto(JComponent padre) {
         java.io.File f = Archivos.abrir(padre, "Elegir la foto de la categoría", "jpg", "jpeg", "png");
         if (f != null) {
+            try {
+                FormularioProducto.leerImagenLocal(f); // JPG o PNG de verdad y hasta 1 MB, antes de guardar nada
+            } catch (IllegalArgumentException | java.io.IOException e) {
+                decir(e instanceof IllegalArgumentException ? e.getMessage() : "No se pudo abrir esa imagen. Use JPG o PNG.",
+                        false);
+                return;
+            }
             fotoElegida = f;
             foto.ruta = fotoElegida.getAbsolutePath();
             foto.repaint();
