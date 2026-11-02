@@ -7,6 +7,7 @@ import javax.sound.sampled.Clip;
 /**
  * Sonidos de caja, generados aqui mismo (sin archivos de audio):
  * - bien: el "bip" agudo y corto de un lector de supermercado (producto agregado);
+ * - clic: un toque suave y bajito (producto tocado con el mouse);
  * - error: dos tonos graves (codigo que no existe o producto agotado).
  * Si el computador no tiene sonido, queda el pitido de Windows.
  */
@@ -15,6 +16,7 @@ final class Pitido {
     private static final float MUESTRAS = 44_100f;
     private static Clip bien;
     private static Clip error;
+    private static Clip clic;
     private static boolean sinSonido;
 
     private Pitido() {
@@ -28,6 +30,23 @@ final class Pitido {
     /** Codigo desconocido, agotado o no alcanza. */
     static void error() {
         sonar(false);
+    }
+
+    /** Producto tocado con el mouse: un clic suave, para no llenar la tienda de pitidos. */
+    static synchronized void clic() {
+        if (sinSonido) {
+            return; // sin parlantes, el clic no hace falta
+        }
+        try {
+            if (clic == null) {
+                clic = clip(tonos(new int[]{1200}, 12, 0, 0.12));
+            }
+            clic.stop();
+            clic.setFramePosition(0);
+            clic.start();
+        } catch (Exception | LinkageError e) {
+            sinSonido = true;
+        }
     }
 
     private static synchronized void sonar(boolean ok) {
@@ -54,15 +73,19 @@ final class Pitido {
 
     /** Tonos seguidos con un silencio entre ellos; cada uno sube y baja suave para que no "truene". */
     static byte[] tonos(int[] frecuencias, int msTono, int msSilencio) {
+        return tonos(frecuencias, msTono, msSilencio, 0.35);
+    }
+
+    static byte[] tonos(int[] frecuencias, int msTono, int msSilencio, double volumen) {
         int porTono = (int) (MUESTRAS * msTono / 1000);
         int porSilencio = (int) (MUESTRAS * msSilencio / 1000);
-        int rampa = (int) (MUESTRAS * 0.004); // 4 ms de entrada y salida
+        int rampa = Math.max(1, Math.min((int) (MUESTRAS * 0.004), porTono / 3)); // entrada y salida suaves
         byte[] b = new byte[(porTono + porSilencio) * frecuencias.length * 2];
         int i = 0;
         for (int f : frecuencias) {
             for (int n = 0; n < porTono; n++) {
                 double env = Math.min(1, Math.min(n, porTono - 1 - n) / (double) rampa);
-                short v = (short) (Math.sin(2 * Math.PI * f * n / MUESTRAS) * 0.35 * env * Short.MAX_VALUE);
+                short v = (short) (Math.sin(2 * Math.PI * f * n / MUESTRAS) * volumen * env * Short.MAX_VALUE);
                 b[i++] = (byte) v;
                 b[i++] = (byte) (v >> 8);
             }

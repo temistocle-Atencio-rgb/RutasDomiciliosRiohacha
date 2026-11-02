@@ -256,7 +256,7 @@ public class PanelVender extends JPanel implements RecibeCodigo {
             if (n++ >= MAX_TARJETAS) {
                 break;
             }
-            rejilla.add(new TarjetaProducto(p, this::elegir));
+            rejilla.add(new TarjetaProducto(p, q -> elegir(q, true))); // tocada: clic suave
         }
         if (lista.isEmpty()) {
             lblResultados.setText(t.isEmpty() ? (cat.tamano() == 0
@@ -326,6 +326,11 @@ public class PanelVender extends JPanel implements RecibeCodigo {
 
     /** Agregar un producto a la venta (clic en la tarjeta, escaner o Enter). */
     private void elegir(Producto p) {
+        elegir(p, false);
+    }
+
+    /** conClic = la tocaron con el mouse (suena un clic suave); si no, el escaner (suena el bip). */
+    private void elegir(Producto p, boolean conClic) {
         if (Capa.hayAbierta(this)) {
             return;
         }
@@ -343,7 +348,7 @@ public class PanelVender extends JPanel implements RecibeCodigo {
                     return;
                 }
                 LineaVenta l = porValor ? carrito.agregarPorValor(pr, valor) : carrito.agregar(pr, valor);
-                agregado(pr, l, rv);
+                agregado(pr, l, rv, conClic);
             });
             return;
         }
@@ -351,7 +356,7 @@ public class PanelVender extends JPanel implements RecibeCodigo {
         if (rv == null) {
             return;
         }
-        agregado(pr, carrito.agregar(pr), rv);
+        agregado(pr, carrito.agregar(pr), rv, conClic);
     }
 
     /**
@@ -370,8 +375,12 @@ public class PanelVender extends JPanel implements RecibeCodigo {
         return null;
     }
 
-    private void agregado(Producto p, LineaVenta l, rutas.logica.Existencias.Revision rv) {
-        Pitido.bien();
+    private void agregado(Producto p, LineaVenta l, rutas.logica.Existencias.Revision rv, boolean conClic) {
+        if (conClic) {
+            Pitido.clic();
+        } else {
+            Pitido.bien();
+        }
         refrescarVenta();
         buscador.selectAll(); // lo siguiente que se escriba o escanee reemplaza la busqueda
         enfocar();
