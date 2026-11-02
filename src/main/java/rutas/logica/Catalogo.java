@@ -158,8 +158,18 @@ public class Catalogo {
                 p.isManejaInventario());
     }
 
+    /** El mismo producto con el nombre sin espacios dobles. */
+    private static Producto conNombreLimpio(Producto p) {
+        String n = Textos.limpiar(p.getNombre());
+        if (n.equals(p.getNombre())) {
+            return p;
+        }
+        return new Producto(p.getId(), p.getCodigo(), n, p.getUnidad(), p.getPrecioVenta(), p.getPrecioCompra(),
+                p.getStock(), p.getMinimo(), p.getFoto(), p.isActivo(), p.getCategoriaId(), p.isManejaInventario());
+    }
+
     public Producto crear(Producto p) throws SQLException {
-        p = conCodigoMayus(p);
+        p = conNombreLimpio(conCodigoMayus(p));
         validar(p, null);
         Producto guardado = bd.insertarProducto(p.conActivo(true));
         poner(guardado);
@@ -168,7 +178,7 @@ public class Catalogo {
 
     /** Primero se guarda en la base; solo si salio bien se cambian los arboles. */
     public Producto editar(Producto p) throws SQLException {
-        p = conCodigoMayus(p);
+        p = conNombreLimpio(conCodigoMayus(p));
         Producto viejo = bd.buscarProductoPorId(p.getId());
         if (viejo == null) {
             throw new IllegalArgumentException("Ese producto ya no existe");
@@ -232,6 +242,9 @@ public class Catalogo {
     private void validar(Producto p, Producto viejo) throws SQLException {
         if (p.getNombre().isBlank()) {
             throw new IllegalArgumentException("Escriba el nombre");
+        }
+        if (viejo == null || !p.getNombre().equals(Textos.limpiar(viejo.getNombre()))) {
+            Textos.revisarNombreProducto(p.getNombre()); // un nombre de antes que no se toco se deja como estaba
         }
         if (p.getPrecioVenta() < 0 || p.getPrecioCompra() < 0) {
             throw new IllegalArgumentException("El precio no puede ser negativo");

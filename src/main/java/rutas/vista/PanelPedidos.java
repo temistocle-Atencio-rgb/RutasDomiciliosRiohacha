@@ -780,6 +780,11 @@ public class PanelPedidos extends JPanel {
         if (c == null || p.getNota().isEmpty() || p.getNota().equals(c.getNota())) {
             return;
         }
+        if (p.getNota().codePointCount(0, p.getNota().length()) > rutas.logica.Textos.NOTA) {
+            aviso("La nota tiene más de " + rutas.logica.Textos.NOTA + " caracteres: quedó en esta entrega, pero no"
+                    + " se guardó en el cliente.");
+            return;
+        }
         try {
             app.guardarCliente(c.conNota(p.getNota()));
         } catch (java.io.IOException e) {

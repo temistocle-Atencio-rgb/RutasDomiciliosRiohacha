@@ -16,6 +16,76 @@ public class PruebasValidacion {
         probarTodoONada();
         probarFormatoCodigo();
         probarMayusculas();
+        probarTextos();
+    }
+
+    static String crearConNombre(rutas.logica.Catalogo cat, String nombre) {
+        try {
+            cat.crear(new rutas.modelo.Producto(0, null, nombre, Unidad.UNIDAD, 1000, 0, 0, 0, null, true));
+            return null;
+        } catch (IllegalArgumentException e) {
+            return e.getMessage();
+        } catch (java.sql.SQLException e) {
+            return "SQL " + e.getMessage();
+        }
+    }
+
+    /** H4: largos maximos, espacios dobles, emojis y caracteres invisibles (caso 1 y 2). */
+    private static void probarTextos() throws Exception {
+        try (rutas.logica.BaseTienda bd = PruebasCaja.baseTemporal()) {
+            rutas.logica.Catalogo cat = new rutas.logica.Catalogo(bd);
+            String e1 = crearConNombre(cat, "x".repeat(10_000));
+            revisar("H4 caso 1: nombre de 10.000 letras se rechaza: " + e1, e1 != null && e1.contains("máximo es 120"));
+            revisar("H4: 120 letras sí entran", crearConNombre(cat, "y".repeat(120)) == null);
+            revisar("H4: espacios dobles se quitan", crearConNombre(cat, "  Arroz    Diana  ") == null
+                    && cat.buscarNombre("arroz diana", 1).get(0).getNombre().equals("Arroz Diana"));
+            revisar("H4 caso 2: «' OR 1=1 --» se guarda como texto (no rompe nada)", crearConNombre(cat, "' OR 1=1 --") == null
+                    && cat.buscarNombre("' or 1=1", 1).size() == 1);
+            String emoji = crearConNombre(cat, "Torta \uD83C\uDF82");
+            revisar("H4: emojis en el nombre se rechazan: " + emoji, emoji != null && emoji.contains("emojis"));
+            revisar("H4: también el corazón ❤ y el invisible de los emojis",
+                    crearConNombre(cat, "Amor ❤️") != null && crearConNombre(cat, "Uno\u200DDos") != null);
+            revisar("H4: ° ® ™ ½ y tildes sí se permiten", crearConNombre(cat, "Aguardiente 29° Néctar® ½ lt™") == null);
+            revisar("H4: caracteres de control se rechazan", crearConNombre(cat, "Pa\u0007n") != null);
+            rutas.modelo.FichaProducto f = new rutas.modelo.FichaProducto();
+            f.descripcion = "d".repeat(501);
+            revisar("H4: descripción de 501 se rechaza", lanza("máximo es 500", () -> f.validar(1000)));
+            f.descripcion = "línea uno\nlínea dos";
+            f.garantia = "g".repeat(301);
+            revisar("H4: garantía de 301 se rechaza (y la descripción con saltos de línea sí entra)",
+                    lanza("garantía", () -> f.validar(1000)));
+            f.garantia = "";
+            f.caracterizar = true;
+            f.caracteristicas.add(new String[]{"c".repeat(41), "rojo"});
+            revisar("H4: nombre de característica de 41 se rechaza", lanza("máximo es 40", () -> f.validar(1000)));
+            f.caracteristicas.set(0, new String[]{"Color", "v".repeat(121)});
+            revisar("H4: valor de característica de 121 se rechaza", lanza("máximo es 120", () -> f.validar(1000)));
+            rutas.modelo.FichaProducto antes = new rutas.modelo.FichaProducto();
+            antes.caracteristicas.add(new String[]{"Color", "v".repeat(121)});
+            revisar("H4: una característica vieja larga que no se tocó no impide guardar", noLanza(() -> f.validar(1000, antes)));
+            revisar("H4: limpiar quita espacios dobles y de los lados",
+                    rutas.logica.Textos.limpiar("  a   b \n c ").equals("a b c")
+                    && rutas.logica.Textos.limpiarLineas(" a   b \n\n\n\n c ").equals("a b\n\nc"));
+            // un nombre viejo de mas de 120 (de antes de la regla) no impide cambiarle el precio
+            long id = bd.insertarProducto(new rutas.modelo.Producto(0, "LARGO", "z".repeat(150), Unidad.UNIDAD, 900, 0, 0, 0,
+                    null, true)).getId();
+            cat.recargar();
+            revisar("H4: un nombre viejo de 150 sin tocar no impide editar el precio", noLanza(() -> {
+                try {
+                    cat.editar(new rutas.modelo.Producto(id, "LARGO", "z".repeat(150), Unidad.UNIDAD, 950, 0, 0, 0, null, true));
+                } catch (java.sql.SQLException e) {
+                    throw new IllegalStateException(e);
+                }
+            }));
+        }
+        java.util.List<rutas.modelo.Cliente> hay = new java.util.ArrayList<>();
+        revisar("H4: nota del cliente de 301 y dirección de 151 se rechazan",
+                lanza("La nota", () -> rutas.vista.PruebaAcceso.armarClienteCon(hay, null, "Ana Ruiz", "Calle 1", "n".repeat(301)))
+                && lanza("La dirección", () -> rutas.vista.PruebaAcceso.armarClienteCon(hay, null, "Ana Ruiz", "d".repeat(151), "")));
+        rutas.modelo.Cliente viejo = new rutas.modelo.Cliente("Ana Ruiz", "", "d".repeat(151), "", 0, 0);
+        revisar("H4: una dirección vieja larga sin tocar no impide editar el cliente",
+                noLanza(() -> rutas.vista.PruebaAcceso.armarClienteCon(java.util.List.of(viejo), viejo, "Ana Ruiz",
+                        "d".repeat(151), "portón verde")));
     }
 
     /** H10: los codigos se guardan y se buscan en mayusculas (caso 21). */

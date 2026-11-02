@@ -66,6 +66,33 @@ public class FichaProducto {
 
     /** Revisa que todo tenga sentido; lanza IllegalArgumentException con un mensaje para el usuario. */
     public void validar(long precioVenta) {
+        validar(precioVenta, null);
+    }
+
+    /**
+     * antes: la ficha como estaba guardada (null si es nueva). Los textos de antes que no se tocaron
+     * no se vuelven a revisar contra los largos nuevos (asi un dato viejo no impide editar lo demas).
+     */
+    public void validar(long precioVenta, FichaProducto antes) {
+        if (antes == null || !descripcion.equals(rutas.logica.Textos.limpiarLineas(antes.descripcion))) {
+            rutas.logica.Textos.revisar(descripcion, "La descripción", rutas.logica.Textos.DESCRIPCION, true);
+        }
+        if (antes == null || !garantia.equals(rutas.logica.Textos.limpiarLineas(antes.garantia))) {
+            rutas.logica.Textos.revisar(garantia, "La nota de garantía", rutas.logica.Textos.GARANTIA, true);
+        }
+        if (caracterizar) {
+            for (String[] c : caracteristicas) {
+                boolean igual = antes != null && antes.caracteristicas.stream()
+                        .anyMatch(a -> rutas.logica.Textos.limpiar(a[0]).equals(c[0])
+                                && rutas.logica.Textos.limpiar(a[1]).equals(c[1]));
+                if (!igual && c[0] != null && c[1] != null) {
+                    rutas.logica.Textos.revisar(c[0], "El nombre de la característica «" + c[0] + "»",
+                            rutas.logica.Textos.CARACTERISTICA_NOMBRE, false);
+                    rutas.logica.Textos.revisar(c[1], "El valor de la característica «" + c[0] + "»",
+                            rutas.logica.Textos.CARACTERISTICA_VALOR, false);
+                }
+            }
+        }
         if (!esProducto && !esInsumo && !esReceta) {
             throw new IllegalArgumentException("Marque si es Producto, Insumo o Receta / Servicio / Combo");
         }

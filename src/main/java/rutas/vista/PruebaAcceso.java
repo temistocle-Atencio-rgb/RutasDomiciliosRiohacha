@@ -17,6 +17,12 @@ public final class PruebaAcceso {
                 "riohacha", credito, true, "");
     }
 
+    /** Como armarCliente, con direccion y nota. */
+    public static rutas.modelo.Cliente armarClienteCon(java.util.List<rutas.modelo.Cliente> todos, rutas.modelo.Cliente viejo,
+            String nombre, String direccion, String nota) {
+        return FormularioCliente.armar(todos, viejo, "", "", nombre, "", "", direccion, "GUAJIRA", "riohacha", "", true, nota);
+    }
+
     public static String departamentoDeLista(String valor) {
         return FormularioCliente.departamentoDeLista(valor);
     }

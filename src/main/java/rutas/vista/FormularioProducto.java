@@ -1071,7 +1071,7 @@ final class FormularioProducto {
                 ImportadorProductos.revisarCantidadEscrita(minimo, unidad, "El stock mínimo");
             }
             FichaProducto f = leerFicha(venta);
-            f.validar(venta);
+            f.validar(venta, editando == null ? null : ficha); // lo de antes que no se toco no se vuelve a revisar
             byte[] desdeUrl = null;
             boolean hayQueBajar = fotoElegida == null && !f.urlImagen.isEmpty()
                     && (!f.urlImagen.equals(ficha.urlImagen) || editando == null || editando.getFoto() == null);
@@ -1159,8 +1159,8 @@ final class FormularioProducto {
     /** Arma la ficha con lo que hay en pantalla (puede lanzar IllegalArgumentException si algo esta mal escrito). */
     private FichaProducto leerFicha(long venta) {
         FichaProducto f = new FichaProducto();
-        f.descripcion = areaDescripcion.getText().trim();
-        f.garantia = areaGarantia.getText().trim();
+        f.descripcion = rutas.logica.Textos.limpiarLineas(areaDescripcion.getText());
+        f.garantia = rutas.logica.Textos.limpiarLineas(areaGarantia.getText());
         f.medida = (String) comboMedida.getSelectedItem();
         f.impuestos = impuestos.getElegidas();
         f.vencimiento = campoFecha.getFecha();
@@ -1183,7 +1183,8 @@ final class FormularioProducto {
         if (f.caracterizar) {
             for (JTextField[] c : filasCaract) {
                 if (!c[0].getText().isBlank() || !c[1].getText().isBlank()) {
-                    f.caracteristicas.add(new String[]{c[0].getText().trim(), c[1].getText().trim()});
+                    f.caracteristicas.add(new String[]{rutas.logica.Textos.limpiar(c[0].getText()),
+                        rutas.logica.Textos.limpiar(c[1].getText())});
                 }
             }
         }

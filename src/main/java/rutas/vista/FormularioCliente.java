@@ -270,7 +270,16 @@ final class FormularioCliente {
         }
         double lat = viejo == null ? 0 : viejo.getLat();
         double lon = viejo == null ? 0 : viejo.getLon();
-        return new Cliente(n, tel, limpio(direccion), limpio(nota).replaceAll("\\s+", " "), lat, lon, tip, doc, mail,
+        String dir = rutas.logica.Textos.limpiar(direccion);
+        String not = rutas.logica.Textos.limpiar(nota);
+        // lo de antes que no se toco no se vuelve a revisar contra los largos nuevos
+        if (viejo == null || !dir.equals(rutas.logica.Textos.limpiar(viejo.getDireccion()))) {
+            rutas.logica.Textos.revisar(dir, "La dirección", rutas.logica.Textos.DIRECCION, false);
+        }
+        if (viejo == null || !not.equals(rutas.logica.Textos.limpiar(viejo.getNota()))) {
+            rutas.logica.Textos.revisar(not, "La nota", rutas.logica.Textos.NOTA, false);
+        }
+        return new Cliente(n, tel, dir, not, lat, lon, tip, doc, mail,
                 limpio(departamento), limpio(municipio).toUpperCase(), tope, activo);
     }
 
