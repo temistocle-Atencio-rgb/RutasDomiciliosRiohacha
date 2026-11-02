@@ -280,6 +280,29 @@ public class PruebasValidacion {
                     bd.buscarPorCodigoEnBase("xy-1").getCodigo().equals("XY-1"));
             revisar("H10: los que chocan se dejan como estaban y se avisan: " + bd.codigosRepetidos(),
                     bd.codigosRepetidos().equals(java.util.List.of("ZZ-9")));
+            rutas.logica.Catalogo cat = new rutas.logica.Catalogo(bd);
+            rutas.modelo.Producto b = null, c = null;
+            for (rutas.modelo.Producto x : cat.todosConInactivos()) {
+                if ("B".equals(x.getNombre())) {
+                    b = x;
+                } else if ("C".equals(x.getNombre())) {
+                    c = x;
+                }
+            }
+            final rutas.modelo.Producto pb = b;
+            final rutas.modelo.Producto enArbol = cat.buscarCodigo("ZZ-9");
+            final rutas.modelo.Producto elOtro = enArbol.getId() == b.getId() ? c : b;
+            cat.desactivar(enArbol.getId()); // se quita justo el que tiene la clave en el arbol
+            revisar("H10: desactivar uno de los repetidos no deja al otro sin encontrar por código",
+                    cat.buscarCodigo("zz-9") != null && cat.buscarCodigo("ZZ-9").getId() == elOtro.getId());
+            cat.reactivar(enArbol.getId());
+            revisar("H10: al de código repetido de antes se le puede cambiar el nombre (el código queda igual)", noLanza(() -> {
+                try {
+                    cat.editar(new rutas.modelo.Producto(pb.getId(), "zz-9", "B nuevo", Unidad.UNIDAD, 100, 0, 0, 0, null, true));
+                } catch (java.sql.SQLException e) {
+                    throw new IllegalStateException(e);
+                }
+            }) && bd.buscarProductoPorId(pb.getId()).getCodigo().equals("zz-9"));
         }
     }
 

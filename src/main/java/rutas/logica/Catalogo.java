@@ -69,7 +69,10 @@ public class Catalogo {
 
     private void poner(Producto p) {
         if (p.getCodigo() != null) {
-            porCodigo.insertar(clave(p.getCodigo()), p);
+            Producto otro = porCodigo.buscar(clave(p.getCodigo()));
+            if (otro == null || otro.getId() == p.getId()) { // dos de antes con abc1 y ABC1: no se pisan
+                porCodigo.insertar(clave(p.getCodigo()), p);
+            }
         }
         porNombre.insertar(claveNombre(p), p);
         porId.insertar(p.getId(), p);
@@ -77,7 +80,19 @@ public class Catalogo {
 
     private void quitar(Producto p) {
         if (p.getCodigo() != null) {
-            porCodigo.eliminar(clave(p.getCodigo()));
+            Producto enArbol = porCodigo.buscar(clave(p.getCodigo()));
+            if (enArbol != null && enArbol.getId() == p.getId()) { // solo si la clave es de este producto
+                porCodigo.eliminar(clave(p.getCodigo()));
+                porNombre.eliminar(claveNombre(p));
+                porId.eliminar(p.getId());
+                for (Producto otro : porId.enOrden()) { // un repetido de antes (abc1 / ABC1) toma su lugar
+                    if (otro.getCodigo() != null && clave(otro.getCodigo()).equals(clave(p.getCodigo()))) {
+                        porCodigo.insertar(clave(otro.getCodigo()), otro);
+                        break;
+                    }
+                }
+                return;
+            }
         }
         porNombre.eliminar(claveNombre(p));
         porId.eliminar(p.getId());
@@ -202,10 +217,17 @@ public class Catalogo {
     /** Primero se guarda en la base; solo si salio bien se cambian los arboles. */
     public Producto editar(Producto p) throws SQLException {
         exigirEditar();
-        p = conNombreLimpio(conCodigoMayus(p));
         Producto viejo = bd.buscarProductoPorId(p.getId());
         if (viejo == null) {
             throw new IllegalArgumentException("Ese producto ya no existe");
+        }
+        if (p.getCodigo() != null && viejo.getCodigo() != null && clave(p.getCodigo()).equals(clave(viejo.getCodigo()))) {
+            // el codigo no cambio: se guarda tal como estaba (un abc1 de antes que choca con ABC1 no se toca)
+            p = conNombreLimpio(new Producto(p.getId(), viejo.getCodigo(), p.getNombre(), p.getUnidad(), p.getPrecioVenta(),
+                    p.getPrecioCompra(), p.getStock(), p.getMinimo(), p.getFoto(), p.isActivo(), p.getCategoriaId(),
+                    p.isManejaInventario()));
+        } else {
+            p = conNombreLimpio(conCodigoMayus(p));
         }
         if (sesion != null && !sesion.puede(Permiso.VER_COSTOS) && p.getPrecioCompra() != viejo.getPrecioCompra()) {
             throw new IllegalArgumentException("Su usuario no puede cambiar el costo del producto");
@@ -289,13 +311,13 @@ public class Catalogo {
             throw new IllegalArgumentException("El precio máximo es $99.999.999");
         }
         boolean codigoNuevo = p.getCodigo() != null && (viejo == null || viejo.getCodigo() == null
-                || !p.getCodigo().equals(clave(viejo.getCodigo())));
+                || !clave(p.getCodigo()).equals(clave(viejo.getCodigo())));
         if (codigoNuevo && !p.getCodigo().matches(FORMATO_CODIGO)) {
             throw new IllegalArgumentException(p.getCodigo().toUpperCase().matches(".*\\d[.,]?\\d*E\\+?\\d+")
                     ? "Ese código parece cambiado por Excel (notación científica); escríbalo completo"
                     : "El código lleva solo letras, números y guion (sin espacios, comillas ni puntos), máximo 40");
         }
-        if (p.getCodigo() != null) {
+        if (codigoNuevo) { // si el codigo no cambio ya esta en la base: no se vuelve a revisar
             Producto otro = bd.buscarPorCodigoEnBase(p.getCodigo());
             if (otro != null && otro.getId() != p.getId()) {
                 throw new IllegalArgumentException(otro.isActivo()

@@ -549,8 +549,7 @@ public class BaseTienda implements AutoCloseable {
         ps.setInt(13, p.isManejaInventario() ? 1 : 0);
     }
 
-    /** Busca por codigo aunque el producto este desactivado. */
-    /** Sin importar mayusculas: abc123 encuentra ABC123. */
+    /** Busca por codigo aunque el producto este desactivado, sin importar mayusculas (abc123 encuentra ABC123). */
     public Producto buscarPorCodigoEnBase(String codigo) throws SQLException {
         try (PreparedStatement ps = con.prepareStatement(
                 "SELECT " + CAMPOS_PRODUCTO + " FROM productos WHERE UPPER(codigo) = UPPER(?)")) {
