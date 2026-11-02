@@ -138,7 +138,37 @@ public class BaseTienda implements AutoCloseable {
             st.execute("CREATE INDEX IF NOT EXISTS idx_lineas_venta ON venta_lineas(venta_id)");
             st.execute("CREATE INDEX IF NOT EXISTS idx_pagos_venta ON venta_pagos(venta_id)");
             st.execute("CREATE INDEX IF NOT EXISTS idx_ventas_estado ON ventas(estado)");
+            codigosEnMayusculas(st);
         }
+    }
+
+    /**
+     * Los codigos se guardan en mayusculas (abc123 y ABC123 son el mismo). Los de antes se pasan a
+     * mayusculas, salvo si chocan con otro (esos se dejan y se cuentan en codigosRepetidos()). La
+     * base no deja repetir un codigo sin importar mayusculas (indice unico sobre UPPER(codigo)).
+     */
+    private void codigosEnMayusculas(Statement st) throws SQLException {
+        st.execute("UPDATE productos SET codigo = UPPER(codigo) WHERE codigo IS NOT NULL AND codigo <> UPPER(codigo)"
+                + " AND NOT EXISTS (SELECT 1 FROM productos q WHERE q.id <> productos.id"
+                + " AND UPPER(q.codigo) = UPPER(productos.codigo))");
+        try {
+            st.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_codigo_mayus ON productos(UPPER(codigo))");
+        } catch (SQLException e) {
+            Ubicaciones.registrarError(e); // hay codigos que solo cambian en mayusculas: el programa igual los revisa
+        }
+    }
+
+    /** Codigos que existen dos veces si no se miran las mayusculas (quedaron de antes; hay que corregirlos a mano). */
+    public List<String> codigosRepetidos() throws SQLException {
+        List<String> l = new ArrayList<>();
+        try (Statement st = con.createStatement();
+             ResultSet rs = st.executeQuery("SELECT UPPER(codigo) FROM productos WHERE codigo IS NOT NULL"
+                     + " GROUP BY UPPER(codigo) HAVING COUNT(*) > 1")) {
+            while (rs.next()) {
+                l.add(rs.getString(1));
+            }
+        }
+        return l;
     }
 
     /** Tablas de la ficha del producto (lo que va ademas de lo basico) y de las bodegas. */
@@ -520,8 +550,15 @@ public class BaseTienda implements AutoCloseable {
     }
 
     /** Busca por codigo aunque el producto este desactivado. */
+    /** Sin importar mayusculas: abc123 encuentra ABC123. */
     public Producto buscarPorCodigoEnBase(String codigo) throws SQLException {
-        return buscarProducto("codigo", codigo);
+        try (PreparedStatement ps = con.prepareStatement(
+                "SELECT " + CAMPOS_PRODUCTO + " FROM productos WHERE UPPER(codigo) = UPPER(?)")) {
+            ps.setString(1, codigo == null ? null : codigo.trim());
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? leerProducto(rs) : null;
+            }
+        }
     }
 
     public Producto buscarProductoPorId(long id) throws SQLException {

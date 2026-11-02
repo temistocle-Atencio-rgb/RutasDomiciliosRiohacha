@@ -119,6 +119,7 @@ public class PanelProductos extends JPanel {
                 refrescarCategorias(); // pudieron cambiar en Inventario › Categorías
                 refrescar();
                 javax.swing.SwingUtilities.invokeLater(campoBuscar::requestFocusInWindow);
+                avisarCodigosRepetidos();
             }
         });
         getInputMap(WHEN_IN_FOCUSED_WINDOW).put(KeyStroke.getKeyStroke("control N"), "nuevo");
@@ -601,6 +602,26 @@ public class PanelProductos extends JPanel {
             }
         }
         combo.setSelectedItem(porDefecto);
+    }
+
+    private boolean repetidosAvisados;
+
+    /** Codigos de antes que solo cambian en mayusculas (abc1 y ABC1): se avisa una vez para corregirlos. */
+    private void avisarCodigosRepetidos() {
+        if (repetidosAvisados || !puedeEditar) {
+            return;
+        }
+        repetidosAvisados = true;
+        try {
+            List<String> rep = app.getTienda().codigosRepetidos();
+            if (!rep.isEmpty()) {
+                Aviso.mostrar(this, Aviso.Tipo.AVISO, rep.size() == 1 ? "Un código está repetido" : rep.size()
+                        + " códigos están repetidos", "Solo cambian en mayúsculas: " + String.join(", ", rep)
+                        + ". Cámbielo en uno de los dos productos.", true);
+            }
+        } catch (java.sql.SQLException e) {
+            Ubicaciones.registrarError(e);
+        }
     }
 
     // ------------------------------------------------------------------

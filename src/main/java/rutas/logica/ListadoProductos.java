@@ -49,7 +49,8 @@ public final class ListadoProductos {
             if (categoriaId != null && !categoriaId.equals(p.getCategoriaId())) {
                 continue;
             }
-            if (!t.isEmpty() && !t.equals(p.getCodigo()) && !p.getClaveNombre().contains(clave)) {
+            if (!t.isEmpty() && !t.equalsIgnoreCase(p.getCodigo() == null ? "" : p.getCodigo())
+                    && !p.getClaveNombre().contains(clave)) {
                 continue;
             }
             if (cumple(p, mostrar)) {

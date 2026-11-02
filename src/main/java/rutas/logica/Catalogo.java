@@ -50,7 +50,7 @@ public class Catalogo {
 
     private void poner(Producto p) {
         if (p.getCodigo() != null) {
-            porCodigo.insertar(p.getCodigo(), p);
+            porCodigo.insertar(clave(p.getCodigo()), p);
         }
         porNombre.insertar(claveNombre(p), p);
         porId.insertar(p.getId(), p);
@@ -58,7 +58,7 @@ public class Catalogo {
 
     private void quitar(Producto p) {
         if (p.getCodigo() != null) {
-            porCodigo.eliminar(p.getCodigo());
+            porCodigo.eliminar(clave(p.getCodigo()));
         }
         porNombre.eliminar(claveNombre(p));
         porId.eliminar(p.getId());
@@ -70,7 +70,7 @@ public class Catalogo {
         if (codigo == null || codigo.isBlank()) {
             return null;
         }
-        return porCodigo.buscar(codigo.trim());
+        return porCodigo.buscar(clave(codigo)); // lo que lea el lector, en mayusculas
     }
 
     public List<Producto> buscarNombre(String texto, int limite) {
@@ -143,7 +143,23 @@ public class Catalogo {
 
     // ---------------- cambiar ----------------
 
+    /** El codigo como se guarda y se busca: sin espacios a los lados y en mayusculas. */
+    static String clave(String codigo) {
+        return codigo.trim().toUpperCase(java.util.Locale.ROOT);
+    }
+
+    /** El mismo producto con el codigo en mayusculas (abc123 y ABC123 son el mismo codigo). */
+    private static Producto conCodigoMayus(Producto p) {
+        if (p.getCodigo() == null || p.getCodigo().equals(clave(p.getCodigo()))) {
+            return p;
+        }
+        return new Producto(p.getId(), clave(p.getCodigo()), p.getNombre(), p.getUnidad(), p.getPrecioVenta(),
+                p.getPrecioCompra(), p.getStock(), p.getMinimo(), p.getFoto(), p.isActivo(), p.getCategoriaId(),
+                p.isManejaInventario());
+    }
+
     public Producto crear(Producto p) throws SQLException {
+        p = conCodigoMayus(p);
         validar(p, null);
         Producto guardado = bd.insertarProducto(p.conActivo(true));
         poner(guardado);
@@ -152,6 +168,7 @@ public class Catalogo {
 
     /** Primero se guarda en la base; solo si salio bien se cambian los arboles. */
     public Producto editar(Producto p) throws SQLException {
+        p = conCodigoMayus(p);
         Producto viejo = bd.buscarProductoPorId(p.getId());
         if (viejo == null) {
             throw new IllegalArgumentException("Ese producto ya no existe");
@@ -225,7 +242,8 @@ public class Catalogo {
         if (p.getPrecioVenta() > ImportadorProductos.PRECIO_MAXIMO || p.getPrecioCompra() > ImportadorProductos.PRECIO_MAXIMO) {
             throw new IllegalArgumentException("El valor máximo es $99.999.999");
         }
-        boolean codigoNuevo = p.getCodigo() != null && (viejo == null || !p.getCodigo().equals(viejo.getCodigo()));
+        boolean codigoNuevo = p.getCodigo() != null && (viejo == null || viejo.getCodigo() == null
+                || !p.getCodigo().equals(clave(viejo.getCodigo())));
         if (codigoNuevo && !p.getCodigo().matches(FORMATO_CODIGO)) {
             throw new IllegalArgumentException(p.getCodigo().toUpperCase().matches(".*\\d[.,]?\\d*E\\+?\\d+")
                     ? "Ese código parece cambiado por Excel (notación científica); escríbalo completo"

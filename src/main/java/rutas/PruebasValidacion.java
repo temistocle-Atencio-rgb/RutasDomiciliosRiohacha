@@ -15,6 +15,36 @@ public class PruebasValidacion {
         probarCsvFormulas();
         probarTodoONada();
         probarFormatoCodigo();
+        probarMayusculas();
+    }
+
+    /** H10: los codigos se guardan y se buscan en mayusculas (caso 21). */
+    private static void probarMayusculas() throws Exception {
+        java.io.File archivo;
+        try (rutas.logica.BaseTienda bd = PruebasCaja.baseTemporal()) {
+            archivo = bd.getArchivo();
+            rutas.logica.Catalogo cat = new rutas.logica.Catalogo(bd);
+            revisar("H10: «abc123» se guarda como ABC123", crearConCodigo(cat, "abc123") == null
+                    && bd.buscarPorCodigoEnBase("ABC123").getCodigo().equals("ABC123"));
+            String e21 = crearConCodigo(cat, "ABC123");
+            revisar("H10 caso 21: ABC123 después de abc123 se rechaza por repetido: " + e21, e21 != null && e21.contains("ya es de"));
+            revisar("H10: el lector en minúsculas encuentra el producto", cat.buscarCodigo("abc123") != null
+                    && bd.buscarPorCodigoEnBase("aBc123") != null);
+            // bases de antes: codigos en minusculas, uno de ellos chocando con otro en mayusculas
+            try (java.sql.Connection con = java.sql.DriverManager.getConnection("jdbc:sqlite:" + archivo.getAbsolutePath());
+                 java.sql.Statement st = con.createStatement()) {
+                st.execute("DROP INDEX IF EXISTS idx_codigo_mayus");
+                st.execute("INSERT INTO productos(codigo, nombre, clave_nombre, unidad, precio_venta, precio_compra,"
+                        + " actualizado) VALUES('xy-1','A','a','UNIDAD',100,0,'2026-01-01T00:00'),"
+                        + " ('zz-9','B','b','UNIDAD',100,0,'2026-01-01T00:00'), ('ZZ-9','C','c','UNIDAD',100,0,'2026-01-01T00:00')");
+            }
+        }
+        try (rutas.logica.BaseTienda bd = new rutas.logica.BaseTienda(archivo, 1000)) {
+            revisar("H10: al abrir una base vieja los códigos pasan a mayúsculas",
+                    bd.buscarPorCodigoEnBase("xy-1").getCodigo().equals("XY-1"));
+            revisar("H10: los que chocan se dejan como estaban y se avisan: " + bd.codigosRepetidos(),
+                    bd.codigosRepetidos().equals(java.util.List.of("ZZ-9")));
+        }
     }
 
     /** Crea un producto con ese codigo (null si se guardo; el mensaje si se rechazo). */
