@@ -21,6 +21,12 @@ public final class MensajesWhatsApp {
      */
     public static String salida(String negocio, LocalTime hora, String domiciliario, List<Salida.Entrega> entregas,
                                 String enlace, String mapa) {
+        return salida(negocio, hora, domiciliario, entregas, enlace, mapa, null);
+    }
+
+    /** responderAntes: hasta qué hora puede aceptar (null = sin hora). */
+    public static String salida(String negocio, LocalTime hora, String domiciliario, List<Salida.Entrega> entregas,
+                                String enlace, String mapa, LocalTime responderAntes) {
         StringBuilder b = new StringBuilder();
         if (negocio != null && !negocio.isBlank()) {
             b.append('*').append(negocio.trim().toUpperCase()).append("*\n");
@@ -36,7 +42,9 @@ public final class MensajesWhatsApp {
             b.append("Cobras en total *").append(Tarifa.pesos(total)).append("*\n");
         }
         if (enlace != null && !enlace.isBlank()) {
-            b.append("\n> Abre el enlace y toca *Acepto* (o *No puedo*):\n").append(enlace).append('\n');
+            b.append("\n> Abre el enlace y toca *Acepto* (o *No puedo*)")
+                    .append(responderAntes == null ? "" : " antes de las *" + responderAntes.format(rutas.modelo.Ruta.FORMATO_HORA) + "*")
+                    .append(":\n").append(enlace).append('\n');
         }
         for (int i = 0; i < entregas.size(); i++) {
             Salida.Entrega e = entregas.get(i);
@@ -141,5 +149,18 @@ public final class MensajesWhatsApp {
         String n = nombre == null ? "" : nombre.trim();
         int i = n.indexOf(' ');
         return n.isEmpty() ? "" : i > 0 ? n.substring(0, i) : n;
+    }
+
+    /** El enlace personal del repartidor: con él abre «Mis salidas» (y puede instalar la app). */
+    public static String enlacePersonal(String negocio, String domiciliario, String enlace) {
+        StringBuilder b = new StringBuilder();
+        if (negocio != null && !negocio.isBlank()) {
+            b.append('*').append(negocio.trim().toUpperCase()).append("*\n\n");
+        }
+        b.append("Hola *").append(primerNombre(domiciliario)).append("*, este es tu enlace de repartidor:\n")
+                .append(enlace).append("\n\n")
+                .append("Ábrelo en tu celular: ahí ves tus salidas y marcas si estás *disponible*.\n")
+                .append("Es solo tuyo y queda en el primer celular donde lo abras. No lo compartas.");
+        return b.toString();
     }
 }

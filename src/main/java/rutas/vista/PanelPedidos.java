@@ -1410,12 +1410,16 @@ public class PanelPedidos extends JPanel {
         for (rutas.modelo.Salida.Entrega e : s.entregas) {
             copia.add(e.copia()); // el otro hilo no lee lo que la pantalla puede cambiar
         }
+        // la ruta por las calles, la tienda y hasta cuándo puede aceptar (para la página con mapa)
+        rutas.logica.NubeRepartidor.Extra extra = app.extraPara(r);
+        String idAntes = d.idNube;
         s.subiendo = true; // mientras tanto no se cierra ni se le agregan entregas
         app.avisar();
         new javax.swing.SwingWorker<rutas.logica.NubeRepartidor.Subida, Void>() {
             @Override
             protected rutas.logica.NubeRepartidor.Subida doInBackground() throws Exception {
-                return nube.subir(codigo, d.nombre, app.getNegocio(), copia);
+                extra.repartidorId = Aplicacion.repartidorEnNube(nube, d);
+                return nube.subir(codigo, d.nombre, app.getNegocio(), copia, extra);
             }
 
             @Override
@@ -1433,9 +1437,17 @@ public class PanelPedidos extends JPanel {
                     s.errorNube = error;
                 }
                 guardarSilencio(s);
+                if (d.id > 0 && !d.idNube.equals(idAntes)) { // se creó (o se volvió a crear) en Supabase
+                    try {
+                        app.guardarEnlaceNube(d);
+                    } catch (java.io.IOException ex) {
+                        rutas.logica.Ubicaciones.registrarError(ex);
+                    }
+                }
                 app.avisar();
                 String enlace = s.enLinea() ? rutas.logica.NubeRepartidor.enlace(aj.pagina, codigo) : "";
-                String texto = rutas.logica.MensajesWhatsApp.salida(app.getNegocio(), hora, d.nombre, s.entregas, enlace, mapa);
+                String texto = rutas.logica.MensajesWhatsApp.salida(app.getNegocio(), hora, d.nombre, s.entregas, enlace, mapa,
+                        s.enLinea() && s.venceEn != null ? s.venceEn.toLocalTime() : null);
                 abrirWhatsApp(d.celular, texto, s.enLinea() ? null : "No se pudo crear el enlace (" + error
                         + "). La ruta va por WhatsApp; en «Salidas» puede volver a enviar el enlace.");
             }

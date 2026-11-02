@@ -30,6 +30,7 @@ import rutas.modelo.Parada;
 import rutas.modelo.Ruta;
 import rutas.modelo.Salida;
 import rutas.logica.NubeRepartidor;
+import rutas.logica.RutaNube;
 
 /**
  * Estado compartido del programa: el mapa, las estructuras de busqueda,
@@ -674,6 +675,23 @@ public class Aplicacion {
         guardar(() -> bd.guardarDomiciliario(d));
     }
 
+    /** Guarda su id y enlace de Supabase (sin tocar lo demás). */
+    public void guardarEnlaceNube(rutas.modelo.Domiciliario d) throws IOException {
+        if (d.id > 0) {
+            guardar(() -> bd.guardarEnlaceNube(d.id, d.idNube, d.enlace));
+        }
+    }
+
+    /** El domiciliario como está guardado ahora (la lista de la pantalla puede ser vieja); null si ya no está. */
+    public rutas.modelo.Domiciliario domiciliarioActual(long id) {
+        for (rutas.modelo.Domiciliario d : getDomiciliarios()) {
+            if (d.id == id) {
+                return d;
+            }
+        }
+        return null;
+    }
+
     public void eliminarDomiciliario(rutas.modelo.Domiciliario d) throws IOException {
         guardar(() -> bd.eliminarDomiciliario(d.id));
     }
@@ -716,6 +734,115 @@ public class Aplicacion {
 
     void setSeguimiento(Seguimiento s) {
         seguimiento = s;
+    }
+
+    // ---------------- repartidor en vivo ----------------
+
+    /** Lo último que se leyó de Supabase sobre cada repartidor (id en Supabase -> estado). */
+    private java.util.Map<String, NubeRepartidor.EstadoRepartidor> estadosRepartidores = new java.util.HashMap<>();
+
+    void setEstadosRepartidores(java.util.Map<String, NubeRepartidor.EstadoRepartidor> m) {
+        estadosRepartidores = m == null ? new java.util.HashMap<>() : m;
+    }
+
+    public NubeRepartidor.EstadoRepartidor estadoNube(rutas.modelo.Domiciliario d) {
+        return d == null || !d.enNube() ? null : estadosRepartidores.get(d.idNube);
+    }
+
+    /** Lo que se muestra del domiciliario: Disponible, En ruta (con cuántas le faltan) o No disponible. */
+    public enum Disponibilidad { DISPONIBLE, EN_RUTA, NO_DISPONIBLE, SIN_APP }
+
+    public Disponibilidad disponibilidad(rutas.modelo.Domiciliario d) {
+        if (pendientesDe(d) > 0) {
+            return Disponibilidad.EN_RUTA;
+        }
+        NubeRepartidor.EstadoRepartidor e = estadoNube(d);
+        if (e == null) {
+            return Disponibilidad.SIN_APP;
+        }
+        return e.disponible && e.activo ? Disponibilidad.DISPONIBLE : Disponibilidad.NO_DISPONIBLE;
+    }
+
+    /** Entregas que le faltan en las salidas que aceptó y siguen en camino. */
+    public int pendientesDe(rutas.modelo.Domiciliario d) {
+        int n = 0;
+        for (Salida s : salidasAbiertas()) {
+            if (s.repartidor.equalsIgnoreCase(d.nombre) && (s.aceptadaEn != null || !s.enLinea())) {
+                n += s.cuantas(Salida.Entrega.EN_CAMINO);
+            }
+        }
+        return n;
+    }
+
+    /** Hay algún domiciliario creado en Supabase (para leer su estado en cada revisión). */
+    boolean hayRepartidoresEnNube() {
+        for (rutas.modelo.Domiciliario d : getDomiciliarios()) {
+            if (d.enNube()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** La ruta, las calles de alrededor, la tienda y el vencimiento para subir con una salida nueva. */
+    public NubeRepartidor.Extra extraPara(Ruta r) {
+        return armarExtra(r.nodos());
+    }
+
+    /** Para volver a mandar una salida: se une la tienda con sus paradas en orden. */
+    public NubeRepartidor.Extra extraPara(Salida s) {
+        List<Integer> paradas = new ArrayList<>();
+        for (Salida.Entrega e : s.entregas) {
+            paradas.add(e.parada.getNodo());
+        }
+        int b = base == null ? -1 : base.getNodo();
+        return armarExtra(RutaNube.nodosEnOrden(mapa.getGrafo(), trafico, b, paradas));
+    }
+
+    private NubeRepartidor.Extra armarExtra(List<Integer> nodos) {
+        NubeRepartidor.Extra x = new NubeRepartidor.Extra();
+        try {
+            x.ruta = RutaNube.puntos(mapa.getGrafo(), nodos);
+            x.metros = RutaNube.metros(x.ruta);
+            x.calles = RutaNube.calles(mapa.getGrafo(), mapa.getVias(), x.ruta);
+        } catch (RuntimeException e) { // sin ruta la página igual muestra las paradas
+            Ubicaciones.registrarError(e);
+            x.ruta = new ArrayList<>();
+            x.calles = new ArrayList<>();
+        }
+        if (base != null) {
+            x.tiendaLat = base.getLat();
+            x.tiendaLon = base.getLon();
+        }
+        x.minutosParaResponder = NubeRepartidor.MINUTOS_PARA_RESPONDER;
+        return x;
+    }
+
+    /**
+     * Para el hilo de subida: el id del domiciliario en Supabase (lo crea si todavía no está).
+     * "" si no está guardado en la lista o no se pudo crear (la salida sale igual, sin enlace personal).
+     * Cambia el objeto d: después, en el hilo de la pantalla, se guarda con {@link #guardarDomiciliario}.
+     */
+    static String repartidorEnNube(NubeRepartidor nube, rutas.modelo.Domiciliario d) {
+        if (d == null || d.id == 0) {
+            return "";
+        }
+        try {
+            if (d.enNube()) {
+                if (nube.existeRepartidor(d.idNube)) {
+                    return d.idNube;
+                }
+                d.idNube = ""; // lo borraron en Supabase: se crea otra vez con enlace nuevo
+                d.enlace = "";
+            }
+            String[] r = nube.crearRepartidor(d.nombre, d.celular);
+            d.idNube = r[0];
+            d.enlace = r[1];
+            return d.idNube;
+        } catch (IOException e) {
+            Ubicaciones.registrarError(e);
+            return "";
+        }
     }
 
     /** Pide una revision ya (por ejemplo despues de marcar o agregar algo); null si no hay ventana. */

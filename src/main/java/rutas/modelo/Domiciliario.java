@@ -34,6 +34,13 @@ public class Domiciliario {
     public String celular;
     public Tipo tipo;
     public boolean activo = true;
+    /** En Supabase: su id y su enlace personal ("" = todavía no se ha creado allá). */
+    public String idNube = "";
+    public String enlace = "";
+
+    public boolean enNube() {
+        return !idNube.isEmpty();
+    }
 
     public Domiciliario(long id, String nombre, String celular, Tipo tipo) {
         this.id = id;

@@ -198,10 +198,11 @@ public class PanelSalidas extends JPanel {
         boolean sinNadie = s.enLinea() && s.rechazadaEn != null;
         boolean esperando = s.esperandoRespuesta() && !s.subiendo;
         boolean termino = s.estado == Salida.Estado.REGRESANDO;
-        JLabel est = new JLabel(sinNadie ? "Sin domiciliario" : esperando ? "Esperando"
+        boolean vencida = esperando && s.vencida();
+        JLabel est = new JLabel(sinNadie ? "Sin domiciliario" : vencida ? "Venció" : esperando ? "Esperando"
                 : termino ? "Por cuadrar" : s.estado.toString());
         est.setFont(Tema.textoFuerte(13.5f));
-        est.setForeground(sinNadie ? Tema.ERROR_TEXTO : esperando || s.estado == Salida.Estado.REGRESANDO
+        est.setForeground(sinNadie || vencida ? Tema.ERROR_TEXTO : esperando || s.estado == Salida.Estado.REGRESANDO
                 ? Tema.AVISO_TEXTO : Tema.AZUL);
         cab.add(tit, BorderLayout.CENTER);
         cab.add(est, BorderLayout.EAST);
@@ -222,19 +223,38 @@ public class PanelSalidas extends JPanel {
             p.setForeground(Tema.ERROR_TEXTO);
             t.add(p);
             otro = true;
+        } else if (vencida) {
+            Tema.Parrafo p = Tema.parrafo(quien + " no respondió antes de las " + hora(s.venceEn)
+                    + " y el enlace ya no deja aceptarla: escoja a otro.", 260);
+            p.setFont(Tema.textoFuerte(13));
+            p.setForeground(Tema.ERROR_TEXTO);
+            t.add(p);
+            otro = true;
         } else if (s.esperandoRespuesta() && !s.subiendo) {
             long min = s.enviadaEn == null ? 0 : java.time.Duration.between(s.enviadaEn, LocalDateTime.now()).toMinutes();
-            Tema.Parrafo p = Tema.parrafo(min >= 5 ? quien + " no ha respondido (" + min + " min)."
-                    : "Esperando que " + quien + " acepte…", 260);
+            String antes = s.venceEn == null ? "" : " Tiene hasta las " + hora(s.venceEn) + " para aceptar.";
+            Tema.Parrafo p = Tema.parrafo((min >= Seguimiento.MIN_SIN_RESPUESTA ? quien + " no ha respondido (" + min + " min)."
+                    : "Esperando que " + quien + " acepte…") + antes, 260);
             p.setFont(Tema.textoFuerte(13));
             p.setForeground(Tema.AVISO_TEXTO);
             t.add(p);
-            otro = min >= 5;
+            otro = min >= Seguimiento.MIN_SIN_RESPUESTA;
         } else if (s.aceptadaEn != null) {
             JLabel a = Tema.textoNormal(quien + " aceptó · " + hora(s.aceptadaEn));
             a.setFont(Tema.textoFuerte(13));
             a.setForeground(Tema.EXITO_TEXTO);
             t.add(a);
+            if (s.estado == Salida.Estado.EN_CAMINO && s.ubicacionPausada) {
+                JLabel u = Tema.textoNormal("Pausó su ubicación");
+                u.setFont(Tema.textoFuerte(13));
+                u.setForeground(Tema.AVISO_TEXTO);
+                t.add(u);
+            } else if (s.estado == Salida.Estado.EN_CAMINO && s.avisos.contains("sin_ubicacion")) {
+                JLabel u = Tema.textoNormal("Sin ubicación hace más de " + Seguimiento.MIN_SIN_UBICACION + " min");
+                u.setFont(Tema.textoFuerte(13));
+                u.setForeground(Tema.AVISO_TEXTO);
+                t.add(u);
+            }
         }
         if (s.ubicacionEn != null) {
             JLabel u = Tema.textoNormal("Ubicación de las " + hora(s.ubicacionEn));
@@ -695,6 +715,8 @@ public class PanelSalidas extends JPanel {
         for (Salida.Entrega e : s.entregas) {
             copia.add(e.copia());
         }
+        NubeRepartidor.Extra extra = app.extraPara(s);
+        String idAntes = rep.idNube;
         s.subiendo = true;
         app.avisar();
         String codigo = NubeRepartidor.nuevoCodigo();
@@ -709,12 +731,20 @@ public class PanelSalidas extends JPanel {
                         // si no se pudo borrar, igual quedó cerrada o se borra después
                     }
                 }
-                return nube.subir(codigo, rep.nombre, app.getNegocio(), copia);
+                extra.repartidorId = Aplicacion.repartidorEnNube(nube, rep);
+                return nube.subir(codigo, rep.nombre, app.getNegocio(), copia, extra);
             }
 
             @Override
             protected void done() {
                 s.subiendo = false;
+                if (rep.id > 0 && !rep.idNube.equals(idAntes)) { // se creó en Supabase aunque la subida falle
+                    try {
+                        app.guardarEnlaceNube(rep);
+                    } catch (java.io.IOException ex) {
+                        rutas.logica.Ubicaciones.registrarError(ex);
+                    }
+                }
                 try {
                     get().aplicar(s);
                     s.codigo = codigo;
@@ -722,6 +752,7 @@ public class PanelSalidas extends JPanel {
                     s.tipoRepartidor = rep.tipo.name();
                     s.errorNube = "";
                     s.enviadaEn = LocalDateTime.now();
+                    s.avisos.clear();
                     s.aceptadaEn = null;
                     s.rechazadaEn = null;
                     s.motivoRechazo = "";
@@ -733,7 +764,7 @@ public class PanelSalidas extends JPanel {
                         }
                     }
                     String msj = rutas.logica.MensajesWhatsApp.salida(app.getNegocio(), s.creada.toLocalTime(), rep.nombre,
-                            s.entregas, NubeRepartidor.enlace(aj.pagina, codigo), "");
+                            s.entregas, NubeRepartidor.enlace(aj.pagina, codigo), "", s.venceEn.toLocalTime());
                     String cel = rutas.logica.Avisos.numeroWhatsApp(rep.celular).isEmpty() ? "" : rep.celular;
                     try {
                         AbrirWhatsApp.abrir(cel, msj);

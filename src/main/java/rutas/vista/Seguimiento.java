@@ -33,7 +33,16 @@ public class Seguimiento {
         /** Aceptó (true) o dijo que no puede (false, el motivo queda en la salida). */
         default void respondio(Salida s, boolean acepto) {
         }
+
+        /** Algo para la campana (s puede ser null: un aviso del repartidor, no de una salida). */
+        default void aviso(Salida s, String titulo, String texto, boolean grave) {
+        }
     }
+
+    /** Sin aceptar después de esto: aviso para reenviar o mandarla con otro. */
+    static final int MIN_SIN_RESPUESTA = 3;
+    /** Sin ubicación nueva por más de esto (y sin pausarla): aviso. */
+    static final int MIN_SIN_UBICACION = 2;
 
     public static final int CADA_MS = 15000;
     /** Cuánto se espera, después de que marca la última, para cerrar sola una salida que no debe nada. */
@@ -50,6 +59,12 @@ public class Seguimiento {
     private boolean revisando;
     private boolean otraVez; // se pidió revisar mientras había una revisión en curso
     private String error = "";
+    private volatile boolean limpiado; // lo viejo de Supabase se borra una vez cada vez que se abre el programa
+    /** Último «se abrió en otro celular» que ya se avisó, por repartidor. */
+    private final Map<String, java.time.LocalDateTime> otroCelularVisto = new java.util.HashMap<>();
+    private boolean primeraLectura = true;
+    /** Cuándo se abrió el programa: lo que ya estaba vencido o sin respuesta antes no vuelve a sonar. */
+    private final java.time.LocalDateTime inicio = java.time.LocalDateTime.now();
 
     public Seguimiento(Aplicacion app) {
         this.app = app;
@@ -105,6 +120,7 @@ public class Seguimiento {
 
     /** Revisa ya (por ejemplo al abrir los mensajes, al marcar o al agregar una entrega). */
     public void revisar() {
+        revisarAvisos(java.time.LocalDateTime.now()); // los de tiempo salen aunque no haya internet
         if (revisando) {
             otraVez = true;
             return;
@@ -136,14 +152,31 @@ public class Seguimiento {
                 cerradas.add(c);
             }
         }
-        NubeRepartidor nube = abiertas.isEmpty() && cerradas.isEmpty() ? null : app.getNube();
+        boolean leerRepartidores = app.hayRepartidoresEnNube();
+        NubeRepartidor nube = abiertas.isEmpty() && cerradas.isEmpty() && !leerRepartidores ? null : app.getNube();
         if (nube == null) {
             return;
         }
         revisando = true;
+        Object[] reps = new Object[1]; // lo lee el hilo de internet; se aplica en el de la pantalla
         hilo.execute(() -> {
             String err = "";
             try {
+                if (leerRepartidores) {
+                    try {
+                        reps[0] = nube.repartidores();
+                    } catch (IOException ex) {
+                        err = ex.getMessage();
+                    }
+                }
+                if (!limpiado) {
+                    try {
+                        nube.limpiarViejo();
+                        limpiado = true;
+                    } catch (IOException ex) {
+                        // no importa: se intenta en la próxima revisión
+                    }
+                }
                 for (Abierta a : abiertas) {
                     try {
                         for (Object[] m : a.marcas) {
@@ -174,7 +207,14 @@ public class Seguimiento {
                 err = "Error leyendo Supabase: " + ex;
             } finally {
                 String errFinal = err;
-                SwingUtilities.invokeLater(() -> terminar(abiertas, cerradas, errFinal));
+                SwingUtilities.invokeLater(() -> {
+                    if (reps[0] != null) {
+                        @SuppressWarnings("unchecked")
+                        Map<String, NubeRepartidor.EstadoRepartidor> m = (Map<String, NubeRepartidor.EstadoRepartidor>) reps[0];
+                        aplicarRepartidores(m);
+                    }
+                    terminar(abiertas, cerradas, errFinal);
+                });
             }
         });
     }
@@ -191,6 +231,7 @@ public class Seguimiento {
                 algo |= aplicarCerrada(c);
             }
         } finally {
+            revisarAvisos(java.time.LocalDateTime.now());
             if (algo || !err.isEmpty()) {
                 app.avisar();
             }
@@ -268,6 +309,7 @@ public class Seguimiento {
             return false;
         }
         boolean cambio = false;
+        s.leidaEnLinea = true;
         Salida.Estado antes = s.estado;
         for (Map.Entry<Long, String[]> e : est.entregas.entrySet()) {
             Salida.Entrega en = s.buscarNube(e.getKey());
@@ -301,6 +343,14 @@ public class Seguimiento {
             cambio = true;
         }
         s.revisarEstado();
+        if (est.venceEn != null && !est.venceEn.equals(s.venceEn)) {
+            s.venceEn = est.venceEn;
+            cambio = true;
+        }
+        if (est.ubicacionPausada != s.ubicacionPausada) {
+            s.ubicacionPausada = est.ubicacionPausada;
+            cambio = true;
+        }
         if (!Double.isNaN(est.lat) && est.ubicacionEn != null && !est.ubicacionEn.equals(s.ubicacionEn)) {
             s.lat = est.lat;
             s.lon = est.lon;
@@ -351,5 +401,101 @@ public class Seguimiento {
             }
         }
         return cambio || cerro;
+    }
+
+    // ------------------------------------------------------------------
+    //  Avisos de la campana (una sola vez cada uno)
+    // ------------------------------------------------------------------
+
+    /** Lo que se leyó de los repartidores: queda para «¿Quién la lleva?» y avisa si abrieron el enlace en otro celular. */
+    void aplicarRepartidores(Map<String, NubeRepartidor.EstadoRepartidor> m) {
+        app.setEstadosRepartidores(m);
+        java.time.LocalDateTime ahora = java.time.LocalDateTime.now();
+        for (rutas.modelo.Domiciliario d : app.getDomiciliarios()) {
+            NubeRepartidor.EstadoRepartidor e = d.enNube() ? m.get(d.idNube) : null;
+            if (e == null || e.dispositivoCambio == null) {
+                continue;
+            }
+            java.time.LocalDateTime antes = otroCelularVisto.put(d.idNube, e.dispositivoCambio);
+            boolean nuevo = antes == null ? !primeraLectura || e.dispositivoCambio.isAfter(ahora.minusMinutes(30))
+                    : !antes.equals(e.dispositivoCambio);
+            if (nuevo) {
+                for (Oyente o : oyentes) {
+                    o.aviso(null, PanelPedidos.primerNombre(d.nombre) + " abrió su enlace en otro celular",
+                            "¿No fue " + PanelPedidos.primerNombre(d.nombre) + "? Cámbiele el enlace en Configuración › Domiciliarios.", true);
+                }
+            }
+        }
+        primeraLectura = false;
+    }
+
+    /** Sin respuesta, vencida, ubicación pausada o sin ubicación: cada aviso sale una vez por salida. */
+    void revisarAvisos(java.time.LocalDateTime ahora) {
+        for (Salida s : app.getSalidas()) {
+            for (String[] a : avisosNuevos(s, ahora, inicio, error.isEmpty())) {
+                for (Oyente o : oyentes) {
+                    o.aviso(s, a[1], a[2], Boolean.parseBoolean(a[3]));
+                }
+            }
+        }
+    }
+
+    /**
+     * Los avisos que le tocan a esta salida ahora y que todavía no habían salido: {clave, título, texto, grave}.
+     * Los anota en s.avisos para no repetirlos; los de ubicación se pueden volver a dar si se arregla y vuelve a pasar.
+     */
+    public static List<String[]> avisosNuevos(Salida s, java.time.LocalDateTime ahora) {
+        return avisosNuevos(s, ahora, java.time.LocalDateTime.MIN, true);
+    }
+
+    /**
+     * desde: cuándo se abrió el programa (lo que ya había pasado antes no suena otra vez: se ve en la tarjeta).
+     * conexionBien: la última revisión salió bien (sin internet en la tienda no se sabe nada de la ubicación).
+     */
+    public static List<String[]> avisosNuevos(Salida s, java.time.LocalDateTime ahora, java.time.LocalDateTime desde,
+                                              boolean conexionBien) {
+        List<String[]> r = new ArrayList<>();
+        if (!s.abierta() || !s.enLinea() || s.subiendo) {
+            return r;
+        }
+        String quien = s.repartidor.isEmpty() ? "El domiciliario" : PanelPedidos.primerNombre(s.repartidor);
+        String hora = rutas.modelo.Ruta.FORMATO_HORA.format(s.creada);
+        if (s.esperandoRespuesta() && s.venceEn != null && ahora.isAfter(s.venceEn)) {
+            if (s.venceEn.isAfter(desde)) {
+                unaVez(r, s, "vencida", "Venció la salida de las " + hora,
+                        quien + " no respondió a tiempo. Escoja a otro en «Salidas».", true);
+            }
+        } else if (s.esperandoRespuesta() && s.enviadaEn != null
+                && !ahora.isBefore(s.enviadaEn.plusMinutes(MIN_SIN_RESPUESTA))
+                && s.enviadaEn.plusMinutes(MIN_SIN_RESPUESTA).isAfter(desde)) {
+            unaVez(r, s, "sin_respuesta", quien + " no ha respondido",
+                    "Lleva " + MIN_SIN_RESPUESTA + " minutos sin aceptar la salida de las " + hora
+                    + ". Reenvíele el enlace o mándela con otro.", false);
+        }
+        boolean enRuta = s.aceptadaEn != null && s.estado == Salida.Estado.EN_CAMINO;
+        if (!enRuta || !s.leidaEnLinea || !conexionBien) {
+            return r; // sin una lectura buena no se sabe si pausó o si el que no tiene internet es la tienda
+        }
+        if (s.ubicacionPausada) {
+            unaVez(r, s, "pausada", quien + " pausó su ubicación",
+                    "El cliente ve «Ubicación no disponible por ahora».", false);
+            return r;
+        }
+        s.avisos.remove("pausada"); // si la vuelve a pausar, se avisa otra vez
+        java.time.LocalDateTime ultima = s.ubicacionEn != null && s.ubicacionEn.isAfter(s.aceptadaEn)
+                ? s.ubicacionEn : s.aceptadaEn;
+        if (ahora.isAfter(ultima.plusMinutes(MIN_SIN_UBICACION))) {
+            unaVez(r, s, "sin_ubicacion", "Sin ubicación de " + quien,
+                    "Hace más de " + MIN_SIN_UBICACION + " minutos no llega su ubicación (¿sin internet o sin GPS?).", false);
+        } else {
+            s.avisos.remove("sin_ubicacion");
+        }
+        return r;
+    }
+
+    private static void unaVez(List<String[]> r, Salida s, String clave, String titulo, String texto, boolean grave) {
+        if (s.avisos.add(clave)) {
+            r.add(new String[]{clave, titulo, texto, String.valueOf(grave)});
+        }
     }
 }

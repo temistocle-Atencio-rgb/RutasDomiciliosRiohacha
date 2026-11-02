@@ -190,6 +190,7 @@ public class PanelConfiguracion extends JPanel {
             @Override
             public void componentShown(java.awt.event.ComponentEvent e) {
                 cargar();
+                cargarCuentas(); // un despacho pudo crear el enlace personal de alguien
             }
         });
         cargar();
@@ -797,8 +798,9 @@ public class PanelConfiguracion extends JPanel {
         Tema.Tarjeta t = tarjeta();
         t.add(Tema.seccion("Domiciliarios"));
         t.add(nota("Quienes llevan los domicilios: los fijos de la tienda, los independientes que prestan el servicio"
-                + " cuando pueden y los grupos de domicilios. No necesitan contraseña: al despachar se escoge quién"
-                + " la lleva y le llega por WhatsApp el enlace solo para esa salida."));
+                + " cuando pueden y los grupos de domicilios. No necesitan contraseña: con «Enviar enlace» le llega por"
+                + " WhatsApp su enlace personal, donde ve sus salidas y marca si está disponible. Al despachar también"
+                + " le llega el enlace de esa salida."));
         t.add(Tema.espacio(10));
         Tema.Boton nuevo = Tema.botonPrimario("Nuevo domiciliario");
         nuevo.setAlignmentX(LEFT_ALIGNMENT);
@@ -848,23 +850,218 @@ public class PanelConfiguracion extends JPanel {
             e.setFont(Tema.textoFuerte(12.5f));
             e.setForeground(Tema.ERROR_TEXTO);
             izq.add(e);
+        } else {
+            JLabel e = new JLabel(textoApp(d));
+            Aplicacion.Disponibilidad disp = app.disponibilidad(d);
+            e.setFont(disp == Aplicacion.Disponibilidad.DISPONIBLE ? Tema.textoFuerte(12.5f) : Tema.texto(12.5f));
+            e.setForeground(disp == Aplicacion.Disponibilidad.DISPONIBLE ? Tema.EXITO_TEXTO : Tema.GRIS_TEXTO);
+            izq.add(e);
         }
         Tema.Boton editar = Tema.botonPequeno("Editar");
         editar.addActionListener(a -> formularioDomiciliario(d));
         Tema.Boton quitar = Tema.botonPequeno("Quitar");
         quitar.addActionListener(a -> Alerta.confirmar(this, "¿Quitar a " + d.nombre + " de la lista?",
-                "Las salidas que ya hizo no se borran.", "Sí, quitar", "Volver", () -> {
-                    try {
-                        app.eliminarDomiciliario(d);
-                    } catch (java.io.IOException ex) {
-                        decir(msgCuentas, ex.getMessage(), false);
-                    }
-                    cargarCuentas();
-                }));
+                "Las salidas que ya hizo no se borran." + (d.enNube() ? " Su enlace personal deja de servir." : ""),
+                "Sí, quitar", "Volver", () -> quitarDomiciliario(d.id)));
+        Tema.Boton enviar = Tema.botonPequeno("Enviar enlace");
+        enviar.setToolTipText("Le llega por WhatsApp su enlace personal: ahí ve sus salidas y marca si está disponible");
+        enviar.addActionListener(a -> enviarEnlacePersonal(d, enviar));
+        enviar.setEnabled(d.activo);
+        JComponent botones;
+        if (d.enNube()) {
+            Tema.Boton cambiar = Tema.botonPequeno("Cambiar enlace");
+            cambiar.setToolTipText("Si perdió el celular o el enlace lo tiene otra persona: el viejo deja de servir");
+            cambiar.addActionListener(a -> Alerta.confirmar(this, "¿Cambiar el enlace de " + d.nombre + "?",
+                    "El enlace que tiene deja de servir en todos los celulares. Después le envía el nuevo por WhatsApp.",
+                    "Sí, cambiarlo", "Volver", () -> cambiarEnlacePersonal(d, cambiar)));
+            botones = Tema.fila(6, enviar, cambiar, editar, quitar);
+        } else {
+            botones = Tema.fila(6, enviar, editar, quitar);
+        }
         f.add(izq, BorderLayout.CENTER);
-        f.add(Tema.fila(6, editar, quitar), BorderLayout.EAST);
+        f.add(botones, BorderLayout.EAST);
         f.setMaximumSize(new Dimension(Integer.MAX_VALUE, f.getPreferredSize().height));
         return f;
+    }
+
+    /** «Disponible», «En ruta · le faltan 2», «No disponible · abrió la app a las 9:40» o que todavía no tiene su enlace. */
+    private String textoApp(rutas.modelo.Domiciliario d) {
+        if (!d.enNube()) {
+            return "Todavía no tiene su enlace personal";
+        }
+        Aplicacion.Disponibilidad disp = app.disponibilidad(d);
+        if (disp == Aplicacion.Disponibilidad.SIN_APP) {
+            return "Tiene su enlace personal";
+        }
+        String t = ElegirDomiciliario.textoEstado(app, d, disp);
+        rutas.logica.NubeRepartidor.EstadoRepartidor e = app.estadoNube(d);
+        if (e != null && e.vistoEn != null) {
+            java.time.LocalDateTime v = e.vistoEn;
+            String cuando = v.toLocalDate().equals(java.time.LocalDate.now())
+                    ? "a las " + rutas.modelo.Ruta.FORMATO_HORA.format(v)
+                    : "el " + v.format(java.time.format.DateTimeFormatter.ofPattern("d/MM"));
+            t += " · abrió la app " + cuando;
+        } else if (e != null) {
+            t += " · todavía no abre la app";
+        }
+        return t;
+    }
+
+    /** Una llamada a Supabase en otro hilo; alTerminar (puede ser null) corre en la pantalla con el error o null. */
+    private interface LlamadaNube {
+        void hacer(rutas.logica.NubeRepartidor nube) throws java.io.IOException;
+    }
+
+    private void enNube(LlamadaNube llamada, java.util.function.Consumer<String> alTerminar) {
+        rutas.logica.NubeRepartidor nube = app.getNube();
+        if (nube == null) {
+            if (alTerminar != null) {
+                alTerminar.accept("Falta configurar la conexión con Supabase (arriba, en «Conexión»).");
+            }
+            return;
+        }
+        new javax.swing.SwingWorker<String, Void>() {
+            @Override
+            protected String doInBackground() {
+                try {
+                    llamada.hacer(nube);
+                    return null;
+                } catch (java.io.IOException ex) {
+                    return ex.getMessage();
+                }
+            }
+
+            @Override
+            protected void done() {
+                String err;
+                try {
+                    err = get();
+                } catch (Exception ex) {
+                    err = ex.getMessage();
+                }
+                if (alTerminar != null) {
+                    alTerminar.accept(err);
+                } else if (err != null) {
+                    rutas.logica.Ubicaciones.registrarError(new java.io.IOException(err));
+                }
+            }
+        }.execute();
+    }
+
+    /** Primero se quita en Supabase (que el enlace deje de servir) y después de la lista. */
+    private void quitarDomiciliario(long id) {
+        rutas.modelo.Domiciliario d = app.domiciliarioActual(id);
+        if (d == null) {
+            cargarCuentas();
+            return;
+        }
+        Runnable local = () -> {
+            try {
+                app.eliminarDomiciliario(d);
+            } catch (java.io.IOException ex) {
+                decir(msgCuentas, ex.getMessage(), false);
+            }
+            cargarCuentas();
+        };
+        if (!d.enNube() || app.getNube() == null) {
+            local.run();
+            return;
+        }
+        enNube(n2 -> n2.borrarRepartidor(d.idNube), err -> {
+            if (err != null) {
+                decir(msgCuentas, "No se quitó: su enlace personal sigue sirviendo hasta que haya internet ("
+                        + err + "). Intente otra vez.", false);
+                return;
+            }
+            local.run();
+        });
+    }
+
+    /** Lo crea en Supabase si hace falta (o si allá ya no estaba) y abre WhatsApp con su enlace personal. */
+    private void enviarEnlacePersonal(rutas.modelo.Domiciliario vista, Tema.Boton boton) {
+        rutas.modelo.Domiciliario d = app.domiciliarioActual(vista.id); // la lista en pantalla puede ser vieja
+        if (d == null) {
+            cargarCuentas();
+            return;
+        }
+        String idAntes = d.idNube;
+        boton.setEnabled(false);
+        enNube(n2 -> {
+            if (d.enNube() && !n2.existeRepartidor(d.idNube)) {
+                d.idNube = "";
+                d.enlace = "";
+            }
+            if (!d.enNube()) {
+                String[] r = n2.crearRepartidor(d.nombre, d.celular);
+                d.idNube = r[0];
+                d.enlace = r[1];
+            }
+        }, err -> {
+            boton.setEnabled(true);
+            if (!d.idNube.equals(idAntes)) {
+                guardarEnlace(d);
+            }
+            if (err != null) {
+                decir(msgCuentas, "No se pudo crear el enlace: " + err, false);
+                return;
+            }
+            mandarPorWhatsApp(d);
+            cargarCuentas();
+        });
+    }
+
+    private void cambiarEnlacePersonal(rutas.modelo.Domiciliario vista, Tema.Boton boton) {
+        rutas.modelo.Domiciliario d = app.domiciliarioActual(vista.id);
+        if (d == null || !d.enNube()) {
+            cargarCuentas();
+            return;
+        }
+        boton.setEnabled(false);
+        enNube(n2 -> {
+            String nuevo = n2.revocarEnlace(d.idNube);
+            if (nuevo == null) { // ya no estaba en Supabase: se crea de nuevo
+                String[] r = n2.crearRepartidor(d.nombre, d.celular);
+                d.idNube = r[0];
+                d.enlace = r[1];
+            } else {
+                d.enlace = nuevo;
+            }
+        }, err -> {
+            boton.setEnabled(true);
+            guardarEnlace(d);
+            if (err != null) {
+                decir(msgCuentas, "No se pudo cambiar el enlace: " + err, false);
+                return;
+            }
+            Aviso.mostrar(this, Aviso.Tipo.BIEN, "Enlace cambiado", "El anterior ya no sirve");
+            mandarPorWhatsApp(d);
+            cargarCuentas();
+        });
+    }
+
+    private void guardarEnlace(rutas.modelo.Domiciliario d) {
+        try {
+            app.guardarEnlaceNube(d);
+        } catch (java.io.IOException ex) {
+            decir(msgCuentas, ex.getMessage(), false);
+        }
+    }
+
+    private void mandarPorWhatsApp(rutas.modelo.Domiciliario d) {
+        rutas.logica.NubeRepartidor.Ajustes aj = app.getAjustesNube();
+        if (aj == null || d.enlace.isEmpty()) {
+            return;
+        }
+        String msj = rutas.logica.MensajesWhatsApp.enlacePersonal(app.getNegocio(), d.nombre,
+                rutas.logica.NubeRepartidor.enlacePersonal(aj.pagina, d.enlace));
+        String cel = rutas.logica.Avisos.numeroWhatsApp(d.celular).isEmpty() ? "" : d.celular;
+        try {
+            AbrirWhatsApp.abrir(cel, msj);
+        } catch (Exception ex) {
+            java.awt.Toolkit.getDefaultToolkit().getSystemClipboard()
+                    .setContents(new java.awt.datatransfer.StringSelection(msj), null);
+            Aviso.mostrar(this, Aviso.Tipo.AVISO, "Mensaje copiado", "No se abrió WhatsApp: péguelo en el chat de " + d.nombre);
+        }
     }
 
     private void formularioDomiciliario(rutas.modelo.Domiciliario d) {
@@ -912,6 +1109,10 @@ public class PanelConfiguracion extends JPanel {
             rutas.modelo.Domiciliario x = new rutas.modelo.Domiciliario(d == null ? 0 : d.id, nombre.getText(),
                     celular.getText(), (rutas.modelo.Domiciliario.Tipo) tipo.getSelectedItem());
             x.activo = activo.isSelected();
+            if (d != null) { // su enlace personal sigue siendo el mismo
+                x.idNube = d.idNube;
+                x.enlace = d.enlace;
+            }
             String cel = x.celular.replaceAll("[\\s-]", "");
             if (!cel.isEmpty() && rutas.logica.Avisos.numeroWhatsApp(cel).isEmpty()) {
                 decir(error, "El celular lleva 10 números y empieza por 3 (ej. 300 111 2233)", false);
@@ -924,6 +1125,10 @@ public class PanelConfiguracion extends JPanel {
                 return;
             }
             capa.cerrar();
+            rutas.modelo.Domiciliario guardado = app.domiciliarioActual(x.id);
+            if (guardado != null && guardado.enNube()) { // que su app muestre el nombre nuevo y, si lo desactivaron, no salga disponible
+                enNube(n2 -> n2.actualizarRepartidor(guardado.idNube, x.nombre, x.celular, x.activo), null);
+            }
             cargarCuentas();
             Aviso.mostrar(this, Aviso.Tipo.BIEN, "Domiciliarios", "Guardado");
         };

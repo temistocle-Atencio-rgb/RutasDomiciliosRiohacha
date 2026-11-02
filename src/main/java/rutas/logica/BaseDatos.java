@@ -576,6 +576,12 @@ public class BaseDatos implements AutoCloseable {
                 + " tipo TEXT NOT NULL DEFAULT 'FIJO', activo INTEGER NOT NULL DEFAULT 1)");
         columnaSiFalta(st, "entregas_salida", "marca_pendiente", "INTEGER NOT NULL DEFAULT 0");
         columnaSiFalta(st, "entregas_salida", "marcada_en", "INTEGER NOT NULL DEFAULT 0");
+        // repartidor en vivo: el cliente ve su pedido, la salida vence y el repartidor tiene enlace personal
+        columnaSiFalta(st, "entregas_salida", "codigo_cliente", "TEXT NOT NULL DEFAULT ''");
+        columnaSiFalta(st, "entregas_salida", "enlace_cliente", "TEXT NOT NULL DEFAULT ''");
+        columnaSiFalta(st, "salidas", "vence_en", "TEXT");
+        columnaSiFalta(st, "domiciliarios", "id_nube", "TEXT NOT NULL DEFAULT ''");
+        columnaSiFalta(st, "domiciliarios", "enlace", "TEXT NOT NULL DEFAULT ''");
     }
 
     /** Las tablas de salidas ya pueden existir de la versión anterior: se les agrega lo nuevo. */
@@ -661,8 +667,8 @@ public class BaseDatos implements AutoCloseable {
         try {
             if (s.id == 0) {
                 try (PreparedStatement ps = con.prepareStatement("INSERT INTO salidas(codigo, uuid_nube, repartidor,"
-                        + " creada, cerrada, estado, lat, lon, ubicacion_en, tipo_repartidor, aceptada_en, rechazada_en, motivo_rechazo, enviada_en)"
-                        + " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        + " creada, cerrada, estado, lat, lon, ubicacion_en, tipo_repartidor, aceptada_en, rechazada_en, motivo_rechazo, enviada_en,"
+                        + " vence_en) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         Statement.RETURN_GENERATED_KEYS)) {
                     datosSalida(ps, s);
                     ps.executeUpdate();
@@ -673,10 +679,10 @@ public class BaseDatos implements AutoCloseable {
                 }
             } else {
                 try (PreparedStatement ps = con.prepareStatement("UPDATE salidas SET codigo=?, uuid_nube=?, repartidor=?,"
-                        + " creada=?, cerrada=?, estado=?, lat=?, lon=?, ubicacion_en=?, tipo_repartidor=?, aceptada_en=?, rechazada_en=?, motivo_rechazo=?, enviada_en=?"
-                        + " WHERE id=?")) {
+                        + " creada=?, cerrada=?, estado=?, lat=?, lon=?, ubicacion_en=?, tipo_repartidor=?, aceptada_en=?, rechazada_en=?, motivo_rechazo=?, enviada_en=?,"
+                        + " vence_en=? WHERE id=?")) {
                     datosSalida(ps, s);
-                    ps.setLong(15, s.id);
+                    ps.setLong(16, s.id);
                     ps.executeUpdate();
                 }
             }
@@ -689,8 +695,8 @@ public class BaseDatos implements AutoCloseable {
             }
             try (PreparedStatement pe = con.prepareStatement("INSERT INTO entregas_salida(salida_id, orden, nombre,"
                     + " direccion, lat, lon, nodo, telefono, valor, pagado, paga_con, urgente, cobrar, estado, motivo,"
-                    + " id_nube, tiene_foto, foto, marca_pendiente, marcada_en, domicilio, venta_numero, productos)"
-                    + " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    + " id_nube, tiene_foto, foto, marca_pendiente, marcada_en, domicilio, venta_numero, productos,"
+                    + " codigo_cliente, enlace_cliente) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     Statement.RETURN_GENERATED_KEYS)) {
                 for (int i = 0; i < s.entregas.size(); i++) {
                     Salida.Entrega e = s.entregas.get(i);
@@ -718,6 +724,8 @@ public class BaseDatos implements AutoCloseable {
                     pe.setInt(21, e.domicilio);
                     pe.setLong(22, p.getVentaNumero());
                     pe.setInt(23, p.getProductos());
+                    pe.setString(24, e.codigoCliente);
+                    pe.setString(25, e.enlaceCliente);
                     pe.executeUpdate();
                     try (ResultSet k = pe.getGeneratedKeys()) {
                         k.next();
@@ -775,6 +783,7 @@ public class BaseDatos implements AutoCloseable {
         ps.setString(12, s.rechazadaEn == null ? null : s.rechazadaEn.toString());
         ps.setString(13, s.motivoRechazo);
         ps.setString(14, s.enviadaEn == null ? null : s.enviadaEn.toString());
+        ps.setString(15, s.venceEn == null ? null : s.venceEn.toString());
     }
 
     /** Las salidas abiertas y las cerradas desde la fecha dada (las de hoy, para el apartado Salidas). */
@@ -807,8 +816,8 @@ public class BaseDatos implements AutoCloseable {
     private List<Salida> leerSalidas(String donde, boolean conFotos, String... valores) throws SQLException {
         List<Salida> l = new ArrayList<>();
         try (PreparedStatement ps = con.prepareStatement("SELECT id, codigo, uuid_nube, repartidor, creada, cerrada,"
-                + " estado, lat, lon, ubicacion_en, tipo_repartidor, aceptada_en, rechazada_en, motivo_rechazo, enviada_en"
-                + " FROM salidas WHERE " + donde + " ORDER BY id")) {
+                + " estado, lat, lon, ubicacion_en, tipo_repartidor, aceptada_en, rechazada_en, motivo_rechazo, enviada_en,"
+                + " vence_en FROM salidas WHERE " + donde + " ORDER BY id")) {
             for (int i = 0; i < valores.length; i++) {
                 ps.setString(i + 1, valores[i]);
             }
@@ -834,6 +843,7 @@ public class BaseDatos implements AutoCloseable {
                     s.rechazadaEn = fecha(rs.getString(13));
                     s.motivoRechazo = rs.getString(14);
                     s.enviadaEn = fecha(rs.getString(15));
+                    s.venceEn = fecha(rs.getString(16));
                     l.add(s);
                 }
             }
@@ -841,7 +851,7 @@ public class BaseDatos implements AutoCloseable {
         try (PreparedStatement pe = con.prepareStatement("SELECT id, nombre, direccion, lat, lon, nodo, telefono, valor,"
                 + " pagado, paga_con, urgente, cobrar, estado, motivo, id_nube, tiene_foto, "
                 + (conFotos ? "foto" : "CASE WHEN length(foto) > 0 THEN 'si' ELSE '' END") + ", marca_pendiente,"
-                + " marcada_en, domicilio, venta_numero, productos FROM entregas_salida"
+                + " marcada_en, domicilio, venta_numero, productos, codigo_cliente, enlace_cliente FROM entregas_salida"
                 + " WHERE salida_id=? ORDER BY orden");
              PreparedStatement pm = con.prepareStatement("SELECT id_nube, de_tienda, texto, hora, leido FROM"
                      + " mensajes_salida WHERE salida_id=? ORDER BY rowid")) {
@@ -872,6 +882,8 @@ public class BaseDatos implements AutoCloseable {
                         e.domicilio = rs.getInt(20);
                         p.setVentaNumero(rs.getLong(21));
                         p.setProductos(rs.getInt(22));
+                        e.codigoCliente = rs.getString(23);
+                        e.enlaceCliente = rs.getString(24);
                         s.entregas.add(e);
                     }
                 }
@@ -894,7 +906,7 @@ public class BaseDatos implements AutoCloseable {
     public List<rutas.modelo.Domiciliario> cargarDomiciliarios() throws SQLException {
         List<rutas.modelo.Domiciliario> l = new ArrayList<>();
         try (Statement st = con.createStatement();
-             ResultSet rs = st.executeQuery("SELECT id, nombre, celular, tipo, activo FROM domiciliarios"
+             ResultSet rs = st.executeQuery("SELECT id, nombre, celular, tipo, activo, id_nube, enlace FROM domiciliarios"
                      + " ORDER BY CASE tipo WHEN 'FIJO' THEN 0 WHEN 'INDEPENDIENTE' THEN 1 ELSE 2 END, nombre")) {
             while (rs.next()) {
                 rutas.modelo.Domiciliario.Tipo t;
@@ -905,6 +917,8 @@ public class BaseDatos implements AutoCloseable {
                 }
                 rutas.modelo.Domiciliario d = new rutas.modelo.Domiciliario(rs.getLong(1), rs.getString(2), rs.getString(3), t);
                 d.activo = rs.getInt(5) == 1;
+                d.idNube = rs.getString(6);
+                d.enlace = rs.getString(7);
                 l.add(d);
             }
         }
@@ -914,12 +928,14 @@ public class BaseDatos implements AutoCloseable {
     /** Nuevo (id 0: queda con id) o cambio de uno que ya estaba. */
     public void guardarDomiciliario(rutas.modelo.Domiciliario d) throws SQLException {
         if (d.id == 0) {
-            try (PreparedStatement ps = con.prepareStatement("INSERT INTO domiciliarios(nombre, celular, tipo, activo)"
-                    + " VALUES(?,?,?,?)", Statement.RETURN_GENERATED_KEYS)) {
+            try (PreparedStatement ps = con.prepareStatement("INSERT INTO domiciliarios(nombre, celular, tipo, activo,"
+                    + " id_nube, enlace) VALUES(?,?,?,?,?,?)", Statement.RETURN_GENERATED_KEYS)) {
                 ps.setString(1, d.nombre);
                 ps.setString(2, d.celular);
                 ps.setString(3, d.tipo.name());
                 ps.setInt(4, d.activo ? 1 : 0);
+                ps.setString(5, d.idNube);
+                ps.setString(6, d.enlace);
                 ps.executeUpdate();
                 try (ResultSet k = ps.getGeneratedKeys()) {
                     k.next();
@@ -927,6 +943,7 @@ public class BaseDatos implements AutoCloseable {
                 }
             }
         } else {
+            // el id y el enlace de Supabase no se tocan aquí (una lista vieja en pantalla los borraría): ver guardarEnlaceNube
             try (PreparedStatement ps = con.prepareStatement("UPDATE domiciliarios SET nombre=?, celular=?, tipo=?,"
                     + " activo=? WHERE id=?")) {
                 ps.setString(1, d.nombre);
@@ -936,6 +953,16 @@ public class BaseDatos implements AutoCloseable {
                 ps.setLong(5, d.id);
                 ps.executeUpdate();
             }
+        }
+    }
+
+    /** Solo el id y el enlace personal en Supabase (al crearlo allá o al cambiarle el enlace). */
+    public void guardarEnlaceNube(long id, String idNube, String enlace) throws SQLException {
+        try (PreparedStatement ps = con.prepareStatement("UPDATE domiciliarios SET id_nube=?, enlace=? WHERE id=?")) {
+            ps.setString(1, idNube == null ? "" : idNube);
+            ps.setString(2, enlace == null ? "" : enlace);
+            ps.setLong(3, id);
+            ps.executeUpdate();
         }
     }
 

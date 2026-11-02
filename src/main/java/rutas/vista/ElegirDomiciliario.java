@@ -23,6 +23,27 @@ final class ElegirDomiciliario {
     private ElegirDomiciliario() {
     }
 
+    private static int orden(Aplicacion.Disponibilidad d) {
+        switch (d) {
+            case DISPONIBLE: return 0;
+            case SIN_APP: return 1;
+            case NO_DISPONIBLE: return 2;
+            default: return 3; // en ruta
+        }
+    }
+
+    /** «Disponible · Fijo», «En ruta · le faltan 2», «No disponible» o solo el tipo si no usa la app. */
+    static String textoEstado(Aplicacion app, Domiciliario d, Aplicacion.Disponibilidad disp) {
+        switch (disp) {
+            case DISPONIBLE: return "Disponible";
+            case EN_RUTA:
+                int n = app.pendientesDe(d);
+                return "En ruta · " + (n == 1 ? "le falta 1" : "le faltan " + n);
+            case NO_DISPONIBLE: return "No disponible";
+            default: return d.tipo.toString();
+        }
+    }
+
     /** alElegir recibe el domiciliario escogido (nunca null). Si se cancela no pasa nada. */
     static void abrir(JComponent dentroDe, Aplicacion app, String subtitulo, Consumer<Domiciliario> alElegir) {
         JPanel t = Capa.tarjeta(500, 24, 28);
@@ -51,14 +72,22 @@ final class ElegirDomiciliario {
 
         List<Domiciliario> lista = app.getDomiciliarios();
         lista.removeIf(d -> !d.activo);
+        // los que marcaron «Disponible» en su app van primero; los que van en ruta o no están, al final
+        java.util.Map<Domiciliario, Aplicacion.Disponibilidad> estado = new java.util.HashMap<>();
+        for (Domiciliario d : lista) {
+            estado.put(d, app.disponibilidad(d));
+        }
+        lista.sort(java.util.Comparator.comparingInt(d -> orden(estado.get(d)))); // estable: dentro, como estaban
         Tema.Boton primero = null;
         for (Domiciliario d : lista) {
-            Tema.Boton b = primero == null ? Tema.botonPrimario(d.nombre) : Tema.botonSecundario(d.nombre);
+            Aplicacion.Disponibilidad disp = estado.get(d);
+            boolean atras = disp == Aplicacion.Disponibilidad.EN_RUTA || disp == Aplicacion.Disponibilidad.NO_DISPONIBLE;
+            Tema.Boton b = primero == null && !atras ? Tema.botonPrimario(d.nombre) : Tema.botonSecundario(d.nombre);
             b.setToolTipText(d.tipo + (d.celular.isEmpty() ? "" : " · Cel. " + d.celular));
             b.addActionListener(a -> elegir.accept(d));
-            JLabel tipo = new JLabel(d.tipo.toString());
-            tipo.setFont(Tema.texto(12.5f));
-            tipo.setForeground(Tema.GRIS_TEXTO);
+            JLabel tipo = new JLabel(textoEstado(app, d, disp));
+            tipo.setFont(atras || disp == Aplicacion.Disponibilidad.SIN_APP ? Tema.texto(12.5f) : Tema.textoFuerte(12.5f));
+            tipo.setForeground(disp == Aplicacion.Disponibilidad.DISPONIBLE ? Tema.EXITO_TEXTO : Tema.GRIS_TEXTO);
             JPanel fila = new JPanel(new BorderLayout(10, 0));
             fila.setOpaque(false);
             fila.setAlignmentX(JComponent.LEFT_ALIGNMENT);
@@ -71,7 +100,7 @@ final class ElegirDomiciliario {
             fila.setMaximumSize(new Dimension(Integer.MAX_VALUE, b.getPreferredSize().height));
             t.add(fila);
             t.add(Tema.espacio(6));
-            if (primero == null) {
+            if (primero == null && !atras) {
                 primero = b;
             }
         }
@@ -113,7 +142,7 @@ final class ElegirDomiciliario {
         error.setForeground(Tema.ERROR_TEXTO);
         error.setAlignmentX(JComponent.LEFT_ALIGNMENT);
         otro.add(error);
-        Tema.Boton usarOtro = primero == null ? Tema.botonPrimario("Que la lleve") : Tema.botonSecundario("Que la lleve");
+        Tema.Boton usarOtro = lista.isEmpty() ? Tema.botonPrimario("Que la lleve") : Tema.botonSecundario("Que la lleve");
         Runnable conOtro = () -> {
             String n = nombre.getText().trim();
             if (n.length() < 2) {

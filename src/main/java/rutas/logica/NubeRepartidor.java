@@ -78,10 +78,17 @@ public class NubeRepartidor {
     public static class Respuesta {
         public final int codigo;
         public final String cuerpo;
+        /** La hora de Supabase (encabezado Date, en milisegundos); 0 si no vino. */
+        public final long fecha;
 
         public Respuesta(int codigo, String cuerpo) {
+            this(codigo, cuerpo, 0);
+        }
+
+        public Respuesta(int codigo, String cuerpo, long fecha) {
             this.codigo = codigo;
             this.cuerpo = cuerpo == null ? "" : cuerpo;
+            this.fecha = fecha;
         }
     }
 
@@ -107,12 +114,54 @@ public class NubeRepartidor {
         public LocalDateTime aceptada;   // null = todavía no responde
         public LocalDateTime rechazada;  // no puede llevarla
         public String motivoRechazo = "";
+        public LocalDateTime venceEn;    // si no responde antes, la salida ya no se puede aceptar
+        public boolean ubicacionPausada; // el repartidor apagó «Compartir mi ubicación»
         public final Map<Long, String[]> entregas = new LinkedHashMap<>(); // id -> {estado, motivo, conFoto}
     }
+
+    /** Lo de más que se sube con la salida para la página nueva (ruta, tienda, vencimiento, repartidor). */
+    public static class Extra {
+        public List<double[]> ruta = new ArrayList<>();          // [lat, lon] por las calles
+        public List<List<double[]>> calles = new ArrayList<>();  // calles de alrededor
+        public double metros;
+        public double tiendaLat = Double.NaN;
+        public double tiendaLon = Double.NaN;
+        public int minutosParaResponder;  // 0 = no vence; se cuenta con la hora de Supabase, no la del computador
+        public String repartidorId = "";  // uuid en Supabase ("" = no está en la lista)
+    }
+
+    /** Cómo está un repartidor según su app (Disponible, cuándo la abrió, si la abrieron en otro celular). */
+    public static class EstadoRepartidor {
+        public String id = "";
+        public boolean disponible;
+        public boolean activo = true;
+        public LocalDateTime vistoEn;
+        public LocalDateTime dispositivoCambio;
+    }
+
+    /** Minutos que tiene el repartidor para aceptar una salida. */
+    public static final int MINUTOS_PARA_RESPONDER = 10;
 
     private final String url;
     private final String clave;
     private final Transporte transporte;
+    /** Cuánto va adelantado el reloj de Supabase frente al de este computador (ms). */
+    private volatile long desfaseMs;
+
+    /** La hora de Supabase (la que usa para decidir si una salida venció). */
+    public OffsetDateTime ahoraServidor() {
+        return OffsetDateTime.now().plusNanos(desfaseMs * 1_000_000L);
+    }
+
+    public long getDesfaseMs() {
+        return desfaseMs;
+    }
+
+    /** Una hora de Supabase pasada al reloj de este computador (para comparar con LocalDateTime.now()). */
+    LocalDateTime horaLocal(String t) {
+        LocalDateTime h = hora(t);
+        return h == null ? null : h.minusNanos(desfaseMs * 1_000_000L);
+    }
 
     public NubeRepartidor(String url, String clave, Transporte transporte) {
         this.url = url.endsWith("/") ? url.substring(0, url.length() - 1) : url;
@@ -134,7 +183,14 @@ public class NubeRepartidor {
                     : HttpRequest.BodyPublishers.ofString(cuerpo, StandardCharsets.UTF_8));
             try {
                 HttpResponse<String> r = cliente.send(b.build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-                return new Respuesta(r.statusCode(), r.body());
+                long fecha = 0;
+                try {
+                    fecha = r.headers().firstValue("date").map(d -> java.time.ZonedDateTime.parse(d,
+                            java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME).toInstant().toEpochMilli()).orElse(0L);
+                } catch (RuntimeException ignorado) {
+                    // sin hora del servidor se usa la del computador
+                }
+                return new Respuesta(r.statusCode(), r.body(), fecha);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw new IOException("Se canceló la conexión");
@@ -150,8 +206,34 @@ public class NubeRepartidor {
     }
 
     public static String enlace(String pagina, String codigo) {
-        String p = pagina.endsWith("/") ? pagina : pagina + "/";
-        return p + "?s=" + codigo;
+        return base(pagina) + "?s=" + codigo;
+    }
+
+    /** El enlace personal del repartidor: abre «Mis salidas» (y la app instalada). */
+    public static String enlacePersonal(String pagina, String enlaceRepartidor) {
+        return base(pagina) + "?r=" + enlaceRepartidor;
+    }
+
+    /** El enlace del cliente para ver por dónde va su pedido. */
+    public static String enlaceCliente(String pagina, String enlaceCliente) {
+        return base(pagina) + "?p=" + enlaceCliente;
+    }
+
+    private static String base(String pagina) {
+        return pagina.endsWith("/") ? pagina : pagina + "/";
+    }
+
+    /** Enlace personal nuevo (32 letras de las mismas que usa Supabase, sin letras que se confundan). */
+    public static String nuevoEnlacePersonal() {
+        String alfabeto = "abcdefghijkmnpqrstuvwxyz23456789"; // 32 letras: cada byte % 32 sin sesgo
+        SecureRandom r = new SecureRandom();
+        byte[] b = new byte[32];
+        r.nextBytes(b);
+        StringBuilder sb = new StringBuilder();
+        for (byte x : b) {
+            sb.append(alfabeto.charAt((x & 0xff) % 32));
+        }
+        return sb.toString();
     }
 
     // ------------------------------------------------------------------
@@ -167,6 +249,10 @@ public class NubeRepartidor {
     public static class Subida {
         public final String uuid;
         public final Map<Integer, Long> ids = new LinkedHashMap<>();
+        /** Por orden: {código corto, enlace} del cliente para ver su pedido. */
+        public final Map<Integer, String[]> clientes = new LinkedHashMap<>();
+        /** Hasta cuándo puede aceptar, en la hora de este computador (null = no vence). */
+        public LocalDateTime venceLocal;
 
         Subida(String uuid) {
             this.uuid = uuid;
@@ -175,9 +261,17 @@ public class NubeRepartidor {
         /** Se aplica en el hilo de la pantalla, cuando ya terminó la subida. */
         public void aplicar(Salida s) {
             s.uuidNube = uuid;
+            s.venceEn = venceLocal;
             for (Map.Entry<Integer, Long> e : ids.entrySet()) {
                 if (e.getKey() >= 1 && e.getKey() <= s.entregas.size()) {
                     s.entregas.get(e.getKey() - 1).idNube = e.getValue();
+                }
+            }
+            for (Map.Entry<Integer, String[]> e : clientes.entrySet()) {
+                if (e.getKey() >= 1 && e.getKey() <= s.entregas.size()) {
+                    Salida.Entrega en = s.entregas.get(e.getKey() - 1);
+                    en.codigoCliente = e.getValue()[0];
+                    en.enlaceCliente = e.getValue()[1];
                 }
             }
         }
@@ -194,25 +288,59 @@ public class NubeRepartidor {
 
     /** tienda: el nombre del negocio (el domiciliario lo ve antes de aceptar). */
     public Subida subir(String codigo, String repartidor, String tienda, List<Salida.Entrega> entregas) throws IOException {
+        return subir(codigo, repartidor, tienda, entregas, null);
+    }
+
+    /** extra: la ruta, la tienda, hasta cuándo puede aceptar y quién es (null = como antes). */
+    public Subida subir(String codigo, String repartidor, String tienda, List<Salida.Entrega> entregas, Extra extra)
+            throws IOException {
         Map<String, Object> cab = new LinkedHashMap<>();
         cab.put("codigo", codigo);
         cab.put("repartidor", repartidor);
         if (tienda != null && !tienda.isBlank()) {
             cab.put("tienda", tienda.trim());
         }
+        if (extra != null) {
+            if (extra.ruta.size() >= 2) {
+                cab.put("ruta", RutaNube.comoJson(extra.ruta));
+                cab.put("distancia_m", Math.round(extra.metros));
+            }
+            if (!extra.calles.isEmpty()) {
+                cab.put("calles", RutaNube.callesComoJson(extra.calles));
+            }
+            if (!Double.isNaN(extra.tiendaLat) && !Double.isNaN(extra.tiendaLon)) {
+                cab.put("tienda_lat", extra.tiendaLat);
+                cab.put("tienda_lon", extra.tiendaLon);
+            }
+            if (extra.minutosParaResponder > 0) {
+                cab.put("vence_en", ahoraServidor().plusMinutes(extra.minutosParaResponder)
+                        .truncatedTo(java.time.temporal.ChronoUnit.SECONDS).toString());
+            }
+            if (extra.repartidorId != null && !extra.repartidorId.isEmpty()) {
+                cab.put("repartidor_id", extra.repartidorId);
+            }
+        }
         List<Map<?, ?>> r = filas(llamar("POST", "salidas?select=id", Json.escribir(cab)));
         if (r.isEmpty()) {
             throw new ErrorNube("Supabase no devolvió la salida creada");
         }
         Subida sub = new Subida(Json.texto(r.get(0), "id"));
+        if (extra != null && extra.minutosParaResponder > 0) {
+            sub.venceLocal = LocalDateTime.now().plusMinutes(extra.minutosParaResponder).withNano(0);
+        }
         try {
             List<Map<String, Object>> lista = new ArrayList<>();
             for (int i = 0; i < entregas.size(); i++) {
                 lista.add(fila(sub.uuid, i + 1, entregas.get(i)));
             }
             if (!lista.isEmpty()) {
-                for (Map<?, ?> m : filas(llamar("POST", "entregas_salida?select=id,orden", Json.escribir(lista)))) {
-                    sub.ids.put((int) Json.entero(m, "orden"), Json.entero(m, "id"));
+                String campos = extra == null ? "id,orden" : "id,orden,codigo_cliente,enlace_cliente";
+                for (Map<?, ?> m : filas(llamar("POST", "entregas_salida?select=" + campos, Json.escribir(lista)))) {
+                    int orden = (int) Json.entero(m, "orden");
+                    sub.ids.put(orden, Json.entero(m, "id"));
+                    if (extra != null) {
+                        sub.clientes.put(orden, new String[]{Json.texto(m, "codigo_cliente"), Json.texto(m, "enlace_cliente")});
+                    }
                 }
             }
         } catch (IOException e) {
@@ -280,7 +408,8 @@ public class NubeRepartidor {
     /** Lee estados, ubicación y si ya terminó. */
     public Estado leer(String uuid) throws IOException {
         Estado est = new Estado();
-        List<Map<?, ?>> s = filas(llamar("GET", "salidas?id=eq." + uuid + "&select=regresando,lat,lon,ubicacion_en,aceptada,rechazada,motivo_rechazo", null));
+        List<Map<?, ?>> s = filas(llamar("GET", "salidas?id=eq." + uuid
+                + "&select=regresando,lat,lon,ubicacion_en,aceptada,rechazada,motivo_rechazo,vence_en,ubicacion_pausada", null));
         if (s.isEmpty()) {
             est.existe = false;
             return est;
@@ -289,10 +418,12 @@ public class NubeRepartidor {
         est.regresando = m.get("regresando") != null;
         est.lat = Json.decimal(m, "lat");
         est.lon = Json.decimal(m, "lon");
-        est.aceptada = hora(Json.texto(m, "aceptada"));
-        est.rechazada = hora(Json.texto(m, "rechazada"));
+        est.aceptada = horaLocal(Json.texto(m, "aceptada"));
+        est.rechazada = horaLocal(Json.texto(m, "rechazada"));
         est.motivoRechazo = Json.texto(m, "motivo_rechazo");
-        est.ubicacionEn = hora(Json.texto(m, "ubicacion_en"));
+        est.ubicacionEn = horaLocal(Json.texto(m, "ubicacion_en"));
+        est.venceEn = horaLocal(Json.texto(m, "vence_en"));
+        est.ubicacionPausada = Boolean.TRUE.equals(m.get("ubicacion_pausada"));
         for (Map<?, ?> e : filas(llamar("GET", "entregas_salida?salida=eq." + uuid + "&select=id,estado,motivo,foto_en", null))) {
             est.entregas.put(Json.entero(e, "id"), new String[]{Json.texto(e, "estado"), Json.texto(e, "motivo"),
                 String.valueOf(e.get("foto_en") != null)});
@@ -306,7 +437,7 @@ public class NubeRepartidor {
         for (Map<?, ?> m : filas(llamar("GET", "mensajes_salida?salida=eq." + uuid + "&id=gt." + desde
                 + "&select=id,de,texto,creado,leido&order=id", null))) {
             r.add(new Salida.Mensaje(Json.entero(m, "id"), "tienda".equals(Json.texto(m, "de")), Json.texto(m, "texto"),
-                    hora(Json.texto(m, "creado")), Boolean.TRUE.equals(m.get("leido"))));
+                    horaLocal(Json.texto(m, "creado")), Boolean.TRUE.equals(m.get("leido"))));
         }
         return r;
     }
@@ -367,6 +498,96 @@ public class NubeRepartidor {
     }
 
     // ------------------------------------------------------------------
+    //  Repartidores (enlace personal, Disponible, otro celular)
+    // ------------------------------------------------------------------
+
+    /** Crea al repartidor en Supabase. Devuelve {id, enlace}. */
+    public String[] crearRepartidor(String nombre, String celular) throws IOException {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("nombre", recorte(nombre, 80));
+        m.put("celular", recorte(celular, 20));
+        m.put("enlace", nuevoEnlacePersonal());
+        List<Map<?, ?>> r = filas(llamar("POST", "repartidores?select=id,enlace", Json.escribir(m)));
+        if (r.isEmpty()) {
+            throw new ErrorNube("Supabase no devolvió el repartidor creado");
+        }
+        return new String[]{Json.texto(r.get(0), "id"), Json.texto(r.get(0), "enlace")};
+    }
+
+    /** Nombre, celular y si sigue en la lista (lo que se cambia en Configuración). */
+    public void actualizarRepartidor(String id, String nombre, String celular, boolean activo) throws IOException {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("nombre", recorte(nombre, 80));
+        m.put("celular", recorte(celular, 20));
+        m.put("activo", activo);
+        if (!activo) {
+            m.put("disponible", false);
+        }
+        llamar("PATCH", "repartidores?id=eq." + uuidValido(id), Json.escribir(m));
+    }
+
+    /**
+     * El enlace viejo deja de servir (por ejemplo se perdió el celular): se cambia por uno nuevo, se suelta
+     * el celular amarrado y se borran sus notificaciones. Devuelve el enlace nuevo.
+     */
+    public String revocarEnlace(String id) throws IOException {
+        String nuevo = nuevoEnlacePersonal();
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("enlace", nuevo);
+        m.put("dispositivo", null);
+        m.put("dispositivo_cambio", null);
+        m.put("disponible", false);
+        if (filas(llamar("PATCH", "repartidores?id=eq." + uuidValido(id) + "&select=id", Json.escribir(m))).isEmpty()) {
+            return null; // ya no está en Supabase: hay que crearlo otra vez
+        }
+        llamar("DELETE", "suscripciones_push?repartidor=eq." + uuidValido(id), null);
+        return nuevo;
+    }
+
+    /** Sigue en Supabase (lo pudieron borrar desde otra caja o al reiniciar el proyecto). */
+    public boolean existeRepartidor(String id) throws IOException {
+        return !filas(llamar("GET", "repartidores?id=eq." + uuidValido(id) + "&select=id", null)).isEmpty();
+    }
+
+    /** Quitado de la lista: sus salidas viejas se quedan sin repartidor (no se borran). */
+    public void borrarRepartidor(String id) throws IOException {
+        llamar("DELETE", "repartidores?id=eq." + uuidValido(id), null);
+    }
+
+    /** Cómo están todos los repartidores (id -> estado). */
+    public Map<String, EstadoRepartidor> repartidores() throws IOException {
+        Map<String, EstadoRepartidor> r = new LinkedHashMap<>();
+        for (Map<?, ?> m : filas(llamar("GET", "repartidores?select=id,disponible,activo,visto_en,dispositivo_cambio", null))) {
+            EstadoRepartidor e = new EstadoRepartidor();
+            e.id = Json.texto(m, "id");
+            e.disponible = Boolean.TRUE.equals(m.get("disponible"));
+            e.activo = !Boolean.FALSE.equals(m.get("activo"));
+            e.vistoEn = horaLocal(Json.texto(m, "visto_en"));
+            e.dispositivoCambio = horaLocal(Json.texto(m, "dispositivo_cambio"));
+            r.put(e.id, e);
+        }
+        return r;
+    }
+
+    /** Borra lo viejo de Supabase (recorridos de más de 30 días, intentos, salidas cerradas olvidadas). */
+    public void limpiarViejo() throws IOException {
+        llamar("POST", "rpc/limpiar_viejo", "{}");
+    }
+
+    private static String recorte(String t, int max) {
+        String s = t == null ? "" : t.trim();
+        return s.length() > max ? s.substring(0, max) : s;
+    }
+
+    /** Lo que va en la dirección: solo un uuid (nada que cambie la consulta). */
+    static String uuidValido(String id) throws ErrorNube {
+        if (id == null || !id.matches("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")) {
+            throw new ErrorNube("El repartidor no tiene un código válido en Supabase");
+        }
+        return id;
+    }
+
+    // ------------------------------------------------------------------
 
     private Respuesta llamar(String metodo, String ruta, String cuerpo) throws IOException {
         if (url.isBlank() || clave.isBlank()) {
@@ -385,6 +606,9 @@ public class NubeRepartidor {
         Respuesta r;
         try {
             r = transporte.enviar(metodo, url + "/rest/v1/" + ruta, cab, cuerpo);
+            if (r.fecha > 0) {
+                desfaseMs = r.fecha - System.currentTimeMillis();
+            }
         } catch (java.net.http.HttpTimeoutException | java.net.ConnectException e) {
             throw new ErrorNube("No hay internet o Supabase no responde");
         } catch (IOException e) {

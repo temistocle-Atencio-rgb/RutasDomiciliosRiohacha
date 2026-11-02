@@ -45,6 +45,9 @@ public class Salida {
         /** La tienda la marcó a mano y falta pasarlo a internet (se guarda: se reintenta aunque se cierre el programa). */
         public boolean marcaPendiente;
         public long marcadaEn;
+        /** Para que el cliente vea por dónde va su pedido (los da Supabase al subir la salida). */
+        public String codigoCliente = "";
+        public String enlaceCliente = "";
 
         /** Copia para subir desde otro hilo (lo que la pantalla cambie después no la afecta). */
         public Entrega copia() {
@@ -128,6 +131,19 @@ public class Salida {
     public transient long terminoEn;
     /** Ya se avisó en la caja que terminó (para no avisar dos veces ni dejar de avisar). */
     public transient boolean avisadoTermino;
+    /** Hasta cuándo puede aceptar el repartidor (null = no vence). */
+    public LocalDateTime venceEn;
+    /** El repartidor apagó «Compartir mi ubicación». */
+    public transient boolean ubicacionPausada;
+    /** Ya se leyó de Supabase desde que se abrió el programa (antes no se sabe si pausó la ubicación). */
+    public transient boolean leidaEnLinea;
+    /** Avisos de la campana que ya salieron para esta salida (para no repetirlos). */
+    public final transient java.util.Set<String> avisos = new java.util.HashSet<>();
+
+    /** Se le venció el tiempo para aceptar sin decir nada. */
+    public boolean vencida() {
+        return esperandoRespuesta() && venceEn != null && LocalDateTime.now().isAfter(venceEn);
+    }
 
     public boolean enLinea() {
         return !uuidNube.isEmpty();

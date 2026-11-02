@@ -153,6 +153,14 @@ public class VentanaPrincipal extends JFrame {
             }
 
             @Override
+            public void aviso(rutas.modelo.Salida s, String titulo, String texto, boolean grave) {
+                if (grave) {
+                    java.awt.Toolkit.getDefaultToolkit().beep();
+                }
+                avisar(s, grave ? Aviso.Tipo.ERROR : Aviso.Tipo.AVISO, titulo, texto, grave);
+            }
+
+            @Override
             public void terminoRuta(rutas.modelo.Salida s) {
                 String quien = s.repartidor.isEmpty() ? "El repartidor" : s.repartidor;
                 if (!s.abierta()) {
@@ -170,7 +178,7 @@ public class VentanaPrincipal extends JFrame {
 
     /** El aviso de abajo (se va solo) y además queda en la campana de arriba. */
     private void avisar(rutas.modelo.Salida s, Aviso.Tipo tipo, String titulo, String texto, boolean importante) {
-        notificaciones.agregar(tipo, titulo, texto, s.id);
+        notificaciones.agregar(tipo, titulo, texto, s == null ? 0 : s.id);
         // si está vendiendo, el aviso sale igual (sobre la ventana, no solo sobre el mapa)
         JComponent donde = conMapa.isShowing() ? conMapa : (JComponent) getContentPane();
         Aviso.mostrar(donde, tipo, titulo, texto, importante);
