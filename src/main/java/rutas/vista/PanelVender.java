@@ -14,7 +14,6 @@ import java.awt.Image;
 import java.awt.Insets;
 import java.awt.LayoutManager;
 import java.awt.Rectangle;
-import java.awt.Toolkit;
 import java.awt.event.HierarchyEvent;
 import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
@@ -305,16 +304,12 @@ public class PanelVender extends JPanel implements RecibeCodigo {
             }
         }
         if (p != null) {
-            Toolkit.getDefaultToolkit().beep();
-            elegir(p);
+            elegir(p); // el bip suena al agregarlo (si esta agotado suena el de error)
             buscador.setText("");
             return;
         }
         if (t.replaceAll("\\s", "").matches("\\d{6,}")) {
-            Toolkit.getDefaultToolkit().beep();
-            Timer segundo = new Timer(180, e -> Toolkit.getDefaultToolkit().beep());
-            segundo.setRepeats(false);
-            segundo.start();
+            Pitido.error();
             Aviso.mostrar(rejilla.getParent() instanceof JComponent ? (JComponent) rejilla.getParent() : this,
                     Aviso.Tipo.ERROR, "Código desconocido", "No hay ningún producto con el código " + t);
             buscador.selectAll();
@@ -368,7 +363,7 @@ public class PanelVender extends JPanel implements RecibeCodigo {
         if (r.puedeVender()) {
             return r;
         }
-        Toolkit.getDefaultToolkit().beep();
+        Pitido.error();
         Alerta.mostrar(this, Alerta.Tipo.AVISO,
                 r.getEstado() == rutas.logica.Existencias.Estado.AGOTADO ? "Producto agotado" : "No alcanza",
                 r.getMensaje() + ". Si llegó mercancía, regístrela en Productos.", null);
@@ -376,6 +371,7 @@ public class PanelVender extends JPanel implements RecibeCodigo {
     }
 
     private void agregado(Producto p, LineaVenta l, rutas.logica.Existencias.Revision rv) {
+        Pitido.bien();
         refrescarVenta();
         buscador.selectAll(); // lo siguiente que se escriba o escanee reemplaza la busqueda
         enfocar();

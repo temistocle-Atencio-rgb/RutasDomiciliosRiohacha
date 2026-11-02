@@ -13,7 +13,6 @@ import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Image;
 import java.awt.Insets;
-import java.awt.Toolkit;
 import java.awt.event.HierarchyEvent;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
@@ -311,12 +310,13 @@ public class PanelCompras extends JPanel implements RecibeCodigo {
             }
         }
         if (p != null) {
+            Pitido.bien();
             agregar(p);
             buscador.setText("");
             return;
         }
         if (t.replaceAll("\\s", "").matches("\\d{6,}")) {
-            Toolkit.getDefaultToolkit().beep();
+            Pitido.error();
             String codigo = t.replaceAll("\\s", "");
             if (editaProductos()) {
                 Alerta.confirmar(this, "Código desconocido", "No hay ningún producto con el código " + codigo

@@ -3,7 +3,6 @@ package rutas.vista;
 import java.awt.Component;
 import java.awt.Container;
 import java.awt.KeyboardFocusManager;
-import java.awt.Toolkit;
 import java.awt.Window;
 import java.awt.event.KeyEvent;
 import java.io.IOException;
@@ -217,7 +216,7 @@ public final class Lector {
             panel.codigoEscaneado(codigo);
             return;
         }
-        Toolkit.getDefaultToolkit().beep();
+        Pitido.error(); // nadie lo puede usar en esta pantalla
         Window v = ventanaPrincipal();
         if (v instanceof javax.swing.JFrame) {
             Aviso.mostrar((JComponent) ((javax.swing.JFrame) v).getContentPane(), Aviso.Tipo.MENSAJE, "Código leído",
