@@ -1205,9 +1205,15 @@ final class FormularioProducto {
                 } catch (IllegalArgumentException e) {
                     throw new IllegalArgumentException("Lote " + l.numero.getText().trim() + ": " + e.getMessage());
                 }
-                long cantLote = leerCantidadOCero(l.cantidad, "la cantidad del lote");
-                ImportadorProductos.revisarCantidadEscrita(cantLote, FichaProducto.unidadDe(f.medida),
-                        "La cantidad del lote " + l.numero.getText().trim());
+                Lote guardado = loteGuardado(l.numero.getText().trim(), l.cantidad.getText().trim());
+                long cantLote;
+                if (guardado != null) {
+                    cantLote = guardado.getCantidad(); // ese lote no se toco: se deja como estaba
+                } else {
+                    cantLote = leerCantidadOCero(l.cantidad, "la cantidad del lote");
+                    ImportadorProductos.revisarCantidadEscrita(cantLote, FichaProducto.unidadDe(f.medida),
+                            "La cantidad del lote " + l.numero.getText().trim());
+                }
                 f.lotes.add(new Lote(l.numero.getText(), v, cantLote));
             }
         }
@@ -1234,11 +1240,32 @@ final class FormularioProducto {
                         Ubicaciones.registrarError(e);
                     }
                 }
-                f.bodegas.put(b.bodega.getId(), new long[]{st,
-                    leerCantidadOCero(b.minimo, "el stock mínimo de " + b.bodega.getNombre())});
+                String minAbrir = antes == null ? "" : PanelProductos.cantidad(antes[1]);
+                long min;
+                if (editando != null && antes != null && b.minimo.getText().trim().equals(minAbrir)) {
+                    min = antes[1]; // sin cambios: se respeta lo que ya estaba
+                } else {
+                    min = leerCantidadOCero(b.minimo, "el stock mínimo de " + b.bodega.getNombre());
+                    ImportadorProductos.revisarCantidadEscrita(min, FichaProducto.unidadDe(f.medida),
+                            "El stock mínimo de " + b.bodega.getNombre());
+                }
+                f.bodegas.put(b.bodega.getId(), new long[]{st, min});
             }
         }
         return f;
+    }
+
+    /** El lote guardado con ese numero y esa cantidad escrita igual que al abrir (null si es nuevo o cambio). */
+    private Lote loteGuardado(String numero, String cantidadEscrita) {
+        if (editando == null || ficha == null) {
+            return null;
+        }
+        for (Lote g : ficha.lotes) {
+            if (g.getNumero().equalsIgnoreCase(numero) && PanelProductos.cantidad(g.getCantidad()).equals(cantidadEscrita)) {
+                return g;
+            }
+        }
+        return null;
     }
 
     private static long leerCantidadOCero(JTextField t, String que) {

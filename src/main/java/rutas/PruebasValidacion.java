@@ -373,6 +373,17 @@ public class PruebasValidacion {
         }
     }
 
+    static String crearConPrecio(rutas.logica.Catalogo cat, long precio) {
+        try {
+            cat.crear(new rutas.modelo.Producto(0, null, "Precio " + precio, Unidad.UNIDAD, precio, 0, 0, 0, null, true));
+            return null;
+        } catch (IllegalArgumentException e) {
+            return e.getMessage();
+        } catch (java.sql.SQLException e) {
+            return "SQL " + e.getMessage();
+        }
+    }
+
     /** Escribe un CSV temporal y lo importa. */
     static ImportadorProductos.Resultado importar(rutas.logica.Catalogo cat, String contenido) throws Exception {
         java.io.File f = new java.io.File(java.nio.file.Files.createTempDirectory("domiruta_val").toFile(), "p.csv");
@@ -394,6 +405,19 @@ public class PruebasValidacion {
             revisar("H2: costo mayor que la venta sí se guarda (solo es aviso)", noLanza(() -> {
                 try {
                     cat.crear(new rutas.modelo.Producto(0, "2", "Pan", Unidad.UNIDAD, 1000, 1200, 0, 0, null, true));
+                } catch (java.sql.SQLException e) {
+                    throw new IllegalStateException(e);
+                }
+            }));
+            revisar("H2: el precio máximo del producto es $99.999.999", crearConPrecio(cat, 99_999_999L) == null
+                    && String.valueOf(crearConPrecio(cat, 100_000_000L)).contains("$99.999.999"));
+            // un producto de antes con precio $0 se puede editar sin tocar el precio
+            long id = bd.insertarProducto(new rutas.modelo.Producto(0, "0", "Insumo", Unidad.UNIDAD, 0, 0, 0, 0, null, true))
+                    .getId();
+            cat.recargar();
+            revisar("H2: un precio $0 de antes no impide cambiarle el nombre", noLanza(() -> {
+                try {
+                    cat.editar(new rutas.modelo.Producto(id, "0", "Insumo bolsa", Unidad.UNIDAD, 0, 0, 0, 0, null, true));
                 } catch (java.sql.SQLException e) {
                     throw new IllegalStateException(e);
                 }
@@ -438,9 +462,9 @@ public class PruebasValidacion {
         revisar("H2: stock negativo escrito se rechaza",
                 lanza("negativo", () -> ImportadorProductos.revisarCantidadEscrita(-5000, Unidad.UNIDAD, "El stock")));
         revisar("H2 caso 11: precio de 20 cifras da un mensaje claro (no «For input string»)",
-                lanza("$99.999.999", () -> ImportadorProductos.leerPesos("99999999999999999999")));
-        revisar("H2: el precio máximo es 99.999.999", ImportadorProductos.leerPesos("99.999.999") == 99_999_999L
-                && lanza("$99.999.999", () -> ImportadorProductos.leerPesos("100.000.000")));
+                lanza("demasiado grande", () -> ImportadorProductos.leerPesos("99999999999999999999")));
+        revisar("H2: un pago o total grande se sigue leyendo (el máximo es solo para el precio del producto)",
+                ImportadorProductos.leerPesos(rutas.logica.Tarifa.pesos(120_000_000)) == 120_000_000L);
         revisar("H2 caso 9: precio negativo se rechaza", lanza("no válido", () -> ImportadorProductos.leerPesos("-500")));
     }
 

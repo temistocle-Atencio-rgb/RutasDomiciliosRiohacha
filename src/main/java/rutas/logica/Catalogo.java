@@ -278,11 +278,15 @@ public class Catalogo {
         if (p.getPrecioVenta() < 0 || p.getPrecioCompra() < 0) {
             throw new IllegalArgumentException("El precio no puede ser negativo");
         }
-        if (p.getPrecioVenta() == 0) {
+        // un precio de antes que no se toco (por ejemplo $0 de un insumo) no impide editar lo demas
+        boolean ventaNueva = viejo == null || p.getPrecioVenta() != viejo.getPrecioVenta();
+        boolean costoNuevo = viejo == null || p.getPrecioCompra() != viejo.getPrecioCompra();
+        if (ventaNueva && p.getPrecioVenta() == 0) {
             throw new IllegalArgumentException("El precio de venta debe ser mayor que $0");
         }
-        if (p.getPrecioVenta() > ImportadorProductos.PRECIO_MAXIMO || p.getPrecioCompra() > ImportadorProductos.PRECIO_MAXIMO) {
-            throw new IllegalArgumentException("El valor máximo es $99.999.999");
+        if (ventaNueva && p.getPrecioVenta() > ImportadorProductos.PRECIO_MAXIMO
+                || costoNuevo && p.getPrecioCompra() > ImportadorProductos.PRECIO_MAXIMO) {
+            throw new IllegalArgumentException("El precio máximo es $99.999.999");
         }
         boolean codigoNuevo = p.getCodigo() != null && (viejo == null || viejo.getCodigo() == null
                 || !p.getCodigo().equals(clave(viejo.getCodigo())));

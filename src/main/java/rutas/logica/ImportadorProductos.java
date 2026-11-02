@@ -215,13 +215,16 @@ public final class ImportadorProductos {
                     : "Precio no válido: " + texto.trim());
         }
         String cifras = s.replace(".", "").replaceFirst("^0+(?=\\d)", "");
-        if (cifras.length() > 8 || Long.parseLong(cifras) > PRECIO_MAXIMO) { // antes de convertir: sin desbordes
-            throw new IllegalArgumentException("El valor máximo es $99.999.999");
+        if (cifras.length() > 15) { // antes de convertir: sin desbordes ni mensajes en ingles
+            throw new IllegalArgumentException("Ese valor es demasiado grande: revise cuántas cifras tiene");
         }
         return Long.parseLong(cifras);
     }
 
-    /** Lo mas alto que se puede escribir como precio o valor (pesos). */
+    /**
+     * Lo mas alto que puede valer un producto (precio de venta o costo). No se aplica en leerPesos
+     * (que tambien lee pagos y totales de una venta), sino al guardar el producto.
+     */
     public static final long PRECIO_MAXIMO = 99_999_999L;
     /** Lo mas alto que se puede escribir como cantidad: 999.999 (en milesimas). */
     public static final long CANTIDAD_MAXIMA = 999_999_000L;
