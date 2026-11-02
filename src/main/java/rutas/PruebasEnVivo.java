@@ -402,6 +402,11 @@ public class PruebasEnVivo {
                 "https://x/?s=abc", "", LocalTime.of(10, 10));
         revisar("mensaje: dice hasta qué hora puede aceptar", m.contains("toca *Acepto* (o *No puedo*) antes de las *10:10 a.m.*:\nhttps://x/?s=abc"));
         String p = rutas.logica.MensajesWhatsApp.enlacePersonal("Tienda el Ramiro", "Carlos Pérez", "https://x/?r=abc");
+        String c = rutas.logica.MensajesWhatsApp.seguimiento("Tienda el Ramiro", "Elianis Pérez",
+                "https://x/?p=abcdefghijkmnpqrstuvwxyz", "https://x/?p=", "K7M2QX");
+        revisar("mensaje: seguimiento al cliente con enlace y código, sin datos de otros",
+                c.startsWith("*TIENDA EL RAMIRO*") && c.contains("Hola *Elianis*") && c.contains("https://x/?p=abcdefghijkmnpqrstuvwxyz")
+                && c.contains("código *K7M2QX*") && !c.contains("3127778899"));
         revisar("mensaje: enlace personal", p.startsWith("*TIENDA EL RAMIRO*") && p.contains("Hola *Carlos*")
                 && p.contains("https://x/?r=abc") && p.contains("No lo compartas"));
     }

@@ -163,4 +163,18 @@ public final class MensajesWhatsApp {
                 .append("Es solo tuyo y queda en el primer celular donde lo abras. No lo compartas.");
         return b.toString();
     }
+
+    /** Al cliente: el enlace para ver por dónde va su pedido y el código por si el enlace no abre. */
+    public static String seguimiento(String negocio, String cliente, String enlace, String paginaConsulta, String codigo) {
+        StringBuilder b = new StringBuilder();
+        if (negocio != null && !negocio.isBlank()) {
+            b.append('*').append(negocio.trim().toUpperCase()).append("*\n\n");
+        }
+        String n = primerNombre(cliente);
+        b.append(n.isEmpty() ? "Hola" : "Hola *" + n + "*").append(", tu pedido va en camino.\n")
+                .append("Mira por dónde va aquí:\n").append(enlace).append("\n\n")
+                .append("Si el enlace no abre, entra a ").append(paginaConsulta)
+                .append(" y escribe el código *").append(codigo).append("* con los últimos 4 números de tu celular.");
+        return b.toString();
+    }
 }

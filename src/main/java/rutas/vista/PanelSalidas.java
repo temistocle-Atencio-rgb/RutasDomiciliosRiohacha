@@ -382,6 +382,25 @@ public class PanelSalidas extends JPanel {
         return f;
     }
 
+    /** WhatsApp al cliente con su enlace y su código (en su chat si el celular es válido). */
+    private void enviarSeguimiento(Salida.Entrega e) {
+        NubeRepartidor.Ajustes aj = app.getAjustesNube();
+        if (aj == null) {
+            return;
+        }
+        String msj = rutas.logica.MensajesWhatsApp.seguimiento(app.getNegocio(), e.parada.getNombre(),
+                NubeRepartidor.enlaceCliente(aj.pagina, e.enlaceCliente), NubeRepartidor.enlaceCliente(aj.pagina, ""),
+                e.codigoCliente);
+        String cel = rutas.logica.Avisos.numeroWhatsApp(e.parada.getTelefono()).isEmpty() ? "" : e.parada.getTelefono();
+        try {
+            AbrirWhatsApp.abrir(cel, msj);
+        } catch (Exception ex) {
+            java.awt.Toolkit.getDefaultToolkit().getSystemClipboard()
+                    .setContents(new java.awt.datatransfer.StringSelection(msj), null);
+            Aviso.mostrar(this, Aviso.Tipo.AVISO, "Mensaje copiado", "No se abrió WhatsApp: péguelo en el chat del cliente");
+        }
+    }
+
     private void menuEntrega(Salida s, Salida.Entrega e, Component donde, int x, int y) {
         javax.swing.JPopupMenu m = new javax.swing.JPopupMenu();
         javax.swing.JMenuItem ok = new javax.swing.JMenuItem("Marcar entregado");
@@ -393,6 +412,13 @@ public class PanelSalidas extends JPanel {
         m.add(ok);
         m.add(no);
         m.add(camino);
+        if (s.enLinea() && e.enCamino() && !e.enlaceCliente.isEmpty()) {
+            javax.swing.JMenuItem seg = new javax.swing.JMenuItem("Enviar seguimiento al cliente");
+            seg.setToolTipText("Le llega por WhatsApp su enlace para ver por dónde va el pedido");
+            seg.addActionListener(a -> enviarSeguimiento(e));
+            m.addSeparator();
+            m.add(seg);
+        }
         if (e.tieneFoto || !e.foto.isEmpty()) {
             javax.swing.JMenuItem foto = new javax.swing.JMenuItem("Ver foto de entrega");
             foto.addActionListener(a -> verFoto(s, e));
