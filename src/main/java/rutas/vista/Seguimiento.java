@@ -63,6 +63,12 @@ public class Seguimiento {
     /** Último «se abrió en otro celular» que ya se avisó, por repartidor. */
     private final Map<String, java.time.LocalDateTime> otroCelularVisto = new java.util.HashMap<>();
     private boolean primeraLectura = true;
+    // ---- el ícono de conexión de arriba
+    private IndicadorConexion indicador;
+    private long ultimaPrueba;          // cuándo se probó la conexión sin tener nada que revisar
+    private boolean avisadoCaida;       // ya sonó la campana por esta caída
+    /** Tiempo sin conexión antes de avisar en la campana. */
+    static final long AVISAR_CAIDA_MS = 60_000;
     /** Cuándo se abrió el programa: lo que ya estaba vencido o sin respuesta antes no vuelve a sonar. */
     private final java.time.LocalDateTime inicio = java.time.LocalDateTime.now();
 
@@ -85,6 +91,79 @@ public class Seguimiento {
     public void alCambiar(Oyente o) {
         oyentes.add(o);
     }
+
+    void setIndicador(IndicadorConexion i) {
+        indicador = i;
+        if (i != null) {
+            i.setEstado(app.getNube() == null ? IndicadorConexion.Estado.OCULTO : IndicadorConexion.Estado.REVISANDO, "");
+        }
+    }
+
+    /** ¿Hay internet aunque Supabase falle? (para no decir «sin internet» cuando el problema es la base) */
+    static boolean hayInternet() {
+        try {
+            java.net.HttpURLConnection c = (java.net.HttpURLConnection) java.net.URI
+                    .create("https://www.google.com/generate_204").toURL().openConnection();
+            c.setConnectTimeout(4000);
+            c.setReadTimeout(4000);
+            c.setRequestMethod("HEAD");
+            int r = c.getResponseCode();
+            c.disconnect();
+            return r > 0 && r < 500;
+        } catch (IOException | RuntimeException e) {
+            return false;
+        }
+    }
+
+    /** Qué mostrar según el error de la revisión ("" = salió bien). Se llama en el hilo de internet. */
+    static IndicadorConexion.Estado clasificar(String error, java.util.function.BooleanSupplier internet) {
+        if (error == null || error.isEmpty()) {
+            return IndicadorConexion.Estado.EN_LINEA;
+        }
+        if (error.startsWith("No hay internet")) { // no conectó: puede ser el internet o Supabase
+            return internet.getAsBoolean() ? IndicadorConexion.Estado.SIN_BASE : IndicadorConexion.Estado.SIN_INTERNET;
+        }
+        return IndicadorConexion.Estado.SIN_BASE; // respondió mal (clave, tablas, servidor)
+    }
+
+    /** Para las pruebas (el enum es de este paquete). */
+    public static String clasificarParaPruebas(String error, java.util.function.BooleanSupplier internet) {
+        return clasificar(error, internet).name();
+    }
+
+        /** Pone el ícono y, si la caída pasa de 1 minuto, avisa una vez (y otra cuando vuelve). */
+    private void ponerConexion(IndicadorConexion.Estado e, String detalle) {
+        if (indicador == null) {
+            return;
+        }
+        IndicadorConexion.Estado antes = indicador.getEstado();
+        indicador.setEstado(e, detalle);
+        if (e == IndicadorConexion.Estado.EN_LINEA) {
+            if (avisadoCaida) {
+                avisadoCaida = false;
+                for (Oyente o : oyentes) {
+                    o.aviso(null, "Volvió el internet", "Lo pendiente se está mandando", false);
+                }
+            }
+            caidaDesde = 0;
+            return;
+        }
+        if (antes == IndicadorConexion.Estado.EN_LINEA || antes == IndicadorConexion.Estado.REVISANDO || caidaDesde == 0) {
+            caidaDesde = System.currentTimeMillis();
+        }
+        if (!avisadoCaida && System.currentTimeMillis() - caidaDesde >= AVISAR_CAIDA_MS) {
+            avisadoCaida = true;
+            String hora = rutas.modelo.Ruta.FORMATO_HORA.format(java.time.LocalDateTime.now()
+                    .minusSeconds((System.currentTimeMillis() - caidaDesde) / 1000));
+            for (Oyente o : oyentes) {
+                o.aviso(null, e == IndicadorConexion.Estado.SIN_INTERNET ? "Sin internet desde las " + hora
+                        : "Supabase no responde desde las " + hora,
+                        "La caja sigue funcionando; lo marcado se manda cuando vuelva.", true);
+            }
+        }
+    }
+
+    private long caidaDesde;
 
     /** "" si la última revisión salió bien; si no, por qué (por ejemplo sin internet). */
     public String getError() {
@@ -153,15 +232,32 @@ public class Seguimiento {
             }
         }
         boolean leerRepartidores = app.hayRepartidoresEnNube();
-        NubeRepartidor nube = abiertas.isEmpty() && cerradas.isEmpty() && !leerRepartidores ? null : app.getNube();
-        if (nube == null) {
+        NubeRepartidor configurada = app.getNube();
+        if (configurada == null) {
+            if (indicador != null) {
+                indicador.setEstado(IndicadorConexion.Estado.OCULTO, "");
+            }
             return;
         }
+        boolean nadaQueRevisar = abiertas.isEmpty() && cerradas.isEmpty() && !leerRepartidores;
+        if (nadaQueRevisar && System.currentTimeMillis() - ultimaPrueba < 30_000) {
+            return; // sin salidas basta con probar la conexión cada 30 s
+        }
+        NubeRepartidor nube = configurada;
+        ultimaPrueba = System.currentTimeMillis();
         revisando = true;
         Object[] reps = new Object[1]; // lo lee el hilo de internet; se aplica en el de la pantalla
+        Object[] conexion = new Object[2]; // {Estado, detalle}
         hilo.execute(() -> {
             String err = "";
             try {
+                if (nadaQueRevisar) {
+                    try {
+                        nube.probar();
+                    } catch (IOException ex) {
+                        err = ex.getMessage();
+                    }
+                }
                 if (leerRepartidores) {
                     try {
                         reps[0] = nube.repartidores();
@@ -207,7 +303,10 @@ public class Seguimiento {
                 err = "Error leyendo Supabase: " + ex;
             } finally {
                 String errFinal = err;
+                conexion[0] = clasificar(errFinal, Seguimiento::hayInternet);
+                conexion[1] = errFinal;
                 SwingUtilities.invokeLater(() -> {
+                    ponerConexion((IndicadorConexion.Estado) conexion[0], (String) conexion[1]);
                     if (reps[0] != null) {
                         @SuppressWarnings("unchecked")
                         Map<String, NubeRepartidor.EstadoRepartidor> m = (Map<String, NubeRepartidor.EstadoRepartidor>) reps[0];

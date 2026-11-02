@@ -32,6 +32,18 @@ public class PruebasEnVivo {
         probarAvisos();
         probarBaseDatos();
         probarMensajes();
+        probarConexion();
+    }
+
+    private static void probarConexion() {
+        revisar("conexión: sin error = en línea", rutas.vista.Seguimiento.clasificarParaPruebas("", () -> false).equals("EN_LINEA"));
+        revisar("conexión: no conecta y tampoco hay internet = sin internet",
+                rutas.vista.Seguimiento.clasificarParaPruebas("No hay internet o Supabase no responde", () -> false).equals("SIN_INTERNET"));
+        revisar("conexión: no conecta pero sí hay internet = Supabase no responde",
+                rutas.vista.Seguimiento.clasificarParaPruebas("No hay internet o Supabase no responde", () -> true).equals("SIN_BASE"));
+        revisar("conexión: la clave mala es de Supabase (sin preguntar por internet)",
+                rutas.vista.Seguimiento.clasificarParaPruebas("Supabase no aceptó la clave secreta. Revise Configuración › Repartidor.",
+                        () -> { throw new AssertionError("no debía preguntar"); }).equals("SIN_BASE"));
     }
 
     // ------------------------------------------------------------------

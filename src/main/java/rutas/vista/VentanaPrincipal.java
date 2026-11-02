@@ -58,6 +58,7 @@ public class VentanaPrincipal extends JFrame {
     private PanelCompras panelNuevaCompra;          // null si no puede registrar compras
     private final Notificaciones notificaciones = new Notificaciones(); // la campana de arriba
     private Runnable oyenteLector; // el estado del lector de arriba (se quita al cerrar la ventana)
+    private final IndicadorConexion indicadorConexion = new IndicadorConexion(); // en línea / sin internet / Supabase
     private Seguimiento seguimiento;
     private JPanel zonaDomicilio;            // mapa + Ruta/Buscar prestados al cobro a domicilio
     private final List<javax.swing.JButton> pestanasDomicilio = new ArrayList<>();
@@ -170,6 +171,7 @@ public class VentanaPrincipal extends JFrame {
                 }
             }
         });
+        seguimiento.setIndicador(indicadorConexion);
         notificaciones.alTocar(this::irASalida);
         app.alCambiar(this::marcarMensajes);
         marcarMensajes();
@@ -256,6 +258,8 @@ public class VentanaPrincipal extends JFrame {
         der.setLayout(new BoxLayout(der, BoxLayout.X_AXIS));
         der.add(lblTrafico);
         der.add(Box.createHorizontalStrut(16));
+        der.add(indicadorConexion);
+        der.add(Box.createHorizontalStrut(6));
         der.add(botonLector());
         der.add(Box.createHorizontalStrut(10));
         der.add(notificaciones.getCampana());
