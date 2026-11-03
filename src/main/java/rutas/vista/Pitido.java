@@ -49,6 +49,25 @@ final class Pitido {
         }
     }
 
+    private static Clip campana;
+
+    /** Aviso de la campana: dos notas suaves. Si el computador no tiene sonido, no suena nada (nunca el de Windows). */
+    static synchronized void aviso() {
+        if (sinSonido) {
+            return;
+        }
+        try {
+            if (campana == null) {
+                campana = clip(tonos(new int[]{880, 1320}, 110, 40, 0.35));
+            }
+            campana.stop();
+            campana.setFramePosition(0);
+            campana.start();
+        } catch (Exception | LinkageError e) {
+            sinSonido = true;
+        }
+    }
+
     private static synchronized void sonar(boolean ok) {
         if (sinSonido) {
             java.awt.Toolkit.getDefaultToolkit().beep();

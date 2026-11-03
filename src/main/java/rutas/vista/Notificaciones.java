@@ -34,7 +34,8 @@ public class Notificaciones {
 
     /** Un aviso guardado. */
     public static class Nota {
-        public final LocalDateTime hora = LocalDateTime.now();
+        public LocalDateTime hora = LocalDateTime.now();
+        public int veces = 1; // el mismo aviso varias veces seguidas
         public final Aviso.Tipo tipo;
         public final String titulo;
         public final String texto;
@@ -67,14 +68,32 @@ public class Notificaciones {
         return campana;
     }
 
-    public void agregar(Aviso.Tipo tipo, String titulo, String texto, long salida) {
+    /**
+     * Agrega el aviso. Si es igual al de hace menos de 10 minutos, no se repite: se suma a ese («×3») y devuelve
+     * false (así no vuelve a salir en pantalla ni a sonar).
+     */
+    public boolean agregar(Aviso.Tipo tipo, String titulo, String texto, long salida) {
         limpiarViejas();
+        for (int i = notas.size() - 1; i >= 0; i--) {
+            Nota x = notas.get(i);
+            if (x.titulo.equals(titulo == null ? "" : titulo) && x.salida == salida
+                    && x.hora.isAfter(LocalDateTime.now().minusMinutes(10))) {
+                x.veces++;
+                x.hora = LocalDateTime.now();
+                notas.remove(i);
+                notas.add(x); // queda arriba, con la hora nueva
+                campana.repaint();
+                campana.actualizarTexto();
+                return false;
+            }
+        }
         notas.add(new Nota(tipo, titulo, texto, salida));
         while (notas.size() > MAXIMO) {
             notas.remove(0);
         }
         campana.repaint();
         campana.actualizarTexto();
+        return true;
     }
 
     public List<Nota> getNotas() {
@@ -188,7 +207,7 @@ public class Notificaciones {
         JPanel arriba = new JPanel(new BorderLayout(8, 0));
         arriba.setOpaque(false);
         arriba.setAlignmentX(JComponent.LEFT_ALIGNMENT);
-        TextoEmoji t = new TextoEmoji(n.titulo, Tema.textoFuerte(13.5f), Tema.GRIS_OSCURO, 230);
+        TextoEmoji t = new TextoEmoji(n.veces > 1 ? n.titulo + " (×" + n.veces + ")" : n.titulo, Tema.textoFuerte(13.5f), Tema.GRIS_OSCURO, 230);
         arriba.add(t, BorderLayout.CENTER);
         JLabel h = new JLabel(Ruta.FORMATO_HORA.format(n.hora));
         h.setFont(Tema.texto(12));

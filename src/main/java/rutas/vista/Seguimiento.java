@@ -50,6 +50,9 @@ public class Seguimiento {
 
     private final Aplicacion app;
     private final List<Oyente> oyentes = new ArrayList<>();
+    /** El nombre de la tienda que ya tienen las salidas en internet (si se cambia en Configuración, se actualiza). */
+    private volatile String nombreSubido = "";
+
     private final ExecutorService hilo = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "seguimiento-repartidor");
         t.setDaemon(true);
@@ -273,6 +276,7 @@ public class Seguimiento {
         Object[] conexion = new Object[2]; // {Estado, detalle}
         List<rutas.modelo.Correccion> correcciones = new ArrayList<>();
         boolean leerCorrecciones = !abiertas.isEmpty() || !cerradas.isEmpty();
+        String nombreTienda = app.getNegocio();
         hilo.execute(() -> {
             String err = "";
             try {
@@ -281,6 +285,14 @@ public class Seguimiento {
                         nube.probar();
                     } catch (IOException ex) {
                         err = ex.getMessage();
+                    }
+                }
+                if (!nombreTienda.isBlank() && !nombreTienda.equals(nombreSubido)) {
+                    try {
+                        nube.renombrarTienda(nombreTienda);
+                        nombreSubido = nombreTienda;
+                    } catch (IOException ex) {
+                        // se intenta en la próxima revisión
                     }
                 }
                 if (leerRepartidores) {
@@ -563,12 +575,13 @@ public class Seguimiento {
             }
             java.time.LocalDateTime antes = otroCelularVisto.put(d.idNube, e.dispositivoCambio);
             boolean nuevo = antes == null ? !primeraLectura || e.dispositivoCambio.isAfter(ahora.minusMinutes(30))
-                    : !antes.equals(e.dispositivoCambio);
+                    : Math.abs(java.time.Duration.between(antes, e.dispositivoCambio).getSeconds()) > 5;
             if (nuevo) {
                 for (Oyente o : oyentes) {
-                    o.aviso(null, PanelPedidos.primerNombre(d.nombre) + " entró desde otro celular",
-                            "Su sesión en el celular anterior se cerró. ¿No fue " + PanelPedidos.primerNombre(d.nombre)
-                                    + "? Póngale una clave nueva en Configuración › Domiciliarios.", true);
+                    o.aviso(null, PanelPedidos.primerNombre(d.nombre) + " entró en otro celular o navegador",
+                            "Su sesión anterior se cerró (pasa también si entra en la app instalada y en el navegador)."
+                                    + " ¿No fue " + PanelPedidos.primerNombre(d.nombre)
+                                    + "? Póngale una clave nueva en Configuración › Domiciliarios.", false);
                 }
             }
         }

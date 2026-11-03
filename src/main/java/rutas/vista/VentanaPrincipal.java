@@ -136,7 +136,7 @@ public class VentanaPrincipal extends JFrame {
         seguimiento.alCambiar(new Seguimiento.Oyente() {
             @Override
             public void mensajeNuevo(rutas.modelo.Salida s, rutas.modelo.Salida.Mensaje m) {
-                java.awt.Toolkit.getDefaultToolkit().beep();
+                Pitido.aviso();
                 avisar(s, Aviso.Tipo.MENSAJE, "Mensaje de " + (s.repartidor.isEmpty() ? "el repartidor"
                         : s.repartidor), m.texto, true);
             }
@@ -147,7 +147,7 @@ public class VentanaPrincipal extends JFrame {
                 if (acepto) {
                     avisar(s, Aviso.Tipo.BIEN, quien + " aceptó", "Ya va con las entregas", false);
                 } else {
-                    java.awt.Toolkit.getDefaultToolkit().beep();
+                    Pitido.aviso();
                     avisar(s, Aviso.Tipo.ERROR, quien + " no puede llevarla",
                             (s.motivoRechazo.isEmpty() ? "" : s.motivoRechazo + ". ") + "Escoja a otro en «Salidas»", true);
                 }
@@ -156,7 +156,7 @@ public class VentanaPrincipal extends JFrame {
             @Override
             public void aviso(rutas.modelo.Salida s, String titulo, String texto, boolean grave) {
                 if (grave) {
-                    java.awt.Toolkit.getDefaultToolkit().beep();
+                    Pitido.aviso();
                 }
                 avisar(s, grave ? Aviso.Tipo.ERROR : Aviso.Tipo.AVISO, titulo, texto, grave);
             }
@@ -180,7 +180,9 @@ public class VentanaPrincipal extends JFrame {
 
     /** El aviso de abajo (se va solo) y además queda en la campana de arriba. */
     private void avisar(rutas.modelo.Salida s, Aviso.Tipo tipo, String titulo, String texto, boolean importante) {
-        notificaciones.agregar(tipo, titulo, texto, s == null ? 0 : s.id);
+        if (!notificaciones.agregar(tipo, titulo, texto, s == null ? 0 : s.id)) {
+            return; // el mismo aviso hace poco: se suma en la campana, sin volver a salir en pantalla
+        }
         // si está vendiendo, el aviso sale igual (sobre la ventana, no solo sobre el mapa)
         JComponent donde = conMapa.isShowing() ? conMapa : (JComponent) getContentPane();
         Aviso.mostrar(donde, tipo, titulo, texto, importante);

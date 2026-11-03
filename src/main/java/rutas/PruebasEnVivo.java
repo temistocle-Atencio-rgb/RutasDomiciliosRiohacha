@@ -67,6 +67,18 @@ public class PruebasEnVivo {
                 && visto.get(0).contains("\"p_clave\":\"482915\""));
         NubeRepartidor.EstadoRepartidor e = n.repartidores().get("0f8fad5b-d9cb-469f-a165-70867728950e");
         revisar("repartidores: lee si tiene clave y desde cuándo tiene la sesión", e != null && e.conClave && e.sesionEn != null);
+        visto.clear();
+        n.renombrarTienda("Tienda el Ramiro 2");
+        rutas.vista.Notificaciones no = new rutas.vista.Notificaciones();
+        boolean b1 = no.agregar(rutas.vista.Aviso.Tipo.AVISO, "Camilo entró en otro celular o navegador", "x", 0);
+        boolean b2 = no.agregar(rutas.vista.Aviso.Tipo.AVISO, "Camilo entró en otro celular o navegador", "x", 0);
+        boolean b3 = no.agregar(rutas.vista.Aviso.Tipo.AVISO, "Camilo entró en otro celular o navegador", "x", 0);
+        boolean b4 = no.agregar(rutas.vista.Aviso.Tipo.AVISO, "Ana aceptó", "x", 0);
+        revisar("campana: el mismo aviso seguido se suma (×3) y no vuelve a salir; uno distinto sí",
+                b1 && !b2 && !b3 && b4 && no.getNotas().size() == 2 && no.getNotas().get(0).veces == 3);
+        revisar("nombre de la tienda: las salidas en internet toman el nombre nuevo",
+                visto.get(0).startsWith("PATCH https://p.supabase.co/rest/v1/salidas?tienda=neq.Tienda%20el%20Ramiro%202&select=id")
+                && visto.get(0).contains("\"tienda\":\"Tienda el Ramiro 2\""));
         rutas.modelo.Domiciliario dc = new rutas.modelo.Domiciliario(0, "Carlos Pérez", "300 111 2233", rutas.modelo.Domiciliario.Tipo.FIJO);
         String m = rutas.vista.PanelConfiguracion.mensajeClave(dc, "939113", "https://x.github.io/app/");
         revisar("mensaje de la clave: la clave va sola en su línea (se copia fácil en WhatsApp), con el celular y el enlace",

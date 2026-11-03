@@ -457,6 +457,14 @@ public class NubeRepartidor {
         return l;
     }
 
+    /** La tienda cambió de nombre: las salidas que están en internet (y lo que ven repartidores y clientes) lo toman. */
+    public void renombrarTienda(String nombre) throws IOException {
+        Map<String, Object> c = new LinkedHashMap<>();
+        c.put("tienda", nombre);
+        llamar("PATCH", "salidas?tienda=neq." + java.net.URLEncoder.encode(nombre, StandardCharsets.UTF_8)
+                .replace("+", "%20") + "&select=id", Json.escribir(c));
+    }
+
     /** Lee estados, ubicación y si ya terminó. */
     public Estado leer(String uuid) throws IOException {
         Estado est = new Estado();
