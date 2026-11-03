@@ -121,6 +121,10 @@ public class PruebasEnVivo {
         revisar("rastro: pide solo lo nuevo, en orden, y salta las lecturas malas (más de 150 m de error)",
                 r.size() == 2 && r.get(0)[2] == 11 && r.get(1)[2] == 13 && visto.get(0).contains("id=gt.10")
                 && visto.get(0).contains("order=id"));
+        double[] a1 = {11.5400, -72.9000, 1, 1_000_000}, a2 = {11.5403, -72.9000, 2, 1_005_000};
+        double[] lejos = {11.5450, -72.9000, 3, 1_010_000}, tarde = {11.5404, -72.9000, 4, 1_200_000};
+        revisar("rastro: une puntos seguidos y cercanos; corta si salta más de 150 m o pasa más de 1 min sin ubicación",
+                !rutas.vista.PanelMapa.hueco(a1, a2) && rutas.vista.PanelMapa.hueco(a2, lejos) && rutas.vista.PanelMapa.hueco(a2, tarde));
         n.quitarEntrega(77);
         revisar("pasar el cliente a otro: se borra esa entrega de internet (su enlace deja de servir)",
                 visto.get(1).equals("DELETE https://p.supabase.co/rest/v1/entregas_salida?id=eq.77"));

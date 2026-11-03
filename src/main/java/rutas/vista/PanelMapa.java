@@ -1494,6 +1494,21 @@ public class PanelMapa extends JPanel {
      * orden de la ruta, para no confundirlas con las pendientes). El repartidor es un círculo azul
      * profundo con una R y la hora de su última ubicación.
      */
+    /** Entre dos puntos del rastro: más de esto y no se unen (no se sabe por dónde fue). */
+    static final double SALTO_RASTRO_M = 150;
+    static final long HUECO_RASTRO_MS = 60_000;
+
+    /** No hubo ubicación por más de un minuto, o saltó más de 150 m: ahí el rastro se corta. */
+    public static boolean hueco(double[] a, double[] b) {
+        boolean conHora = a.length > 3 && b.length > 3 && a[3] > 0 && b[3] > 0;
+        return metros(a[0], a[1], b[0], b[1]) > SALTO_RASTRO_M || (conHora && b[3] - a[3] > HUECO_RASTRO_MS);
+    }
+
+    private static double metros(double lat1, double lon1, double lat2, double lon2) {
+        double dy = (lat2 - lat1) * 111_320, dx = (lon2 - lon1) * 111_320 * Math.cos(Math.toRadians(lat1));
+        return Math.sqrt(dx * dx + dy * dy);
+    }
+
     private void dibujarSalidas(Graphics2D g) {
         // el rastro: por dónde ha pasado cada repartidor (línea azul, debajo de los marcadores)
         java.awt.Stroke antes = g.getStroke();
@@ -1502,17 +1517,18 @@ public class PanelMapa extends JPanel {
                 continue;
             }
             Path2D camino = new Path2D.Double();
-            boolean primero = true;
+            double[] ant = null;
             for (double[] p : s.rastro) {
                 double x = sx(Geo.x(p[1])), y = sy(Geo.y(p[0]));
-                if (primero) {
-                    camino.moveTo(x, y);
-                    primero = false;
+                if (ant == null || hueco(ant, p)) {
+                    camino.moveTo(x, y); // sin ubicación un rato o un salto: no se une en línea recta
                 } else {
                     camino.lineTo(x, y);
                 }
+                ant = p;
             }
-            if (!Double.isNaN(s.lat) && s.ubicacionEn != null) { // que llegue hasta donde está ahora
+            if (ant != null && !Double.isNaN(s.lat) && s.ubicacionEn != null
+                    && metros(ant[0], ant[1], s.lat, s.lon) <= SALTO_RASTRO_M) { // que llegue hasta donde está ahora
                 camino.lineTo(sx(Geo.x(s.lon)), sy(Geo.y(s.lat)));
             }
             g.setStroke(new BasicStroke(7f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));

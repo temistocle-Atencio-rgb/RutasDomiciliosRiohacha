@@ -407,19 +407,25 @@ public class NubeRepartidor {
 
     /**
      * El rastro del repartidor: las ubicaciones buenas (error de 150 m o menos) después de la última que ya se tiene.
-     * Cada punto es {lat, lon, id}; el id sirve para pedir solo lo nuevo la próxima vez.
+     * Cada punto es {lat, lon, id, hora en ms}; el id sirve para pedir solo lo nuevo la próxima vez.
      */
     public List<double[]> rastro(String uuid, long despuesDe) throws IOException {
         List<double[]> l = new ArrayList<>();
         for (Map<?, ?> m : filas(llamar("GET", "ubicaciones?salida=eq." + uuid + "&id=gt." + Math.max(0, despuesDe)
-                + "&select=id,lat,lon,precision_m&order=id&limit=1000", null))) {
+                + "&select=id,lat,lon,precision_m,hora&order=id&limit=1000", null))) {
             Object p = m.get("precision_m");
             if (p instanceof Number && ((Number) p).doubleValue() > 150) {
                 continue;
             }
             double lat = Json.decimal(m, "lat"), lon = Json.decimal(m, "lon");
             if (!Double.isNaN(lat) && !Double.isNaN(lon)) {
-                l.add(new double[]{lat, lon, Json.entero(m, "id")});
+                long hora = 0;
+                try {
+                    hora = java.time.OffsetDateTime.parse(Json.texto(m, "hora")).toInstant().toEpochMilli();
+                } catch (RuntimeException e) {
+                    // sin hora: solo se corta por distancia
+                }
+                l.add(new double[]{lat, lon, Json.entero(m, "id"), hora});
             }
         }
         return l;
