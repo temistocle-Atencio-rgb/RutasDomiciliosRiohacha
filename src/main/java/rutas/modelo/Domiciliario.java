@@ -32,6 +32,8 @@ public class Domiciliario {
     public long id;
     public String nombre;
     public String celular;
+    /** Para mandarle la clave por correo ("" = no tiene). */
+    public String correo = "";
     public Tipo tipo;
     public boolean activo = true;
     /** En Supabase: su id y su enlace personal ("" = todavía no se ha creado allá). */

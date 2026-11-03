@@ -1025,20 +1025,101 @@ public class PanelConfiguracion extends JPanel {
             cargarCuentas();
             rutas.logica.NubeRepartidor.Ajustes aj = app.getAjustesNube();
             String pagina = aj == null ? "" : aj.pagina;
-            String msj = "Hola " + PanelPedidos.primerNombre(d.nombre) + ", tu clave de DomiRuta es " + nueva
-                    + ". Entra con tu celular (" + d.celular.replaceAll("\\D", "") + ") y esa clave aquí: " + pagina;
-            Alerta.confirmar(this, "Clave de " + PanelPedidos.primerNombre(d.nombre) + ": " + nueva,
-                    "Se ve solo esta vez (no queda guardada en ningún lado). Mándesela por WhatsApp.",
-                    "Mandar por WhatsApp", "Cerrar", () -> {
-                        try {
-                            AbrirWhatsApp.abrir(d.celular, msj);
-                        } catch (Exception ex) {
-                            java.awt.Toolkit.getDefaultToolkit().getSystemClipboard()
-                                    .setContents(new java.awt.datatransfer.StringSelection(msj), null);
-                            decir(msgCuentas, "No se abrió WhatsApp: el mensaje con la clave quedó copiado.", false);
-                        }
-                    });
+            mostrarClave(d, nueva, pagina);
         });
+    }
+
+    /** El mensaje con la clave: la clave va sola en su línea (en WhatsApp se toca y se copia fácil). */
+    public static String mensajeClave(rutas.modelo.Domiciliario d, String clave, String pagina) {
+        return "Hola " + PanelPedidos.primerNombre(d.nombre) + ", esta es tu clave de DomiRuta:\n\n"
+                + clave + "\n\n"
+                + "Para entrar usa tu celular " + d.celular.replaceAll("\\D", "") + " y esa clave aquí:\n"
+                + pagina + "\n\n"
+                + "Puedes cambiarla después en la app (Mis salidas › Cambiar mi clave). No se la des a nadie.";
+    }
+
+    /** La clave se ve una sola vez: mandarla por WhatsApp, por correo o copiarla. */
+    private void mostrarClave(rutas.modelo.Domiciliario d, String clave, String pagina) {
+        String msj = mensajeClave(d, clave, pagina);
+        JPanel t = Capa.tarjeta(480, 28, 32);
+        JLabel ti = new JLabel("Clave de " + PanelPedidos.primerNombre(d.nombre));
+        ti.setFont(Tema.subtitulo(17));
+        ti.setForeground(Tema.GRIS_OSCURO);
+        ti.setAlignmentX(LEFT_ALIGNMENT);
+        t.add(ti);
+        t.add(Tema.espacio(8));
+        JLabel cl = new JLabel(clave.substring(0, 3) + " " + clave.substring(3)); // 939 113: se lee fácil en voz alta
+        cl.setFont(Tema.titulo(34));
+        cl.setForeground(Tema.AZUL_PROFUNDO);
+        cl.setAlignmentX(LEFT_ALIGNMENT);
+        t.add(cl);
+        t.add(Tema.espacio(6));
+        t.add(nota("Se ve solo esta vez: no queda guardada en ningún lado. Mándesela ahora."));
+        Tema.Parrafo estado = mensaje();
+        t.add(estado);
+        t.add(Tema.espacio(12));
+        rutas.logica.AjustesCorreo ac = null;
+        try {
+            ac = app.getTienda() == null ? null : rutas.logica.AjustesCorreo.leer(app.getTienda());
+        } catch (java.sql.SQLException ex) {
+            // sin correo configurado: no sale el botón
+        }
+        boolean conCorreo = ac != null && ac.listo() && rutas.logica.CorreoSmtp.esCorreo(d.correo);
+        Tema.Boton wa = Tema.botonPrimario("Mandar por WhatsApp");
+        Tema.Boton mail = Tema.botonSecundario("Mandar por correo");
+        Tema.Boton copiar = Tema.botonSecundario("Copiar");
+        Tema.Boton cerrar = Tema.botonPequeno("Cerrar");
+        mail.setVisible(conCorreo);
+        mail.setToolTipText(conCorreo ? "A " + d.correo : null);
+        t.add(Tema.fila(8, wa, mail, copiar));
+        t.add(Tema.espacio(8));
+        t.add(cerrar);
+        Capa capa = new Capa(this, t, true);
+        cerrar.addActionListener(a -> capa.cerrar());
+        wa.addActionListener(a -> {
+            try {
+                AbrirWhatsApp.abrir(d.celular, msj);
+                decir(estado, "Se abrió WhatsApp con el mensaje.", true);
+            } catch (Exception ex) {
+                copiarTexto(msj);
+                decir(estado, "No se abrió WhatsApp: el mensaje quedó copiado.", false);
+            }
+        });
+        copiar.addActionListener(a -> {
+            copiarTexto(msj);
+            decir(estado, "Copiado: péguelo donde quiera (mensaje de texto, Telegram…).", true);
+        });
+        rutas.logica.AjustesCorreo acf = ac;
+        mail.addActionListener(a -> {
+            mail.setEnabled(false);
+            decir(estado, "Mandando el correo…", true);
+            String remitente = acf.remitente.isBlank() ? app.getNegocio() : acf.remitente;
+            new javax.swing.SwingWorker<Void, Void>() {
+                @Override
+                protected Void doInBackground() throws Exception {
+                    rutas.logica.CorreoSmtp.gmail(acf.cuenta, acf.clave).enviar(remitente, d.correo,
+                            "Tu clave de DomiRuta", msj, null, null, null);
+                    return null;
+                }
+
+                @Override
+                protected void done() {
+                    mail.setEnabled(true);
+                    try {
+                        get();
+                        decir(estado, "Correo enviado a " + d.correo + ".", true);
+                    } catch (Exception ex) {
+                        Throwable c = ex.getCause() == null ? ex : ex.getCause();
+                        decir(estado, "No se pudo mandar el correo: " + c.getMessage(), false);
+                    }
+                }
+            }.execute();
+        });
+        capa.mostrar(wa);
+    }
+
+    private static void copiarTexto(String s) {
+        java.awt.Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new java.awt.datatransfer.StringSelection(s), null);
     }
 
     /** Lo crea en Supabase si hace falta (o si allá ya no estaba) y abre WhatsApp con su enlace personal. */
@@ -1138,6 +1219,7 @@ public class PanelConfiguracion extends JPanel {
         t.add(Tema.espacio(10));
         JTextField nombre = Tema.campo("Ej. Carlos Pérez o Domicilios Express");
         JTextField celular = Tema.campo("Ej. 300 111 2233");
+        JTextField correo = Tema.campo("Ej. carlos@gmail.com (opcional)");
         JComboBox<rutas.modelo.Domiciliario.Tipo> tipo = new JComboBox<>(rutas.modelo.Domiciliario.Tipo.values());
         Tema.estiloCombo(tipo, String::valueOf);
         javax.swing.JCheckBox activo = Tema.casilla("Aparece al despachar");
@@ -1145,6 +1227,7 @@ public class PanelConfiguracion extends JPanel {
         if (d != null) {
             nombre.setText(d.nombre);
             celular.setText(d.celular);
+            correo.setText(d.correo);
             tipo.setSelectedItem(d.tipo);
             activo.setSelected(d.activo);
         }
@@ -1152,6 +1235,7 @@ public class PanelConfiguracion extends JPanel {
         poner(g, 0, 0, 2, "Nombre", nombre);
         poner(g, 0, 1, 1, "Celular (WhatsApp)", celular);
         poner(g, 1, 1, 1, "Tipo", tipo);
+        poner(g, 0, 2, 2, "Correo (para mandarle la clave)", correo);
         t.add(g);
         t.add(activo);
         t.add(nota("Fijo: le entrega toda la plata a la tienda. Independiente o grupo: se queda con los domicilios"
@@ -1173,6 +1257,11 @@ public class PanelConfiguracion extends JPanel {
             rutas.modelo.Domiciliario x = new rutas.modelo.Domiciliario(d == null ? 0 : d.id, nombre.getText(),
                     celular.getText(), (rutas.modelo.Domiciliario.Tipo) tipo.getSelectedItem());
             x.activo = activo.isSelected();
+            x.correo = correo.getText().trim();
+            if (!x.correo.isEmpty() && !rutas.logica.CorreoSmtp.esCorreo(x.correo)) {
+                decir(error, "Revise el correo (ej. carlos@gmail.com) o déjelo vacío", false);
+                return;
+            }
             if (d != null) { // su enlace personal sigue siendo el mismo
                 x.idNube = d.idNube;
                 x.enlace = d.enlace;

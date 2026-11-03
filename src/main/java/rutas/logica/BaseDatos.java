@@ -583,6 +583,7 @@ public class BaseDatos implements AutoCloseable {
         columnaSiFalta(st, "salidas", "cancelada", "TEXT NOT NULL DEFAULT ''"); // motivo; vacío = no se canceló
         columnaSiFalta(st, "domiciliarios", "id_nube", "TEXT NOT NULL DEFAULT ''");
         columnaSiFalta(st, "domiciliarios", "enlace", "TEXT NOT NULL DEFAULT ''");
+        columnaSiFalta(st, "domiciliarios", "correo", "TEXT NOT NULL DEFAULT ''");
         // ubicaciones que corrigieron los repartidores («La casa no está aquí»)
         st.execute("CREATE TABLE IF NOT EXISTS correcciones_ubicacion ("
                 + " id_nube INTEGER PRIMARY KEY, nombre TEXT NOT NULL, direccion TEXT NOT NULL,"
@@ -915,7 +916,7 @@ public class BaseDatos implements AutoCloseable {
     public List<rutas.modelo.Domiciliario> cargarDomiciliarios() throws SQLException {
         List<rutas.modelo.Domiciliario> l = new ArrayList<>();
         try (Statement st = con.createStatement();
-             ResultSet rs = st.executeQuery("SELECT id, nombre, celular, tipo, activo, id_nube, enlace FROM domiciliarios"
+             ResultSet rs = st.executeQuery("SELECT id, nombre, celular, tipo, activo, id_nube, enlace, correo FROM domiciliarios"
                      + " ORDER BY CASE tipo WHEN 'FIJO' THEN 0 WHEN 'INDEPENDIENTE' THEN 1 ELSE 2 END, nombre")) {
             while (rs.next()) {
                 rutas.modelo.Domiciliario.Tipo t;
@@ -928,6 +929,7 @@ public class BaseDatos implements AutoCloseable {
                 d.activo = rs.getInt(5) == 1;
                 d.idNube = rs.getString(6);
                 d.enlace = rs.getString(7);
+                d.correo = rs.getString(8) == null ? "" : rs.getString(8);
                 l.add(d);
             }
         }
@@ -938,13 +940,14 @@ public class BaseDatos implements AutoCloseable {
     public void guardarDomiciliario(rutas.modelo.Domiciliario d) throws SQLException {
         if (d.id == 0) {
             try (PreparedStatement ps = con.prepareStatement("INSERT INTO domiciliarios(nombre, celular, tipo, activo,"
-                    + " id_nube, enlace) VALUES(?,?,?,?,?,?)", Statement.RETURN_GENERATED_KEYS)) {
+                    + " id_nube, enlace, correo) VALUES(?,?,?,?,?,?,?)", Statement.RETURN_GENERATED_KEYS)) {
                 ps.setString(1, d.nombre);
                 ps.setString(2, d.celular);
                 ps.setString(3, d.tipo.name());
                 ps.setInt(4, d.activo ? 1 : 0);
                 ps.setString(5, d.idNube);
                 ps.setString(6, d.enlace);
+                ps.setString(7, d.correo);
                 ps.executeUpdate();
                 try (ResultSet k = ps.getGeneratedKeys()) {
                     k.next();
@@ -954,12 +957,13 @@ public class BaseDatos implements AutoCloseable {
         } else {
             // el id y el enlace de Supabase no se tocan aquí (una lista vieja en pantalla los borraría): ver guardarEnlaceNube
             try (PreparedStatement ps = con.prepareStatement("UPDATE domiciliarios SET nombre=?, celular=?, tipo=?,"
-                    + " activo=? WHERE id=?")) {
+                    + " activo=?, correo=? WHERE id=?")) {
                 ps.setString(1, d.nombre);
                 ps.setString(2, d.celular);
                 ps.setString(3, d.tipo.name());
                 ps.setInt(4, d.activo ? 1 : 0);
-                ps.setLong(5, d.id);
+                ps.setString(5, d.correo);
+                ps.setLong(6, d.id);
                 ps.executeUpdate();
             }
         }

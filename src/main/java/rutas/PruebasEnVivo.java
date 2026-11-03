@@ -67,6 +67,19 @@ public class PruebasEnVivo {
                 && visto.get(0).contains("\"p_clave\":\"482915\""));
         NubeRepartidor.EstadoRepartidor e = n.repartidores().get("0f8fad5b-d9cb-469f-a165-70867728950e");
         revisar("repartidores: lee si tiene clave y desde cuándo tiene la sesión", e != null && e.conClave && e.sesionEn != null);
+        rutas.modelo.Domiciliario dc = new rutas.modelo.Domiciliario(0, "Carlos Pérez", "300 111 2233", rutas.modelo.Domiciliario.Tipo.FIJO);
+        String m = rutas.vista.PanelConfiguracion.mensajeClave(dc, "939113", "https://x.github.io/app/");
+        revisar("mensaje de la clave: la clave va sola en su línea (se copia fácil en WhatsApp), con el celular y el enlace",
+                m.contains("\n\n939113\n\n") && m.contains("3001112233") && m.contains("https://x.github.io/app/"));
+        File tmp = java.nio.file.Files.createTempDirectory("dom").toFile();
+        try (BaseDatos bd = new BaseDatos(new File(tmp, "domiruta.db"))) {
+            dc.correo = "carlos@gmail.com";
+            bd.guardarDomiciliario(dc);
+            dc.correo = "carlos.perez@gmail.com";
+            bd.guardarDomiciliario(dc);
+            revisar("el correo del repartidor queda guardado (y se puede cambiar)",
+                    bd.cargarDomiciliarios().get(0).correo.equals("carlos.perez@gmail.com"));
+        }
     }
 
     private static void probarGruposYCancelar() throws Exception {
