@@ -1606,8 +1606,9 @@ public class PanelMapa extends JPanel {
             }
         }
         for (Salida s : salidas) {
-            if (Double.isNaN(s.lat) || s.ubicacionEn == null) {
-                continue;
+            if (Double.isNaN(s.lat) || s.ubicacionEn == null || s.estado != Salida.Estado.EN_CAMINO
+                    || s.ubicacionEn.isBefore(java.time.LocalDateTime.now().minusMinutes(30))) {
+                continue; // ya volvió (por cuadrar) o la ubicación es muy vieja: no se muestra una moto que no está ahí
             }
             int x = (int) sx(Geo.x(s.lon)), y = (int) sy(Geo.y(s.lat));
             boolean vieja = java.time.Duration.between(s.ubicacionEn, java.time.LocalDateTime.now()).toMinutes() >= 5;

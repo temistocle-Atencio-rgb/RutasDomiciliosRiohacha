@@ -860,8 +860,12 @@ public class PanelConfiguracion extends JPanel {
         Tema.Boton editar = Tema.botonPequeno("Editar");
         editar.addActionListener(a -> formularioDomiciliario(d));
         Tema.Boton quitar = Tema.botonPequeno("Quitar");
+        long abiertas = app.salidasAbiertas().stream().filter(x -> x.repartidor.equals(d.nombre)).count();
         quitar.addActionListener(a -> Alerta.confirmar(this, "¿Quitar a " + d.nombre + " de la lista?",
-                "Las salidas que ya hizo no se borran." + (d.enNube() ? " Su enlace personal deja de servir." : ""),
+                (abiertas > 0 ? PanelPedidos.primerNombre(d.nombre) + " tiene " + abiertas + (abiertas == 1
+                        ? " salida abierta: sigue en «Salidas» y en el mapa hasta que la cierre o la cancele. "
+                        : " salidas abiertas: siguen en «Salidas» y en el mapa hasta que las cierre o las cancele. ") : "")
+                + "Las salidas que ya hizo no se borran." + (d.enNube() ? " Ya no podrá entrar a la app." : ""),
                 "Sí, quitar", "Volver", () -> quitarDomiciliario(d.id)));
         rutas.logica.NubeRepartidor.EstadoRepartidor est = app.estadoNube(d);
         boolean conClave = est != null && est.conClave;
