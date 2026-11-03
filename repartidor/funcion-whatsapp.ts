@@ -52,7 +52,7 @@ async function rpc<T>(nombre: string, args: Record<string, unknown>): Promise<T>
 }
 
 function json(cuerpo: unknown, estado = 200): Response {
-  return new Response(JSON.stringify(cuerpo), { status: estado, headers: { "Content-Type": "application/json" } });
+  return new Response(JSON.stringify(cuerpo), { status: estado, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
 }
 
 /** Lo que se le manda a Meta para una fila de la bandeja. */
