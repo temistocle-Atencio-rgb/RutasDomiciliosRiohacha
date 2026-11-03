@@ -89,6 +89,27 @@ public final class EnlacesQR {
         }
     }
 
+    /**
+     * El mensaje listo para pegar en WhatsApp con el enlace al final (lo que copia «Copiar mensaje").
+     * Si no hay nombre de tienda dice «la tienda».
+     */
+    public static String mensaje(Tipo t, String tienda, String enlace) {
+        String n = tienda == null || tienda.isBlank() ? "la tienda" : tienda.trim();
+        switch (t) {
+            case TIENDA:
+                return "¡Hola! Ya puedes hacer tus pedidos a domicilio en " + n + " desde tu celular."
+                        + " Mira los productos, arma tu pedido y te lo llevamos. Entra aquí: " + enlace;
+            case WHATSAPP:
+                return "¡Hola! Para hacer tu pedido en " + n + " escríbenos por WhatsApp aquí: " + enlace;
+            case REPARTIDOR:
+                return "Hola, esta es la página de repartidores de " + n + ". Entra con tu cuenta para ver tus"
+                        + " entregas y marcarlas: " + enlace;
+            default:
+                return "Hola, esta es la página para atender los pedidos en línea de " + n + ". Entra con tu"
+                        + " celular y la clave de 6 números que te dimos: " + enlace;
+        }
+    }
+
     /** Lo que identifica a los QR impresos: si cambia, los que ya estan pegados quedaron viejos. */
     public static String huella(String pagina, String telefono) {
         return base(pagina) + "|" + celular(telefono);

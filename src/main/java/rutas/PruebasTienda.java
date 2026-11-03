@@ -414,6 +414,12 @@ public class PruebasTienda {
                 rutas.logica.EnlacesQR.enlace(rutas.logica.EnlacesQR.Tipo.WHATSAPP, pag, "+57 300 123 4567")
                         .equals("https://wa.me/573001234567?text=Hola%2C%20quiero%20hacer%20un%20pedido")
                 && rutas.logica.EnlacesQR.enlace(rutas.logica.EnlacesQR.Tipo.WHATSAPP, pag, "605 727 1234").isEmpty());
+        String mt = rutas.logica.EnlacesQR.mensaje(rutas.logica.EnlacesQR.Tipo.TIENDA, "Tienda la Florida", pag + "tienda.html");
+        String mp = rutas.logica.EnlacesQR.mensaje(rutas.logica.EnlacesQR.Tipo.PEDIDOS, " ", pag + "pedidos.html");
+        revisar("copiar: un mensaje listo para mandar con el enlace al final (y sin clave)",
+                mt.contains("Tienda la Florida") && mt.endsWith(pag + "tienda.html")
+                && mp.contains("la tienda") && mp.contains("clave de 6 números") && mp.endsWith(pag + "pedidos.html")
+                && rutas.logica.EnlacesQR.mensaje(rutas.logica.EnlacesQR.Tipo.REPARTIDOR, "X", pag).endsWith(pag));
         revisar("QR: si cambia el dominio, cambia la huella (los impresos quedan viejos)",
                 !rutas.logica.EnlacesQR.huella(pag, "3001234567").equals(rutas.logica.EnlacesQR.huella("https://domiruta.co/", "3001234567"))
                 && rutas.logica.EnlacesQR.huella(pag, "3001234567").equals(rutas.logica.EnlacesQR.huella(pag + "index.html", "+573001234567")));

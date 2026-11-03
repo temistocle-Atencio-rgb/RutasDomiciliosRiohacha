@@ -181,8 +181,9 @@ class VistaCodigosQR extends JPanel {
     }
 
     private void copiar(EnlacesQR.Tipo t) {
-        java.awt.Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(enlace(t)), null);
-        PanelConfiguracion.decir(msg, "Se copió el enlace de «" + t.nombre + "».", true);
+        String m = EnlacesQR.mensaje(t, negocio.nombre, enlace(t));
+        java.awt.Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(m), null);
+        PanelConfiguracion.decir(msg, "Se copió el mensaje de «" + t.nombre + "», listo para pegar en WhatsApp: " + m, true);
     }
 
     /** Lo que se escribe cuando no se puede armar el QR. */
@@ -207,7 +208,7 @@ class VistaCodigosQR extends JPanel {
         private final JLabel aviso = new JLabel(" ");
         private final Tema.Boton bImprimir = Tema.botonSecundario("Imprimir cartel");
         private final Tema.Boton bGuardar = Tema.botonSecundario("Guardar imagen");
-        private final Tema.Boton bCopiar = Tema.botonPlano("Copiar enlace");
+        private final Tema.Boton bCopiar = Tema.botonPlano("Copiar mensaje");
 
         Tarjeta(EnlacesQR.Tipo tipo) {
             super(new BorderLayout(0, 0));
@@ -265,7 +266,7 @@ class VistaCodigosQR extends JPanel {
             bCopiar.addActionListener(e -> copiar(tipo));
             bImprimir.getAccessibleContext().setAccessibleName("Imprimir cartel de " + tipo.nombre);
             bGuardar.getAccessibleContext().setAccessibleName("Guardar imagen de " + tipo.nombre);
-            bCopiar.getAccessibleContext().setAccessibleName("Copiar enlace de " + tipo.nombre);
+            bCopiar.getAccessibleContext().setAccessibleName("Copiar mensaje con el enlace de " + tipo.nombre);
         }
 
         void mostrar() {
