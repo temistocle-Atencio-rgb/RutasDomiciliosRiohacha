@@ -798,9 +798,9 @@ public class PanelConfiguracion extends JPanel {
         Tema.Tarjeta t = tarjeta();
         t.add(Tema.seccion("Domiciliarios"));
         t.add(nota("Quienes llevan los domicilios: los fijos de la tienda, los independientes que prestan el servicio"
-                + " cuando pueden y los grupos de domicilios. No necesitan contraseña: con «Enviar enlace» le llega por"
-                + " WhatsApp su enlace personal, donde ve sus salidas y marca si está disponible. Al despachar también"
-                + " le llega el enlace de esa salida."));
+                + " cuando pueden y los grupos de domicilios. Cada uno entra a la app con su celular y una clave de 6"
+                + " números: con «Crear clave» se la manda por WhatsApp. Una sola sesión a la vez: si entra en otro"
+                + " celular, el anterior se cierra y aquí sale el aviso."));
         t.add(Tema.espacio(10));
         Tema.Boton nuevo = Tema.botonPrimario("Nuevo domiciliario");
         nuevo.setAlignmentX(LEFT_ALIGNMENT);
@@ -863,21 +863,21 @@ public class PanelConfiguracion extends JPanel {
         quitar.addActionListener(a -> Alerta.confirmar(this, "¿Quitar a " + d.nombre + " de la lista?",
                 "Las salidas que ya hizo no se borran." + (d.enNube() ? " Su enlace personal deja de servir." : ""),
                 "Sí, quitar", "Volver", () -> quitarDomiciliario(d.id)));
-        Tema.Boton enviar = Tema.botonPequeno("Enviar enlace");
-        enviar.setToolTipText("Le llega por WhatsApp su enlace personal: ahí ve sus salidas y marca si está disponible");
-        enviar.addActionListener(a -> enviarEnlacePersonal(d, enviar));
-        enviar.setEnabled(d.activo);
-        JComponent botones;
-        if (d.enNube()) {
-            Tema.Boton cambiar = Tema.botonPequeno("Cambiar enlace");
-            cambiar.setToolTipText("Si perdió el celular o el enlace lo tiene otra persona: el viejo deja de servir");
-            cambiar.addActionListener(a -> Alerta.confirmar(this, "¿Cambiar el enlace de " + d.nombre + "?",
-                    "El enlace que tiene deja de servir en todos los celulares. Después le envía el nuevo por WhatsApp.",
-                    "Sí, cambiarlo", "Volver", () -> cambiarEnlacePersonal(d, cambiar)));
-            botones = Tema.fila(6, enviar, cambiar, editar, quitar);
-        } else {
-            botones = Tema.fila(6, enviar, editar, quitar);
-        }
+        rutas.logica.NubeRepartidor.EstadoRepartidor est = app.estadoNube(d);
+        boolean conClave = est != null && est.conClave;
+        Tema.Boton clave = Tema.botonPequeno(conClave ? "Nueva clave" : "Crear clave");
+        clave.setToolTipText("Entra a la app con su celular y una clave de 6 números (se la manda por WhatsApp)");
+        clave.addActionListener(a -> {
+            if (conClave) {
+                Alerta.confirmar(this, "¿Nueva clave para " + d.nombre + "?",
+                        "La clave que tiene deja de servir y su sesión se cierra. Después se la manda por WhatsApp.",
+                        "Sí, nueva clave", "Volver", () -> crearClave(d, clave));
+            } else {
+                crearClave(d, clave);
+            }
+        });
+        clave.setEnabled(d.activo);
+        JComponent botones = Tema.fila(6, clave, editar, quitar);
         f.add(izq, BorderLayout.CENTER);
         f.add(botones, BorderLayout.EAST);
         f.setMaximumSize(new Dimension(Integer.MAX_VALUE, f.getPreferredSize().height));
@@ -887,7 +887,14 @@ public class PanelConfiguracion extends JPanel {
     /** «Disponible», «En ruta · le faltan 2», «No disponible · abrió la app a las 9:40» o que todavía no tiene su enlace. */
     private String textoApp(rutas.modelo.Domiciliario d) {
         if (!d.enNube()) {
-            return "Todavía no tiene su enlace personal";
+            return "Sin clave: todavía no puede entrar a la app";
+        }
+        rutas.logica.NubeRepartidor.EstadoRepartidor ec = app.estadoNube(d);
+        if (ec != null && !ec.conClave) {
+            return "Sin clave: todavía no puede entrar a la app";
+        }
+        if (ec != null && ec.sesionEn == null) {
+            return "Tiene clave · no ha entrado (o cerró sesión)";
         }
         Aplicacion.Disponibilidad disp = app.disponibilidad(d);
         if (disp == Aplicacion.Disponibilidad.SIN_APP) {
@@ -974,6 +981,63 @@ public class PanelConfiguracion extends JPanel {
                 return;
             }
             local.run();
+        });
+    }
+
+    /**
+     * Le crea una clave de 6 números (lo crea en Supabase si hace falta), la muestra una sola vez y la manda por
+     * WhatsApp con el enlace de la app. Aquí no se guarda: en Supabase queda cifrada.
+     */
+    private void crearClave(rutas.modelo.Domiciliario vista, Tema.Boton boton) {
+        rutas.modelo.Domiciliario d = app.domiciliarioActual(vista.id);
+        if (d == null) {
+            cargarCuentas();
+            return;
+        }
+        if (rutas.logica.Avisos.numeroWhatsApp(d.celular).isEmpty()) {
+            decir(msgCuentas, "Ponga el celular de " + d.nombre + " (con «Editar»): es su usuario para entrar.", false);
+            return;
+        }
+        String idAntes = d.idNube;
+        String nueva = rutas.logica.NubeRepartidor.claveNueva();
+        String[] resp = {""};
+        boton.setEnabled(false);
+        enNube(n2 -> {
+            if (d.enNube() && !n2.existeRepartidor(d.idNube)) {
+                d.idNube = "";
+                d.enlace = "";
+            }
+            if (!d.enNube()) {
+                String[] r = n2.crearRepartidor(d.nombre, d.celular);
+                d.idNube = r[0];
+                d.enlace = r[1];
+            }
+            resp[0] = n2.ponerClave(d.idNube, nueva);
+        }, err -> {
+            boton.setEnabled(true);
+            if (!d.idNube.equals(idAntes)) {
+                guardarEnlace(d);
+            }
+            if (err != null || !"ok".equals(resp[0])) {
+                decir(msgCuentas, "No se pudo poner la clave: " + (err != null ? err : resp[0]), false);
+                return;
+            }
+            cargarCuentas();
+            rutas.logica.NubeRepartidor.Ajustes aj = app.getAjustesNube();
+            String pagina = aj == null ? "" : aj.pagina;
+            String msj = "Hola " + PanelPedidos.primerNombre(d.nombre) + ", tu clave de DomiRuta es " + nueva
+                    + ". Entra con tu celular (" + d.celular.replaceAll("\\D", "") + ") y esa clave aquí: " + pagina;
+            Alerta.confirmar(this, "Clave de " + PanelPedidos.primerNombre(d.nombre) + ": " + nueva,
+                    "Se ve solo esta vez (no queda guardada en ningún lado). Mándesela por WhatsApp.",
+                    "Mandar por WhatsApp", "Cerrar", () -> {
+                        try {
+                            AbrirWhatsApp.abrir(d.celular, msj);
+                        } catch (Exception ex) {
+                            java.awt.Toolkit.getDefaultToolkit().getSystemClipboard()
+                                    .setContents(new java.awt.datatransfer.StringSelection(msj), null);
+                            decir(msgCuentas, "No se abrió WhatsApp: el mensaje con la clave quedó copiado.", false);
+                        }
+                    });
         });
     }
 

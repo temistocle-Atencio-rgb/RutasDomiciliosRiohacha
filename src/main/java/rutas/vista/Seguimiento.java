@@ -566,8 +566,9 @@ public class Seguimiento {
                     : !antes.equals(e.dispositivoCambio);
             if (nuevo) {
                 for (Oyente o : oyentes) {
-                    o.aviso(null, PanelPedidos.primerNombre(d.nombre) + " abrió su enlace en otro celular",
-                            "¿No fue " + PanelPedidos.primerNombre(d.nombre) + "? Cámbiele el enlace en Configuración › Domiciliarios.", true);
+                    o.aviso(null, PanelPedidos.primerNombre(d.nombre) + " entró desde otro celular",
+                            "Su sesión en el celular anterior se cerró. ¿No fue " + PanelPedidos.primerNombre(d.nombre)
+                                    + "? Póngale una clave nueva en Configuración › Domiciliarios.", true);
                 }
             }
         }

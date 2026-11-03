@@ -137,6 +137,32 @@ public class NubeRepartidor {
         public boolean activo = true;
         public LocalDateTime vistoEn;
         public LocalDateTime dispositivoCambio;
+        public boolean conClave;          // ya tiene clave para entrar
+        public LocalDateTime sesionEn;    // desde cuándo tiene la sesión abierta (null = ninguna)
+    }
+
+    /** Clave de 6 números al azar, que no sea fácil (ni 111111 ni 123456 ni 654321). */
+    public static String claveNueva() {
+        java.security.SecureRandom r = new java.security.SecureRandom();
+        while (true) {
+            String c = String.format("%06d", r.nextInt(1_000_000));
+            if (!claveDebil(c)) {
+                return c;
+            }
+        }
+    }
+
+    public static boolean claveDebil(String c) {
+        return c.matches("(\\d)\\1{5}") || "01234567890".contains(c) || "09876543210".contains(c);
+    }
+
+    /** Le pone esa clave en Supabase (la sesión que tuviera se cierra). Devuelve "ok" o el problema. */
+    public String ponerClave(String idRepartidor, String clave) throws IOException {
+        Map<String, Object> c = new LinkedHashMap<>();
+        c.put("p_repartidor", uuidValido(idRepartidor));
+        c.put("p_clave", clave);
+        Object o = Json.leer(llamar("POST", "rpc/dr_poner_clave", Json.escribir(c)).cuerpo);
+        return o == null ? "Supabase no respondió" : o.toString();
     }
 
     /** Minutos que tiene el repartidor para aceptar una salida. */
@@ -588,13 +614,15 @@ public class NubeRepartidor {
     /** Cómo están todos los repartidores (id -> estado). */
     public Map<String, EstadoRepartidor> repartidores() throws IOException {
         Map<String, EstadoRepartidor> r = new LinkedHashMap<>();
-        for (Map<?, ?> m : filas(llamar("GET", "repartidores?select=id,disponible,activo,visto_en,dispositivo_cambio", null))) {
+        for (Map<?, ?> m : filas(llamar("GET", "repartidores?select=id,disponible,activo,visto_en,dispositivo_cambio,con_clave,sesion_en", null))) {
             EstadoRepartidor e = new EstadoRepartidor();
             e.id = Json.texto(m, "id");
             e.disponible = Boolean.TRUE.equals(m.get("disponible"));
             e.activo = !Boolean.FALSE.equals(m.get("activo"));
             e.vistoEn = horaLocal(Json.texto(m, "visto_en"));
             e.dispositivoCambio = horaLocal(Json.texto(m, "dispositivo_cambio"));
+            e.conClave = Boolean.TRUE.equals(m.get("con_clave"));
+            e.sesionEn = horaLocal(Json.texto(m, "sesion_en"));
             r.put(e.id, e);
         }
         return r;

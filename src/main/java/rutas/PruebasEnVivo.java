@@ -37,6 +37,36 @@ public class PruebasEnVivo {
         probarNotificar();
         probarRastroYPasar();
         probarGruposYCancelar();
+        probarClaves();
+    }
+
+    private static void probarClaves() throws Exception {
+        boolean bien = true;
+        java.util.Set<String> vistas = new java.util.HashSet<>();
+        for (int i = 0; i < 2000; i++) {
+            String c = NubeRepartidor.claveNueva();
+            bien &= c.matches("[0-9]{6}") && !NubeRepartidor.claveDebil(c);
+            vistas.add(c);
+        }
+        revisar("claves: 6 números, nunca fáciles, y al azar (" + vistas.size() + " distintas de 2000)", bien && vistas.size() > 1950);
+        revisar("claves fáciles: 111111, 123456, 654321 y 345678 sí; 482915 no",
+                NubeRepartidor.claveDebil("111111") && NubeRepartidor.claveDebil("123456") && NubeRepartidor.claveDebil("654321")
+                && NubeRepartidor.claveDebil("345678") && !NubeRepartidor.claveDebil("482915"));
+        List<String> visto = new ArrayList<>();
+        NubeRepartidor.Transporte t = (m, u, cab, cuerpo) -> {
+            visto.add(m + " " + u + " " + cuerpo);
+            return u.contains("rpc/dr_poner_clave") ? new NubeRepartidor.Respuesta(200, "\"ok\"")
+                    : new NubeRepartidor.Respuesta(200, "[{\"id\":\"0f8fad5b-d9cb-469f-a165-70867728950e\",\"disponible\":true,"
+                            + "\"activo\":true,\"visto_en\":null,\"dispositivo_cambio\":null,\"con_clave\":true,"
+                            + "\"sesion_en\":\"2026-11-03T13:15:00+00:00\"}]");
+        };
+        NubeRepartidor n = new NubeRepartidor("https://p.supabase.co", "sb_secret_x", t);
+        String r = n.ponerClave("0f8fad5b-d9cb-469f-a165-70867728950e", "482915");
+        revisar("poner clave: la manda a Supabase (que la cifra) y entiende «ok»", "ok".equals(r)
+                && visto.get(0).startsWith("POST https://p.supabase.co/rest/v1/rpc/dr_poner_clave")
+                && visto.get(0).contains("\"p_clave\":\"482915\""));
+        NubeRepartidor.EstadoRepartidor e = n.repartidores().get("0f8fad5b-d9cb-469f-a165-70867728950e");
+        revisar("repartidores: lee si tiene clave y desde cuándo tiene la sesión", e != null && e.conClave && e.sesionEn != null);
     }
 
     private static void probarGruposYCancelar() throws Exception {
