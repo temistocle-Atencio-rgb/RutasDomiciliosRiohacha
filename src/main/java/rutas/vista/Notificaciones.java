@@ -101,11 +101,21 @@ public class Notificaciones {
         return notas;
     }
 
+    /** Pide hacer algo: no la aceptan, venció, sin ubicación, un mensaje del repartidor. Lo demás es para saber. */
+    public static boolean paraAtender(Nota n) {
+        if (n.tipo == Aviso.Tipo.BIEN) {
+            return false; // aceptó, entregó, regresó
+        }
+        // avisos que solo informan
+        return !(n.titulo.startsWith("Volvió el internet") || n.titulo.contains("entró en otro celular"));
+    }
+
+    /** Los que piden hacer algo y no se han visto (el número de la campana: lo «para saber» no lo sube). */
     public int sinVer() {
         limpiarViejas();
         int n = 0;
         for (Nota x : notas) {
-            if (!x.vista) {
+            if (!x.vista && paraAtender(x)) {
                 n++;
             }
         }
@@ -170,8 +180,26 @@ public class Notificaciones {
             v.setBorder(BorderFactory.createEmptyBorder(6, 14, 16, 14));
             lista.add(v);
         }
-        for (int i = l.size() - 1; i >= 0; i--) { // la más nueva arriba
-            lista.add(fila(l.get(i), menu));
+        // primero lo que pide hacer algo; abajo lo que solo es para saber (así lo importante nunca se pierde)
+        for (boolean atender : new boolean[]{true, false}) {
+            List<Nota> grupo = new ArrayList<>();
+            for (int i = l.size() - 1; i >= 0; i--) { // la más nueva arriba
+                if (paraAtender(l.get(i)) == atender) {
+                    grupo.add(l.get(i));
+                }
+            }
+            if (grupo.isEmpty()) {
+                continue;
+            }
+            JLabel sec = new JLabel((atender ? "PARA ATENDER" : "PARA SABER") + " (" + grupo.size() + ")");
+            sec.setFont(Tema.textoFuerte(11.5f));
+            sec.setForeground(atender ? Tema.ERROR_TEXTO : Tema.GRIS_TEXTO);
+            sec.setBorder(BorderFactory.createEmptyBorder(10, 14, 4, 14));
+            sec.setAlignmentX(java.awt.Component.LEFT_ALIGNMENT);
+            lista.add(sec);
+            for (Nota n : grupo) {
+                lista.add(fila(n, menu));
+            }
         }
         JScrollPane sc = new JScrollPane(lista);
         sc.setBorder(BorderFactory.createEmptyBorder());

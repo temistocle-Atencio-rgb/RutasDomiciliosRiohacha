@@ -73,9 +73,15 @@ public class PruebasEnVivo {
         boolean b1 = no.agregar(rutas.vista.Aviso.Tipo.AVISO, "Camilo entró en otro celular o navegador", "x", 0);
         boolean b2 = no.agregar(rutas.vista.Aviso.Tipo.AVISO, "Camilo entró en otro celular o navegador", "x", 0);
         boolean b3 = no.agregar(rutas.vista.Aviso.Tipo.AVISO, "Camilo entró en otro celular o navegador", "x", 0);
-        boolean b4 = no.agregar(rutas.vista.Aviso.Tipo.AVISO, "Ana aceptó", "x", 0);
+        boolean b4 = no.agregar(rutas.vista.Aviso.Tipo.BIEN, "Ana aceptó", "x", 0);
         revisar("campana: el mismo aviso seguido se suma (×3) y no vuelve a salir; uno distinto sí",
                 b1 && !b2 && !b3 && b4 && no.getNotas().size() == 2 && no.getNotas().get(0).veces == 3);
+        no.agregar(rutas.vista.Aviso.Tipo.ERROR, "Camilo no puede llevarla", "x", 0);
+        no.agregar(rutas.vista.Aviso.Tipo.AVISO, "Sin ubicación de Ana", "x", 0);
+        no.agregar(rutas.vista.Aviso.Tipo.AVISO, "Volvió el internet", "x", 0);
+        long atender = no.getNotas().stream().filter(rutas.vista.Notificaciones::paraAtender).count();
+        revisar("campana: «Para atender» = no puede, sin ubicación; «Para saber» = aceptó, volvió el internet, otro celular ("
+                + atender + ")", atender == 2 && no.sinVer() == 2);
         revisar("nombre de la tienda: las salidas en internet toman el nombre nuevo",
                 visto.get(0).startsWith("PATCH https://p.supabase.co/rest/v1/salidas?tienda=neq.Tienda%20el%20Ramiro%202&select=id")
                 && visto.get(0).contains("\"tienda\":\"Tienda el Ramiro 2\""));
