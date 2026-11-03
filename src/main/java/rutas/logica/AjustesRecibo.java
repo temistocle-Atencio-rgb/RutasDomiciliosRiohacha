@@ -45,6 +45,9 @@ public class AjustesRecibo {
     public String gracias = "GRACIAS POR SU COMPRA";
     public String pie = "";
     public boolean mostrarSistema = true;
+    public boolean qrTienda = true;  // al final: «¿Lo quieres a domicilio? Escanea y pide» con el QR de la tienda
+    /** El enlace de la tienda en línea ("" si no hay conexión configurada): no se guarda, sale de Conexión. */
+    public String enlaceTienda = "";
     public String logo;              // ruta del logo copiado en la carpeta del programa (null = sin logo)
     public int umbralLogo = 160;     // 0-255: mas alto, mas negro sale el logo
     public boolean tramado;          // puntitos para degradados (fotos); apagado: logo limpio de dos tonos
@@ -111,6 +114,9 @@ public class AjustesRecibo {
         a.gracias = bd.leerConfig("negocio.gracias", a.gracias);
         a.pie = bd.leerConfig("negocio.pie", a.pie);
         a.mostrarSistema = Boolean.parseBoolean(bd.leerConfig("negocio.sistema", "true"));
+        a.qrTienda = Boolean.parseBoolean(bd.leerConfig("negocio.qr", "true"));
+        NubeRepartidor.Ajustes nube = NubeRepartidor.Ajustes.leer(bd);
+        a.enlaceTienda = nube.listo() ? EnlacesQR.enlace(EnlacesQR.Tipo.TIENDA, nube.pagina, "") : "";
         String logo = bd.leerConfig("negocio.logo", "");
         a.logo = logo.isEmpty() ? null : logo;
         a.umbralLogo = entero(bd.leerConfig("negocio.umbral", "160"), 160);
@@ -137,7 +143,7 @@ public class AjustesRecibo {
             {"negocio.nombre", nombre.trim()}, {"negocio.razon", razonSocial.trim()}, {"negocio.nit", nit.trim()},
             {"negocio.direccion", direccion.trim()}, {"negocio.telefono", telefono.trim()},
             {"negocio.ciudad", ciudad.trim()}, {"negocio.regimen", regimen}, {"negocio.gracias", gracias.trim()},
-            {"negocio.pie", pie.trim()}, {"negocio.sistema", String.valueOf(mostrarSistema)},
+            {"negocio.pie", pie.trim()}, {"negocio.sistema", String.valueOf(mostrarSistema)}, {"negocio.qr", String.valueOf(qrTienda)},
             {"negocio.logo", logo == null ? "" : logo}, {"negocio.umbral", String.valueOf(umbralLogo)}, {"negocio.tramado", String.valueOf(tramado)},
             {"impresora.nombre", impresora}, {"impresora.ancho", String.valueOf(anchoMm)},
             {"impresora.margen_izq", String.valueOf(margenIzqMm)}, {"impresora.margen_der", String.valueOf(margenDerMm)},

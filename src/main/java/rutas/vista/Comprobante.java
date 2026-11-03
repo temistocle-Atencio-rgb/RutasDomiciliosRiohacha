@@ -282,6 +282,19 @@ class Comprobante implements Printable {
             y = renglonesCentro(g, a.pie, chica, ancho, y, Math.round(10 * k));
         }
         y = renglonesCentro(g, "Este recibo no es una factura electrónica.", chica, ancho, y + 2, Math.round(10 * k));
+        if (a.qrTienda && a.enlaceTienda != null && !a.enlaceTienda.isEmpty()) {
+            // trae clientes a la tienda en linea: el QR con el logo en el centro
+            y = linea(g, ancho, y + 6);
+            y = renglonesCentro(g, "¿Lo quieres a domicilio?", fuerte, ancho, y + 2, paso);
+            y = renglonesCentro(g, "Escanea y pide en línea", chica, ancho, y, Math.round(10 * k));
+            int lado = (int) Math.round(Math.min(ancho * 0.62, Impresion.mmAPuntos(32)));
+            java.awt.image.BufferedImage logoQr = LogoTermico.preparar(a.logo, (int) Math.round(a.puntosUtiles() * 0.2),
+                    a.umbralLogo, a.tramado);
+            ImagenQR.dibujar(g, rutas.logica.CodigoQR.de(a.enlaceTienda), (ancho - lado) / 2.0, y + 6, lado,
+                    Color.BLACK, logoQr);
+            g.setColor(Color.BLACK);
+            y += 6 + lado + 6;
+        }
         if (a.mostrarSistema) {
             y = renglonesCentro(g, "Sistema DomiRuta", chica, ancho, y, Math.round(10 * k));
         }

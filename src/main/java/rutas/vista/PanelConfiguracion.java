@@ -50,6 +50,7 @@ public class PanelConfiguracion extends JPanel {
     private static final String REPARTIDORES = "Domiciliarios";
     private static final String USUARIOS = "Usuarios";
     private static final String TIENDA = "Tienda en línea";
+    private static final String QR = "Códigos QR";
     /** Las vistas que tienen que ver con el recibo (a la derecha se ve cómo sale). */
     private static final List<String> CON_RECIBO = List.of("Mi negocio", "Impresora", "Medios de pago", "Correo");
     private static final String PREGUNTAR = "Preguntar cada vez";
@@ -76,6 +77,7 @@ public class PanelConfiguracion extends JPanel {
     private final JTextField campoGracias = Tema.campo("Ej. GRACIAS POR SU COMPRA");
     private final JTextField campoPie = Tema.campo("Ej. Cambios dentro de los 8 días con este recibo");
     private final JCheckBox chkSistema = Tema.casilla("Mostrar «Sistema DomiRuta» al final del recibo");
+    private final JCheckBox chkQr = Tema.casilla("Poner el código QR de la tienda en línea al final del recibo");
     private final VistaLogo vistaLogo = new VistaLogo();
     private final JSlider tonoLogo = new JSlider(30, 230, 160);
     private final JCheckBox chkTramado = Tema.casilla("Tramado de puntos (para fotos o degradados)");
@@ -142,6 +144,7 @@ public class PanelConfiguracion extends JPanel {
         zonaVistas.add(desliza(vistaCuentas()), REPARTIDORES);
         if (app.getTienda() != null) {
             zonaVistas.add(desliza(new VistaTiendaEnLinea(app)), TIENDA);
+            zonaVistas.add(desliza(new VistaCodigosQR(app)), QR);
             PanelUsuarios usuarios = new PanelUsuarios(app);
             JPanel envUsuarios = new JPanel(new BorderLayout());
             envUsuarios.setOpaque(false);
@@ -172,6 +175,7 @@ public class PanelConfiguracion extends JPanel {
             c.addActionListener(e -> cambio.run());
         }
         chkSistema.addActionListener(e -> cambio.run());
+        chkQr.addActionListener(e -> cambio.run());
         tonoLogo.addChangeListener(e -> cambio.run());
         chkTramado.addActionListener(e -> cambio.run());
         comboAncho.addActionListener(e -> {
@@ -217,8 +221,8 @@ public class PanelConfiguracion extends JPanel {
             {MEDIOS, "Cómo le pueden pagar"}, {CORREO, "Enviar recibos por Gmail"},
             {USUARIOS, "Cuentas de la caja y permisos"},
             {REPARTIDORES, "Quién lleva los domicilios"}, {REPARTIDOR, "Enlace para marcar entregas"},
-            {TIENDA, "Pedidos desde la página"}}) {
-            if ((USUARIOS.equals(o[0]) || TIENDA.equals(o[0])) && app.getTienda() == null) {
+            {TIENDA, "Pedidos desde la página"}, {QR, "Tienda, WhatsApp y el equipo"}}) {
+            if ((USUARIOS.equals(o[0]) || TIENDA.equals(o[0]) || QR.equals(o[0])) && app.getTienda() == null) {
                 continue;
             }
             Opcion op = new Opcion(o[0], o[1]);
@@ -393,6 +397,7 @@ public class PanelConfiguracion extends JPanel {
         t.add(g);
         t.add(Tema.espacio(8));
         t.add(chkSistema);
+        t.add(chkQr);
         t.add(Tema.espacio(12));
         t.add(pie(msgNegocio, this::guardarNegocio));
         return t;
@@ -1400,6 +1405,7 @@ public class PanelConfiguracion extends JPanel {
             campoGracias.setText(a.gracias);
             campoPie.setText(a.pie);
             chkSistema.setSelected(a.mostrarSistema);
+            chkQr.setSelected(a.qrTienda);
             tonoLogo.setValue(a.umbralLogo);
             chkTramado.setSelected(a.tramado);
             logoElegido = null;
@@ -1451,6 +1457,8 @@ public class PanelConfiguracion extends JPanel {
         a.gracias = campoGracias.getText();
         a.pie = campoPie.getText();
         a.mostrarSistema = chkSistema.isSelected();
+        a.qrTienda = chkQr.isSelected();
+        a.enlaceTienda = ajustes == null ? "" : ajustes.enlaceTienda; // sale de Conexión, no de esta pantalla
         a.umbralLogo = tonoLogo.getValue();
         a.tramado = chkTramado.isSelected();
         a.logo = quitarLogo ? null : logoElegido != null ? logoElegido.getAbsolutePath() : ajustes.logo;

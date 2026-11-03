@@ -374,6 +374,49 @@ public class PruebasTienda {
                 && TiendaEnLinea.enlace("https://a.github.io/r/index.html?x=1").equals("https://a.github.io/r/tienda.html")
                 && TiendaEnLinea.enlace("").isEmpty());
         revisar("lo enviado dañado se lee vacío", TiendaEnLinea.leerEnviado("{dañado").isEmpty());
+
+        // ---- códigos QR ----
+        rutas.logica.CodigoQR q1 = rutas.logica.CodigoQR.de("1234567");
+        rutas.logica.CodigoQR q2 = rutas.logica.CodigoQR.de("12345678");
+        revisar("QR nivel H: 7 letras caben en la versión 1 (21 x 21), 8 ya no", q1.version == 1 && q1.lado == 21 && q2.version == 2);
+        String largo = "x".repeat(1273);
+        boolean cabe = rutas.logica.CodigoQR.de(largo).version == 40;
+        boolean muyLargo = false;
+        try {
+            rutas.logica.CodigoQR.de(largo + "x");
+        } catch (IllegalArgumentException e) {
+            muyLargo = true;
+        }
+        revisar("QR: caben 1273 letras (versión 40) y una más se rechaza", cabe && muyLargo);
+        rutas.logica.CodigoQR q7 = rutas.logica.CodigoQR.de("x".repeat(60));
+        revisar("QR: versión 7 con los cuadros de alineación de la norma (6, 22, 38)",
+                q7.version == 7 && java.util.Arrays.equals(q7.alineacion(), new int[]{6, 22, 38}));
+        rutas.logica.CodigoQR qt = rutas.logica.CodigoQR.de("https://a.github.io/r/tienda.html");
+        boolean esquinas = true, tiempo = true;
+        for (int i = 0; i < 7; i++) {
+            esquinas &= qt.negro(i, 0) && qt.negro(0, i) && qt.negro(qt.lado - 1 - i, 0) && qt.negro(0, qt.lado - 1 - i);
+        }
+        for (int i = 8; i < qt.lado - 8; i++) {
+            tiempo &= qt.negro(i, 6) == (i % 2 == 0) && qt.negro(6, i) == (i % 2 == 0);
+        }
+        revisar("QR: buscadores en 3 esquinas, líneas de tiempo y el cuadrito negro fijo",
+                esquinas && tiempo && qt.negro(8, qt.lado - 8));
+        revisar("QR: el mismo texto da el mismo código", rutas.logica.CodigoQR.de("hola").mascara == rutas.logica.CodigoQR.de("hola").mascara);
+
+        String pag = "https://a.github.io/domiruta-repartidor/";
+        revisar("enlaces QR desde la dirección de la página",
+                rutas.logica.EnlacesQR.enlace(rutas.logica.EnlacesQR.Tipo.TIENDA, pag, "").equals(pag + "tienda.html")
+                && rutas.logica.EnlacesQR.enlace(rutas.logica.EnlacesQR.Tipo.PEDIDOS, pag + "index.html?r=abc", "").equals(pag + "pedidos.html")
+                && rutas.logica.EnlacesQR.enlace(rutas.logica.EnlacesQR.Tipo.REPARTIDOR, "https://domiruta.co", "").equals("https://domiruta.co/")
+                && rutas.logica.EnlacesQR.enlace(rutas.logica.EnlacesQR.Tipo.TIENDA, "", "").isEmpty()
+                && rutas.logica.EnlacesQR.enlace(rutas.logica.EnlacesQR.Tipo.TIENDA, "no es enlace", "").isEmpty());
+        revisar("QR de WhatsApp con el celular de la tienda (y sin celular no hay)",
+                rutas.logica.EnlacesQR.enlace(rutas.logica.EnlacesQR.Tipo.WHATSAPP, pag, "+57 300 123 4567")
+                        .equals("https://wa.me/573001234567?text=Hola%2C%20quiero%20hacer%20un%20pedido")
+                && rutas.logica.EnlacesQR.enlace(rutas.logica.EnlacesQR.Tipo.WHATSAPP, pag, "605 727 1234").isEmpty());
+        revisar("QR: si cambia el dominio, cambia la huella (los impresos quedan viejos)",
+                !rutas.logica.EnlacesQR.huella(pag, "3001234567").equals(rutas.logica.EnlacesQR.huella("https://domiruta.co/", "3001234567"))
+                && rutas.logica.EnlacesQR.huella(pag, "3001234567").equals(rutas.logica.EnlacesQR.huella(pag + "index.html", "+573001234567")));
     }
 
     private static byte[] rutasPreparar(File f) throws Exception {
