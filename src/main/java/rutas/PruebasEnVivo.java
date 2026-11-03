@@ -34,6 +34,31 @@ public class PruebasEnVivo {
         probarMensajes();
         probarConexion();
         probarCorrecciones();
+        probarNotificar();
+    }
+
+    private static void probarNotificar() {
+        String id = "0f8fad5b-d9cb-469f-a165-70867728950e";
+        List<String> visto = new ArrayList<>();
+        NubeRepartidor.Transporte t = (m, u, c, b) -> {
+            visto.add(m + " " + u + " " + c.get("apikey") + " " + b);
+            return new NubeRepartidor.Respuesta(200, "{\"enviados\":2,\"borrados\":0,\"celulares\":2}");
+        };
+        NubeRepartidor n = new NubeRepartidor("https://p.supabase.co", "sb_secret_x", t);
+        int r = n.notificar(id, "Tienda el Ramiro", 3, "https://x.github.io/domiruta-repartidor/?s=abc");
+        String v = visto.isEmpty() ? "" : visto.get(0);
+        revisar("aviso al celular: llama a la función notificar con la clave, el repartidor, la tienda y el enlace", r == 2
+                && v.startsWith("POST https://p.supabase.co/functions/v1/notificar sb_secret_x ")
+                && v.contains("\"repartidor_id\":\"" + id + "\"") && v.contains("Tienda el Ramiro te asignó una salida")
+                && v.contains("3 entregas") && v.contains("?s=abc"));
+        visto.clear();
+        revisar("aviso al celular: sin repartidor en Supabase no llama", n.notificar("", "T", 1, "u") == -1 && visto.isEmpty());
+        revisar("aviso al celular: código raro no llama", n.notificar("x'; drop", "T", 1, "u") == -1 && visto.isEmpty());
+        NubeRepartidor.Transporte caido = (m, u, c, b) -> { throw new java.net.ConnectException("sin red"); };
+        NubeRepartidor.Transporte sinFuncion = (m, u, c, b) -> new NubeRepartidor.Respuesta(404, "{\"error\":\"no\"}");
+        revisar("aviso al celular: sin internet o sin la función no se rompe nada",
+                new NubeRepartidor("https://p.supabase.co", "k", caido).notificar(id, "T", 1, "u") == -1
+                && new NubeRepartidor("https://p.supabase.co", "k", sinFuncion).notificar(id, "T", 1, "u") == -1);
     }
 
     private static void probarCorrecciones() throws Exception {

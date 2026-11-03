@@ -1419,7 +1419,10 @@ public class PanelPedidos extends JPanel {
             @Override
             protected rutas.logica.NubeRepartidor.Subida doInBackground() throws Exception {
                 extra.repartidorId = Aplicacion.repartidorEnNube(nube, d);
-                return nube.subir(codigo, d.nombre, app.getNegocio(), copia, extra);
+                rutas.logica.NubeRepartidor.Subida subida = nube.subir(codigo, d.nombre, app.getNegocio(), copia, extra);
+                nube.notificarSinEsperar(extra.repartidorId, app.getNegocio(), copia.size(),
+                        rutas.logica.NubeRepartidor.enlace(aj.pagina, codigo));
+                return subida;
             }
 
             @Override

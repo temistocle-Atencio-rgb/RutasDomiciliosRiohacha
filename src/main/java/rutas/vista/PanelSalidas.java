@@ -818,7 +818,10 @@ public class PanelSalidas extends JPanel {
                     }
                 }
                 extra.repartidorId = Aplicacion.repartidorEnNube(nube, rep);
-                return nube.subir(codigo, rep.nombre, app.getNegocio(), copia, extra);
+                NubeRepartidor.Subida subida = nube.subir(codigo, rep.nombre, app.getNegocio(), copia, extra);
+                nube.notificarSinEsperar(extra.repartidorId, app.getNegocio(), copia.size(),
+                        NubeRepartidor.enlace(aj.pagina, codigo));
+                return subida;
             }
 
             @Override

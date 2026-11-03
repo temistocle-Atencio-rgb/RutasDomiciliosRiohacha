@@ -624,6 +624,50 @@ public class NubeRepartidor {
         return id;
     }
 
+    /**
+     * Le suena el celular al repartidor aunque tenga la app cerrada (función «notificar» de Supabase).
+     * Es un extra: si falla (sin internet, función sin publicar, celular sin avisos) no pasa nada.
+     * Devuelve cuántos celulares recibieron el aviso (-1 si no se pudo).
+     */
+    public int notificar(String repartidorId, String tienda, int entregas, String enlaceSalida) {
+        if (url.isBlank() || clave.isBlank() || repartidorId == null || repartidorId.isEmpty()) {
+            return -1;
+        }
+        try {
+            uuidValido(repartidorId);
+            String nombre = tienda == null || tienda.isBlank() ? "La tienda" : tienda.trim();
+            Map<String, Object> c = new LinkedHashMap<>();
+            c.put("repartidor_id", repartidorId);
+            c.put("titulo", nombre + " te asignó una salida");
+            c.put("texto", entregas == 1 ? "1 entrega. Ábrela para aceptarla." : entregas + " entregas. Ábrela para aceptarla.");
+            c.put("url", enlaceSalida == null ? "" : enlaceSalida);
+            Map<String, String> cab = new LinkedHashMap<>();
+            cab.put("apikey", clave);
+            if (clave.startsWith("eyJ")) {
+                cab.put("Authorization", "Bearer " + clave);
+            }
+            cab.put("Content-Type", "application/json");
+            Respuesta r = transporte.enviar("POST", url + "/functions/v1/notificar", cab, Json.escribir(c));
+            if (r.codigo >= 300) {
+                return -1;
+            }
+            Object o = Json.leer(r.cuerpo);
+            return o instanceof Map ? (int) Json.entero((Map<?, ?>) o, "enviados") : -1;
+        } catch (IOException | RuntimeException e) {
+            return -1;
+        }
+    }
+
+    /** Igual que notificar, pero sin esperar (no demora el WhatsApp ni la pantalla). */
+    public void notificarSinEsperar(String repartidorId, String tienda, int entregas, String enlaceSalida) {
+        if (repartidorId == null || repartidorId.isEmpty()) {
+            return;
+        }
+        Thread t = new Thread(() -> notificar(repartidorId, tienda, entregas, enlaceSalida), "aviso-repartidor");
+        t.setDaemon(true);
+        t.start();
+    }
+
     // ------------------------------------------------------------------
 
     private Respuesta llamar(String metodo, String ruta, String cuerpo) throws IOException {
