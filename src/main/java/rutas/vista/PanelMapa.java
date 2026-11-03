@@ -1495,6 +1495,34 @@ public class PanelMapa extends JPanel {
      * profundo con una R y la hora de su última ubicación.
      */
     private void dibujarSalidas(Graphics2D g) {
+        // el rastro: por dónde ha pasado cada repartidor (línea azul, debajo de los marcadores)
+        java.awt.Stroke antes = g.getStroke();
+        for (Salida s : salidas) {
+            if (s.rastro.size() < 2) {
+                continue;
+            }
+            Path2D camino = new Path2D.Double();
+            boolean primero = true;
+            for (double[] p : s.rastro) {
+                double x = sx(Geo.x(p[1])), y = sy(Geo.y(p[0]));
+                if (primero) {
+                    camino.moveTo(x, y);
+                    primero = false;
+                } else {
+                    camino.lineTo(x, y);
+                }
+            }
+            if (!Double.isNaN(s.lat) && s.ubicacionEn != null) { // que llegue hasta donde está ahora
+                camino.lineTo(sx(Geo.x(s.lon)), sy(Geo.y(s.lat)));
+            }
+            g.setStroke(new BasicStroke(7f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+            g.setColor(new Color(255, 255, 255, 200));
+            g.draw(camino);
+            g.setStroke(new BasicStroke(4f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+            g.setColor(new Color(Tema.AZUL.getRed(), Tema.AZUL.getGreen(), Tema.AZUL.getBlue(), 210));
+            g.draw(camino);
+        }
+        g.setStroke(antes);
         for (Salida s : salidas) {
             for (Salida.Entrega e : s.entregas) {
                 if (e.enCamino()) {

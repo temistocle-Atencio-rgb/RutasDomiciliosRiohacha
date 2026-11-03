@@ -207,6 +207,8 @@ public class Seguimiento {
         final Map<Salida.Entrega, Long> subidas = new LinkedHashMap<>();
         NubeRepartidor.Estado estado;
         List<Salida.Mensaje> mensajes = new ArrayList<>();
+        long rastroHasta;
+        List<double[]> rastro = new ArrayList<>();
     }
 
     /** Una salida cerrada que sigue en internet. */
@@ -235,6 +237,7 @@ public class Seguimiento {
                 a.salida = s;
                 a.uuid = s.uuidNube;
                 a.desde = s.leidoNube;
+                a.rastroHasta = s.rastroHasta;
                 for (int i = 0; i < s.entregas.size(); i++) {
                     Salida.Entrega e = s.entregas.get(i);
                     if (e.idNube == 0) {
@@ -307,6 +310,9 @@ public class Seguimiento {
                         }
                         a.estado = nube.leer(a.uuid);
                         a.mensajes = nube.mensajes(a.uuid, a.desde);
+                        if (a.salida.aceptadaEn != null || a.estado.aceptada != null) {
+                            a.rastro = nube.rastro(a.uuid, a.rastroHasta);
+                        }
                     } catch (IOException ex) {
                         err = ex.getMessage();
                     }
@@ -376,7 +382,7 @@ public class Seguimiento {
 
     private boolean aplicarAbierta(Abierta a) {
         Salida s = a.salida;
-        boolean cambio = false;
+        boolean cambio = false, rastroNuevo = false;
         for (Object[] m : a.marcasHechas) {
             Salida.Entrega e = (Salida.Entrega) m[0];
             if (e.marcadaEn == (long) m[4]) { // si la volvieron a marcar mientras tanto, falta mandar esa
@@ -386,6 +392,13 @@ public class Seguimiento {
         for (Map.Entry<Salida.Entrega, Long> x : a.subidas.entrySet()) {
             x.getKey().idNube = x.getValue();
             cambio = true;
+        }
+        for (double[] p : a.rastro) { // solo lo que no se tenía (si dos revisiones se cruzan, no se repite)
+            if ((long) p[2] > s.rastroHasta) {
+                s.rastro.add(p);
+                s.rastroHasta = (long) p[2];
+                rastroNuevo = true; // solo se dibuja: no hace falta guardar
+            }
         }
         if (a.estado != null) {
             if (!a.estado.existe) {
@@ -400,7 +413,7 @@ public class Seguimiento {
         } else if (cambio) {
             guardar(s);
         }
-        return cambio;
+        return cambio || rastroNuevo;
     }
 
     private boolean aplicarCerrada(Cerrada c) {

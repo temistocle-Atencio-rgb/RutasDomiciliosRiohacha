@@ -1372,10 +1372,38 @@ public class PanelPedidos extends JPanel {
             if (!app.getRutas().contains(r)) {
                 return; // mientras se escogía, la ruta cambió
             }
-            despachar(r, d);
-            if (i + 1 < rs.size()) {
-                SwingUtilities.invokeLater(() -> elegirYDespachar(rs, i + 1));
+            Runnable seguir = () -> {
+                despachar(r, d);
+                if (i + 1 < rs.size()) {
+                    SwingUtilities.invokeLater(() -> elegirYDespachar(rs, i + 1));
+                }
+            };
+            java.util.List<Aplicacion.EnOtraSalida> otras = app.yaVanEnOtraSalida(r.getParadas());
+            if (otras.isEmpty()) {
+                seguir.run();
+                return;
             }
+            // el mismo cliente ya va con otro repartidor: no se manda dos veces sin preguntar
+            Aplicacion.EnOtraSalida x = otras.get(0);
+            String nombre = primerNombre(x.entrega.parada.getNombre());
+            String quienVa = x.salida.repartidor.isEmpty() ? "otra salida" : "la salida de " + x.salida.repartidor;
+            String mas = otras.size() > 1 ? " (y " + (otras.size() - 1) + " cliente" + (otras.size() > 2 ? "s" : "")
+                    + " más)" : "";
+            String nuevo = primerNombre(d.nombre);
+            Alerta.confirmar(sitio(), nombre + " ya va en otra salida",
+                    nombre + mas + " ya va en " + quienVa + " (" + x.salida.creada.toLocalTime().format(Ruta.FORMATO_HORA)
+                            + "). ¿Se lo pasas a " + nuevo + "? Se quita de esa salida y a ese repartidor le llega un"
+                            + " mensaje. Si es un pedido distinto, mándalo aparte.",
+                    "Pasárselo a " + nuevo, "Es otro pedido",
+                    () -> {
+                        try {
+                            app.pasarAOtroRepartidor(otras, d.nombre);
+                        } catch (java.io.IOException ex) {
+                            aviso("No se pudo quitar de la otra salida: " + ex.getMessage());
+                            return;
+                        }
+                        seguir.run();
+                    }, seguir);
         });
     }
 

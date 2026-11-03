@@ -405,6 +405,26 @@ public class NubeRepartidor {
         return f;
     }
 
+    /**
+     * El rastro del repartidor: las ubicaciones buenas (error de 150 m o menos) después de la última que ya se tiene.
+     * Cada punto es {lat, lon, id}; el id sirve para pedir solo lo nuevo la próxima vez.
+     */
+    public List<double[]> rastro(String uuid, long despuesDe) throws IOException {
+        List<double[]> l = new ArrayList<>();
+        for (Map<?, ?> m : filas(llamar("GET", "ubicaciones?salida=eq." + uuid + "&id=gt." + Math.max(0, despuesDe)
+                + "&select=id,lat,lon,precision_m&order=id&limit=1000", null))) {
+            Object p = m.get("precision_m");
+            if (p instanceof Number && ((Number) p).doubleValue() > 150) {
+                continue;
+            }
+            double lat = Json.decimal(m, "lat"), lon = Json.decimal(m, "lon");
+            if (!Double.isNaN(lat) && !Double.isNaN(lon)) {
+                l.add(new double[]{lat, lon, Json.entero(m, "id")});
+            }
+        }
+        return l;
+    }
+
     /** Lee estados, ubicación y si ya terminó. */
     public Estado leer(String uuid) throws IOException {
         Estado est = new Estado();
@@ -490,6 +510,11 @@ public class NubeRepartidor {
     /** Primero se cierra (el enlace deja de mostrar datos) y luego se borra. */
     public void cerrar(String uuid) throws IOException {
         llamar("PATCH", "salidas?id=eq." + uuid, "{\"cerrada\":true}");
+    }
+
+    /** Se quita una entrega de su salida (el cliente se pasó a otro repartidor): su enlace de cliente deja de servir. */
+    public void quitarEntrega(long idEntrega) throws IOException {
+        llamar("DELETE", "entregas_salida?id=eq." + idEntrega, null);
     }
 
     /** Al cerrar: se borra de internet (las entregas y mensajes se van con ella). */

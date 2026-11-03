@@ -572,6 +572,97 @@ public class Aplicacion {
         return s;
     }
 
+    /** Una entrega de un cliente que todavía va en camino en otra salida abierta. */
+    public static final class EnOtraSalida {
+        public final Salida salida;
+        public final Salida.Entrega entrega;
+
+        EnOtraSalida(Salida salida, Salida.Entrega entrega) {
+            this.salida = salida;
+            this.entrega = entrega;
+        }
+    }
+
+    private static String limpio(String t) {
+        return t == null ? "" : t.trim().replaceAll("\\s+", " ").toLowerCase(java.util.Locale.ROOT);
+    }
+
+    /** Mismo cliente: mismo nombre y misma dirección (sin importar mayúsculas ni espacios de más). */
+    public static boolean mismoCliente(Parada a, Parada b) {
+        return !limpio(a.getNombre()).isEmpty() && limpio(a.getNombre()).equals(limpio(b.getNombre()))
+                && limpio(a.getDireccion()).equals(limpio(b.getDireccion()));
+    }
+
+    /** Los clientes de estas paradas que ya van en camino en otra salida abierta (para no mandarlos dos veces). */
+    public List<EnOtraSalida> yaVanEnOtraSalida(List<Parada> paradas) {
+        List<EnOtraSalida> l = new ArrayList<>();
+        for (Salida s : salidas) {
+            if (!s.abierta() || s.subiendo) {
+                continue;
+            }
+            for (Salida.Entrega e : s.entregas) {
+                if (!e.enCamino()) {
+                    continue;
+                }
+                for (Parada p : paradas) {
+                    if (mismoCliente(p, e.parada)) {
+                        l.add(new EnOtraSalida(s, e));
+                        break;
+                    }
+                }
+            }
+        }
+        return l;
+    }
+
+    /**
+     * El cliente se pasa a otro repartidor: sale de la salida vieja (en el computador y en internet) y a ese
+     * repartidor le llega un mensaje. Si la salida vieja queda sin entregas, se cierra (el enlace deja de servir).
+     */
+    public void pasarAOtroRepartidor(List<EnOtraSalida> l, String nuevo) throws IOException {
+        List<Object[]> nube = new ArrayList<>(); // {uuid, idNube, nombre, quedóVacía}
+        for (EnOtraSalida x : l) {
+            Salida s = x.salida;
+            if (!s.entregas.remove(x.entrega)) {
+                continue;
+            }
+            boolean vacia = s.entregas.isEmpty();
+            if (vacia) {
+                s.estado = Salida.Estado.CERRADA;
+                s.cerrada = java.time.LocalDateTime.now();
+            } else {
+                s.revisarEstado();
+            }
+            guardar(() -> bd.guardarSalida(s));
+            if (!vacia) {
+                cerrarSiTermino(s); // lo que quedó ya estaba entregado
+            }
+            if (s.enLinea()) {
+                nube.add(new Object[]{s.uuidNube, x.entrega.idNube, x.entrega.parada.getNombre(), vacia});
+            }
+        }
+        NubeRepartidor n = getNube();
+        if (n != null && !nube.isEmpty()) {
+            String quien = nuevo == null || nuevo.isBlank() ? "otro repartidor" : nuevo.trim();
+            Thread t = new Thread(() -> {
+                for (Object[] o : nube) {
+                    try {
+                        if ((long) o[1] > 0 && !(boolean) o[3]) {
+                            n.quitarEntrega((long) o[1]); // la vacía la cierra y la borra el seguimiento
+                        }
+                        n.escribir((String) o[0], "La tienda le pasó el pedido de " + o[2] + " a " + quien
+                                + ". Ya no lo lleves.");
+                    } catch (IOException ex) {
+                        Ubicaciones.registrarError(ex);
+                    }
+                }
+            }, "pasar-cliente");
+            t.setDaemon(true);
+            t.start();
+        }
+        avisar();
+    }
+
     private void quitarDePendientes(Parada p) {
         for (int i = 0; i < entregas.size(); i++) {
             Parada q = entregas.get(i);

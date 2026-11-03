@@ -115,6 +115,9 @@ public class Salida {
     public double lat = Double.NaN;  // última ubicación del repartidor
     public double lon = Double.NaN;
     public LocalDateTime ubicacionEn;
+    /** Por dónde ha pasado el repartidor ({lat, lon, id}); no se guarda: se vuelve a leer de internet. */
+    public final java.util.List<double[]> rastro = new java.util.ArrayList<>();
+    public long rastroHasta;
     public LocalDateTime aceptadaEn;     // el domiciliario aceptó (null = todavía no responde)
     public LocalDateTime rechazadaEn;    // dijo que no puede
     public String motivoRechazo = "";

@@ -35,6 +35,32 @@ public class PruebasEnVivo {
         probarConexion();
         probarCorrecciones();
         probarNotificar();
+        probarRastroYPasar();
+    }
+
+    private static void probarRastroYPasar() throws Exception {
+        rutas.modelo.Parada a = new rutas.modelo.Parada("Miguel Angel Belaez", "Calle 12b # 18 - 175", 11.54, -72.9);
+        rutas.modelo.Parada b = new rutas.modelo.Parada("  miguel angel  BELAEZ ", "calle 12b # 18 - 175", 11.54, -72.9);
+        rutas.modelo.Parada c = new rutas.modelo.Parada("Miguel Angel Belaez", "Calle 15 # 7 - 20", 11.54, -72.9);
+        revisar("mismo cliente: igual nombre y dirección aunque cambien mayúsculas o espacios; otra dirección no",
+                rutas.vista.Aplicacion.mismoCliente(a, b) && !rutas.vista.Aplicacion.mismoCliente(a, c));
+        List<String> visto = new ArrayList<>();
+        NubeRepartidor.Transporte t = (m, u, cab, cuerpo) -> {
+            visto.add(m + " " + u);
+            return u.contains("/ubicaciones?")
+                    ? new NubeRepartidor.Respuesta(200, "[{\"id\":11,\"lat\":11.541,\"lon\":-72.901,\"precision_m\":8},"
+                            + "{\"id\":12,\"lat\":11.6,\"lon\":-72.8,\"precision_m\":900},"
+                            + "{\"id\":13,\"lat\":11.542,\"lon\":-72.902,\"precision_m\":null}]")
+                    : new NubeRepartidor.Respuesta(204, "");
+        };
+        NubeRepartidor n = new NubeRepartidor("https://p.supabase.co", "sb_secret_x", t);
+        List<double[]> r = n.rastro("0f8fad5b-d9cb-469f-a165-70867728950e", 10);
+        revisar("rastro: pide solo lo nuevo, en orden, y salta las lecturas malas (más de 150 m de error)",
+                r.size() == 2 && r.get(0)[2] == 11 && r.get(1)[2] == 13 && visto.get(0).contains("id=gt.10")
+                && visto.get(0).contains("order=id"));
+        n.quitarEntrega(77);
+        revisar("pasar el cliente a otro: se borra esa entrega de internet (su enlace deja de servir)",
+                visto.get(1).equals("DELETE https://p.supabase.co/rest/v1/entregas_salida?id=eq.77"));
     }
 
     private static void probarNotificar() {

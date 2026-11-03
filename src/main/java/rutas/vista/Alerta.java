@@ -26,17 +26,23 @@ public final class Alerta {
 
     /** Alerta con un solo boton. */
     public static Capa mostrar(JComponent dentroDe, Tipo tipo, String titulo, String mensaje, Runnable alAceptar) {
-        return crear(dentroDe, tipo, titulo, mensaje, "Entendido", null, alAceptar);
+        return crear(dentroDe, tipo, titulo, mensaje, "Entendido", null, alAceptar, null);
     }
 
     /** Pregunta con dos botones: el primero hace la accion, el segundo solo cierra. */
     public static Capa confirmar(JComponent dentroDe, String titulo, String mensaje, String textoSi, String textoNo,
             Runnable alAceptar) {
-        return crear(dentroDe, Tipo.PREGUNTA, titulo, mensaje, textoSi, textoNo, alAceptar);
+        return crear(dentroDe, Tipo.PREGUNTA, titulo, mensaje, textoSi, textoNo, alAceptar, null);
+    }
+
+    /** Pregunta con dos caminos: cada botón hace lo suyo (cerrar con Esc no hace ninguno). */
+    public static Capa confirmar(JComponent dentroDe, String titulo, String mensaje, String textoSi, String textoNo,
+            Runnable alAceptar, Runnable alNo) {
+        return crear(dentroDe, Tipo.PREGUNTA, titulo, mensaje, textoSi, textoNo, alAceptar, alNo);
     }
 
     private static Capa crear(JComponent dentroDe, Tipo tipo, String titulo, String mensaje, String textoSi,
-            String textoNo, Runnable alAceptar) {
+            String textoNo, Runnable alAceptar, Runnable alNo) {
         JPanel t = Capa.tarjeta(460, 32, 40);
 
         Icono icono = new Icono(tipo);
@@ -71,7 +77,12 @@ public final class Alerta {
         javax.swing.AbstractButton no = null;
         if (textoNo != null) {
             no = (javax.swing.AbstractButton) botones.getComponent(1);
-            no.addActionListener(e -> capa.cerrar());
+            no.addActionListener(e -> {
+                capa.cerrar();
+                if (alNo != null) {
+                    alNo.run();
+                }
+            });
         }
         for (javax.swing.AbstractButton b : new javax.swing.AbstractButton[]{si, no}) {
             if (b != null) { // Enter oprime el boton que tenga el foco
