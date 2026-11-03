@@ -92,6 +92,8 @@ public class TiendaEnLinea {
         public String negocio = "";
         public Ajustes ajustes = new Ajustes();
         public List<MetodoPago> pagos = new ArrayList<>(List.of(MetodoPago.EFECTIVO));
+        /** Número o llave y a nombre de quién, de cada medio de pago (para mandárselo al cliente por WhatsApp) */
+        public Map<MetodoPago, String[]> cuentas = new java.util.EnumMap<>(MetodoPago.class);
 
         public static Datos leer(BaseTienda bd, AjustesRecibo recibo, String negocio) throws SQLException {
             Datos d = new Datos();
@@ -100,8 +102,41 @@ public class TiendaEnLinea {
             d.negocio = negocio == null ? "" : negocio;
             d.ajustes = Ajustes.leer(bd);
             d.pagos = MediosPago.activos(bd);
+            d.cuentas = leerCuentas(bd);
             return d;
         }
+    }
+
+    /** Los medios que se pagan aparte (no en la puerta): a esos se les mandan los datos para pagar. */
+    public static boolean pagaAntes(MetodoPago m) {
+        return m != MetodoPago.EFECTIVO && m != MetodoPago.TARJETA_DEBITO && m != MetodoPago.TARJETA_CREDITO;
+    }
+
+    public static Map<MetodoPago, String[]> leerCuentas(BaseTienda bd) throws SQLException {
+        Map<MetodoPago, String[]> m = new java.util.EnumMap<>(MetodoPago.class);
+        for (MetodoPago p : MetodoPago.values()) {
+            if (pagaAntes(p)) {
+                m.put(p, new String[]{bd.leerConfig("pagos.cuenta." + p.name(), ""), bd.leerConfig("pagos.titular." + p.name(), "")});
+            }
+        }
+        return m;
+    }
+
+    public static void guardarCuentas(BaseTienda bd, Map<MetodoPago, String[]> cuentas) throws SQLException {
+        List<String[]> pares = new ArrayList<>();
+        for (Map.Entry<MetodoPago, String[]> e : cuentas.entrySet()) {
+            String c = e.getValue()[0] == null ? "" : e.getValue()[0].trim().replaceAll("\\s+", " ");
+            String t = e.getValue()[1] == null ? "" : e.getValue()[1].trim().replaceAll("\\s+", " ");
+            if (c.length() > 60) {
+                throw new IllegalArgumentException("El número o llave de " + e.getKey().getTexto() + " es muy largo (máximo 60)");
+            }
+            if (t.length() > 80) {
+                throw new IllegalArgumentException("El nombre de " + e.getKey().getTexto() + " es muy largo (máximo 80)");
+            }
+            pares.add(new String[]{"pagos.cuenta." + e.getKey().name(), c});
+            pares.add(new String[]{"pagos.titular." + e.getKey().name(), t});
+        }
+        bd.guardarConfigs(pares.toArray(new String[0][]));
     }
 
     /** Lo que debe quedar en Supabase. Las fotos van por su nombre en la nube (cambia si cambia la foto). */
@@ -110,6 +145,7 @@ public class TiendaEnLinea {
         final TreeMap<Long, Map<String, Object>> productos = new TreeMap<>();
         /** nombre en la nube → {archivo local, "logo" o "foto"} */
         final Map<String, String[]> fotos = new LinkedHashMap<>();
+        final List<Object> cuentas = new ArrayList<>();
     }
 
     /** Cómo terminó una subida. */
@@ -219,6 +255,16 @@ public class TiendaEnLinea {
             pagos.add(0, "efectivo");
         }
         r.tienda.put("pagos", pagos);
+        for (MetodoPago m : d.pagos) {
+            String[] c = d.cuentas.get(m);
+            if (pagaAntes(m) && c != null && c[0] != null && !c[0].isBlank()) {
+                Map<String, Object> x = new LinkedHashMap<>();
+                x.put("medio", m.name().toLowerCase());
+                x.put("cuenta", corto(c[0], 60));
+                x.put("titular", corto(c[1], 80));
+                r.cuentas.add(x);
+            }
+        }
 
         for (BaseTienda.ProductoEnLinea p : d.productos) {
             Map<String, Object> m = new LinkedHashMap<>();
@@ -324,6 +370,22 @@ public class TiendaEnLinea {
             r.tienda = true;
         }
 
+        // 2b. los números de cuenta (solo los usa la función de WhatsApp; no salen en la página)
+        String g = Json.escribir(des.cuentas);
+        if (!g.equals(env.get("g"))) {
+            try {
+                llamar("DELETE", "pagos_tienda?medio=not.is.null", null);
+                if (!des.cuentas.isEmpty()) {
+                    llamar("POST", "pagos_tienda?on_conflict=medio", g);
+                }
+                env.put("g", g);
+            } catch (NubeRepartidor.ErrorNube e) {
+                if (!e.getMessage().startsWith("Falta la tienda")) { // sin whatsapp.sql todavía: se sube después
+                    throw e;
+                }
+            }
+        }
+
         // 3. los productos cambiados o nuevos (de a 200)
         List<String> cambiados = new ArrayList<>();
         List<Long> ids = new ArrayList<>();
@@ -390,6 +452,129 @@ public class TiendaEnLinea {
 
     public static String escribirEnviado(Map<String, String> m) {
         return Json.escribir(new LinkedHashMap<String, Object>(m));
+    }
+
+
+    // ------------------------------------------------------------------
+    //  Los pedidos que llegan de la página
+    // ------------------------------------------------------------------
+
+    private static final String CAMPOS = "id,codigo,creado,nombre,celular,entrega,direccion,referencia,lat,lon,pago,paga_con,"
+            + "nota,items,subtotal,domicilio,total,estado,motivo,tomado,comprobante,pagado";
+
+    /** Los pedidos por atender (sin terminar, de los últimos 2 días), del más viejo al más nuevo. */
+    public List<rutas.modelo.PedidoWeb> pedidosActivos() throws IOException {
+        String desde = java.time.OffsetDateTime.now().minusDays(2).toString();
+        String ruta = "pedidos_web?select=" + CAMPOS + "&or=(estado.not.in.(entregado,cancelado),tomado.is.false)"
+                + "&creado=gte." + java.net.URLEncoder.encode(desde, java.nio.charset.StandardCharsets.UTF_8)
+                + "&order=id.asc&limit=100";
+        Object o = Json.leer(llamar("GET", ruta, null).cuerpo);
+        List<rutas.modelo.PedidoWeb> l = new ArrayList<>();
+        if (o instanceof List) {
+            for (Object x : (List<?>) o) {
+                if (x instanceof Map) {
+                    l.add(pedido((Map<?, ?>) x));
+                }
+            }
+        }
+        return l;
+    }
+
+    static rutas.modelo.PedidoWeb pedido(Map<?, ?> m) {
+        rutas.modelo.PedidoWeb p = new rutas.modelo.PedidoWeb();
+        p.id = Json.entero(m, "id");
+        p.codigo = Json.texto(m, "codigo");
+        try {
+            p.creado = java.time.OffsetDateTime.parse(Json.texto(m, "creado"))
+                    .atZoneSameInstant(java.time.ZoneId.systemDefault()).toLocalDateTime();
+        } catch (RuntimeException e) {
+            p.creado = java.time.LocalDateTime.now();
+        }
+        p.nombre = Json.texto(m, "nombre");
+        p.celular = Json.texto(m, "celular");
+        p.entrega = Json.texto(m, "entrega");
+        p.direccion = Json.texto(m, "direccion");
+        p.referencia = Json.texto(m, "referencia");
+        if (m.get("lat") instanceof Number && m.get("lon") instanceof Number) {
+            p.lat = ((Number) m.get("lat")).doubleValue();
+            p.lon = ((Number) m.get("lon")).doubleValue();
+        }
+        p.pago = Json.texto(m, "pago");
+        p.pagaCon = m.get("paga_con") instanceof Number ? ((Number) m.get("paga_con")).longValue() : 0;
+        p.nota = Json.texto(m, "nota");
+        if (m.get("items") instanceof List) {
+            for (Object x : (List<?>) m.get("items")) {
+                if (x instanceof Map) {
+                    Map<?, ?> i = (Map<?, ?>) x;
+                    p.items.add(new rutas.modelo.PedidoWeb.Item(Json.texto(i, "nombre"), Json.entero(i, "precio"),
+                            (int) Json.entero(i, "cantidad")));
+                }
+            }
+        }
+        p.subtotal = Json.entero(m, "subtotal");
+        p.domicilio = Json.entero(m, "domicilio");
+        p.total = Json.entero(m, "total");
+        p.estado = Json.texto(m, "estado");
+        p.motivo = Json.texto(m, "motivo");
+        p.tomado = Boolean.TRUE.equals(m.get("tomado"));
+        p.comprobante = m.get("comprobante") == null ? null : String.valueOf(m.get("comprobante"));
+        p.pagado = Boolean.TRUE.equals(m.get("pagado"));
+        return p;
+    }
+
+    /** Ya se avisó en la caja: no vuelve a sonar (si manda el comprobante, Supabase lo vuelve a marcar). */
+    public void marcarTomados(List<Long> ids) throws IOException {
+        if (ids.isEmpty()) {
+            return;
+        }
+        StringBuilder sb = new StringBuilder();
+        for (Long id : ids) {
+            sb.append(sb.length() == 0 ? "" : ",").append(id);
+        }
+        llamar("PATCH", "pedidos_web?id=in.(" + sb + ")", "{\"tomado\":true}");
+    }
+
+    /** Cambia el estado (lo ve el cliente en la página; si es «cancelado» le llega el WhatsApp con el motivo). */
+    public void cambiarEstado(long id, String estado, String motivo) throws IOException {
+        if (!java.util.Set.of("aceptado", "preparando", "en_camino", "entregado", "cancelado").contains(estado)) {
+            throw new IllegalArgumentException("Estado no válido: " + estado);
+        }
+        Map<String, Object> c = new LinkedHashMap<>();
+        c.put("estado", estado);
+        c.put("estado_en", java.time.OffsetDateTime.now().toString());
+        if (motivo != null) {
+            c.put("motivo", corto(motivo, 200));
+        }
+        llamar("PATCH", "pedidos_web?id=eq." + id, Json.escribir(c));
+    }
+
+    /** La caja ya vio la plata: «Pago confirmado» (le llega el WhatsApp al cliente). */
+    public void marcarPagado(long id) throws IOException {
+        llamar("PATCH", "pedidos_web?id=eq." + id, "{\"pagado\":true}");
+    }
+
+    /** Enlace de 10 minutos para ver la foto del comprobante (la carpeta es privada). */
+    public String enlaceComprobante(String ruta) throws IOException {
+        if (ruta == null || !ruta.matches("[0-9]+-[0-9]+\\.(jpg|png|pdf)")) {
+            throw new IllegalArgumentException("No hay comprobante");
+        }
+        Map<String, String> cab = cabeceras();
+        cab.put("Content-Type", "application/json");
+        NubeRepartidor.Respuesta r;
+        try {
+            r = red.enviar("POST", url + "/storage/v1/object/sign/comprobantes/" + ruta, cab, "{\"expiresIn\":600}");
+        } catch (java.net.http.HttpTimeoutException | java.net.ConnectException e) {
+            throw new NubeRepartidor.ErrorNube("No hay internet o Supabase no responde");
+        }
+        if (r.codigo >= 300) {
+            throw new NubeRepartidor.ErrorNube("No se pudo abrir el comprobante (" + r.codigo + ")");
+        }
+        Object o = Json.leer(r.cuerpo);
+        String firmado = o instanceof Map ? Json.texto((Map<?, ?>) o, "signedURL") : "";
+        if (firmado.isEmpty()) {
+            throw new NubeRepartidor.ErrorNube("Supabase no dio el enlace del comprobante");
+        }
+        return url + "/storage/v1" + (firmado.startsWith("/") ? firmado : "/" + firmado);
     }
 
     // ------------------------------------------------------------------

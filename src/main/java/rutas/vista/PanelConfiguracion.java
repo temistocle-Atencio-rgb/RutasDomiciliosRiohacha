@@ -1673,7 +1673,7 @@ public class PanelConfiguracion extends JPanel {
         return sc;
     }
 
-    private static JPanel columna() {
+    static JPanel columna() {
         JPanel p = new JPanel();
         p.setOpaque(false);
         p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));

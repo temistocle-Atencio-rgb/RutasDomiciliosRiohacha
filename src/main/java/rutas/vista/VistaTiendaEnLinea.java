@@ -26,6 +26,11 @@ class VistaTiendaEnLinea extends JPanel {
     private final JLabel lblProductos = new JLabel(" ");
     private final JTextField campoEnlace = Tema.campo("");
     private final Tema.Boton btnAhora = Tema.botonSecundario("Actualizar ahora");
+    // los datos para pagar (Nequi, Bre-B...): se los manda WhatsApp a quien ya pidió; no salen en la página
+    private final JPanel panelCuentas = PanelConfiguracion.columna();
+    private final java.util.Map<rutas.modelo.MetodoPago, JTextField[]> camposCuentas =
+            new java.util.EnumMap<>(rutas.modelo.MetodoPago.class);
+    private final Tema.Parrafo msgCuentas = PanelConfiguracion.mensaje();
 
     VistaTiendaEnLinea(Aplicacion app) {
         super(new BorderLayout());
@@ -51,6 +56,28 @@ class VistaTiendaEnLinea extends JPanel {
                 + " tienda, no paga domicilio."));
         t.add(Tema.espacio(10));
         t.add(PanelConfiguracion.pie(msg, this::guardar));
+
+        t.add(Tema.espacio(18));
+        t.add(Tema.seccion("Datos para que le paguen"));
+        t.add(PanelConfiguracion.nota("Cuando el cliente escoge Nequi, Bre-B o transferencia, le llega por WhatsApp a qué"
+                + " número pagar y que mande la foto del comprobante. Estos datos no salen en la página."));
+        t.add(Tema.espacio(6));
+        panelCuentas.setAlignmentX(LEFT_ALIGNMENT);
+        t.add(panelCuentas);
+        t.add(Tema.espacio(6));
+        // un solo botón naranja por pantalla (manual de marca): este va azul
+        JPanel pieCuentas = new JPanel(new BorderLayout(12, 0));
+        pieCuentas.setOpaque(false);
+        pieCuentas.setAlignmentX(LEFT_ALIGNMENT);
+        pieCuentas.add(msgCuentas, BorderLayout.CENTER);
+        Tema.Boton bCuentas = Tema.botonSecundario("Guardar datos de pago");
+        bCuentas.addActionListener(e -> guardarCuentas());
+        JPanel der = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        der.setOpaque(false);
+        der.add(bCuentas);
+        pieCuentas.add(der, BorderLayout.EAST);
+        pieCuentas.setMaximumSize(new java.awt.Dimension(Integer.MAX_VALUE, pieCuentas.getPreferredSize().height + 8));
+        t.add(pieCuentas);
 
         t.add(Tema.espacio(18));
         t.add(Tema.seccion("El enlace de su tienda"));
@@ -129,9 +156,62 @@ class VistaTiendaEnLinea extends JPanel {
         } catch (SQLException e) {
             PanelConfiguracion.decir(msg, "No se pudo leer: " + e.getMessage(), false);
         }
+        cargarCuentas();
         rutas.logica.NubeRepartidor.Ajustes aj = app.getAjustesNube();
         campoEnlace.setText(aj == null ? "" : TiendaEnLinea.enlace(aj.pagina));
         pintarEstado();
+    }
+
+    private void cargarCuentas() {
+        panelCuentas.removeAll();
+        camposCuentas.clear();
+        try {
+            java.util.Map<rutas.modelo.MetodoPago, String[]> c = TiendaEnLinea.leerCuentas(app.getTienda());
+            JPanel g = PanelConfiguracion.grilla();
+            int fila = 0;
+            for (rutas.modelo.MetodoPago m : rutas.logica.MediosPago.activos(app.getTienda())) {
+                if (!TiendaEnLinea.pagaAntes(m)) {
+                    continue;
+                }
+                JTextField cuenta = Tema.campo(m == rutas.modelo.MetodoPago.BREB ? "Llave (celular, cédula o correo)"
+                        : m == rutas.modelo.MetodoPago.TRANSFERENCIA || m == rutas.modelo.MetodoPago.BANCOLOMBIA
+                        ? "Banco, tipo y número de cuenta" : "Número");
+                JTextField titular = Tema.campo("A nombre de");
+                String[] v = c.getOrDefault(m, new String[]{"", ""});
+                cuenta.setText(v[0]);
+                titular.setText(v[1]);
+                PanelConfiguracion.poner(g, 0, fila, 1, m.getTexto() + ": número o llave", cuenta);
+                PanelConfiguracion.poner(g, 1, fila, 1, "A nombre de", titular);
+                camposCuentas.put(m, new JTextField[]{cuenta, titular});
+                fila++;
+            }
+            if (fila == 0) {
+                JLabel l = new JLabel("Solo acepta efectivo o tarjeta. Active Nequi, Bre-B u otros en «Medios de pago».");
+                l.setFont(Tema.texto(13));
+                l.setForeground(Tema.GRIS_TEXTO);
+                panelCuentas.add(l);
+            } else {
+                panelCuentas.add(g);
+            }
+        } catch (SQLException e) {
+            PanelConfiguracion.decir(msgCuentas, "No se pudo leer: " + e.getMessage(), false);
+        }
+        panelCuentas.revalidate();
+    }
+
+    private void guardarCuentas() {
+        try {
+            java.util.Map<rutas.modelo.MetodoPago, String[]> c = new java.util.EnumMap<>(rutas.modelo.MetodoPago.class);
+            camposCuentas.forEach((m, f) -> c.put(m, new String[]{f[0].getText(), f[1].getText()}));
+            TiendaEnLinea.guardarCuentas(app.getTienda(), c);
+            app.tiendaCambio();
+            PanelConfiguracion.decir(msgCuentas, "Guardado. Se le mandan al cliente que pida con esos medios.", true);
+            Aviso.mostrar(this, Aviso.Tipo.BIEN, "Datos para que le paguen", "Cambios guardados");
+        } catch (IllegalArgumentException e) {
+            PanelConfiguracion.decir(msgCuentas, e.getMessage(), false);
+        } catch (SQLException e) {
+            PanelConfiguracion.decir(msgCuentas, "No se pudo guardar: " + e.getMessage(), false);
+        }
     }
 
     private void guardar() {

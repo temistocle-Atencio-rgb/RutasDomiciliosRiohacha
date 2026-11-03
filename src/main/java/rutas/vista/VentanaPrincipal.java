@@ -61,6 +61,7 @@ public class VentanaPrincipal extends JFrame {
     private final IndicadorConexion indicadorConexion = new IndicadorConexion(); // en línea / sin internet / Supabase
     private Seguimiento seguimiento;
     private SubidaTienda subidaTienda;
+    private PanelEnLinea panelEnLinea;
     private JPanel zonaDomicilio;            // mapa + Ruta/Buscar prestados al cobro a domicilio
     private final List<javax.swing.JButton> pestanasDomicilio = new ArrayList<>();
     private java.awt.Component tarjetaAntes; // la columna que se veia antes de prestarla
@@ -181,6 +182,12 @@ public class VentanaPrincipal extends JFrame {
         // la tienda en línea se mantiene al día sola (catálogo, logo, medios de pago)
         subidaTienda = new SubidaTienda(app);
         app.setSubidaTienda(subidaTienda);
+        panelEnLinea.conectar(subidaTienda);
+        // llega un pedido de la página (o el comprobante del pago): suena y queda en «Para atender»
+        subidaTienda.alLlegarPedido((titulo, texto) -> {
+            Pitido.aviso();
+            avisar(null, Aviso.Tipo.AVISO, titulo, texto, true);
+        });
         subidaTienda.empezar();
     }
 
@@ -512,6 +519,8 @@ public class VentanaPrincipal extends JFrame {
         agregarPestana("Ruta", pedidos);
         panelSalidas = new PanelSalidas(app);
         agregarPestana("Salidas", panelSalidas);
+        panelEnLinea = new PanelEnLinea(app, this::irARuta);
+        agregarPestana("En línea", panelEnLinea);
         agregarPestana("Buscar", new PanelExplorar(app));
         agregarCompleta("Clientes", new PanelClientes(app)); // lista a todo el ancho, como Proveedores
         agregarPestana("Novedades", panelNovedades);

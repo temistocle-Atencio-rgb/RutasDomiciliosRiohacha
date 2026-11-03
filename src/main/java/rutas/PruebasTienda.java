@@ -29,6 +29,9 @@ public class PruebasTienda {
         final List<String> llamadas = new ArrayList<>();
         final List<String> fotos = new ArrayList<>();
         boolean sinInternet;
+        List<?> cuentas;
+        String pedidosJson = "[]";
+        final List<String> parches = new ArrayList<>();
         int fotoResponde = 200;
 
         NubeRepartidor.Transporte red() {
@@ -57,6 +60,21 @@ public class PruebasTienda {
                 if (metodo.equals("POST") && ruta.startsWith("tienda_info")) {
                     tienda = (Map<?, ?>) ((List<?>) Json.leer(cuerpo)).get(0);
                     return new NubeRepartidor.Respuesta(201, "");
+                }
+                if (ruta.startsWith("pagos_tienda")) {
+                    if (metodo.equals("DELETE")) {
+                        cuentas = List.of();
+                    } else {
+                        cuentas = (List<?>) Json.leer(cuerpo);
+                    }
+                    return new NubeRepartidor.Respuesta(metodo.equals("DELETE") ? 204 : 201, "");
+                }
+                if (metodo.equals("GET") && ruta.startsWith("pedidos_web")) {
+                    return new NubeRepartidor.Respuesta(200, pedidosJson);
+                }
+                if (metodo.equals("PATCH") && ruta.startsWith("pedidos_web")) {
+                    parches.add(ruta + " " + cuerpo);
+                    return new NubeRepartidor.Respuesta(204, "");
                 }
                 if (metodo.equals("DELETE") && ruta.startsWith("catalogo?id=in.(")) {
                     String ids = ruta.substring(ruta.indexOf('(') + 1, ruta.indexOf(')'));
@@ -253,6 +271,59 @@ public class PruebasTienda {
                 m = e.getMessage();
             }
             revisar("clave mala: mensaje claro", m.contains("clave secreta"));
+
+            // 10. los datos para pagar: solo los medios activos que se pagan antes, y solo si tienen número
+            TiendaEnLinea.guardarCuentas(bd, Map.of(MetodoPago.NEQUI, new String[]{" 320 271  2871 ", "Temistocle Atencio"},
+                    MetodoPago.DAVIPLATA, new String[]{"3001112233", "X"}));
+            revisar("las cuentas se guardan limpias", TiendaEnLinea.leerCuentas(bd).get(MetodoPago.NEQUI)[0].equals("320 271 2871"));
+            r = t.sincronizar(TiendaEnLinea.Datos.leer(bd, recibo, ""), r.enviado, false);
+            revisar("sube solo Nequi (Daviplata no está activo, Mercado Pago no tiene número)", f.cuentas != null
+                    && f.cuentas.size() == 1 && String.valueOf(f.cuentas).contains("nequi") && String.valueOf(f.cuentas).contains("Temistocle"));
+            f.cuentas = null;
+            t.sincronizar(TiendaEnLinea.Datos.leer(bd, recibo, ""), r.enviado, false);
+            revisar("si no cambian, no se vuelven a subir", f.cuentas == null);
+            revisar("efectivo y tarjeta no piden datos", !TiendaEnLinea.pagaAntes(MetodoPago.EFECTIVO)
+                    && !TiendaEnLinea.pagaAntes(MetodoPago.TARJETA_DEBITO) && TiendaEnLinea.pagaAntes(MetodoPago.BREB));
+            boolean largo = false;
+            try {
+                TiendaEnLinea.guardarCuentas(bd, Map.of(MetodoPago.NEQUI, new String[]{"1".repeat(61), ""}));
+            } catch (IllegalArgumentException e) {
+                largo = true;
+            }
+            revisar("número de cuenta muy largo se rechaza", largo);
+
+            // 11. los pedidos que llegan
+            f.pedidosJson = "[{\"id\":7,\"codigo\":\"K7M2PQ9X\",\"creado\":\"2026-11-03T10:00:00-05:00\",\"nombre\":\"Ana Pérez\","
+                    + "\"celular\":\"3202712871\",\"entrega\":\"domicilio\",\"direccion\":\"Calle 15 # 10-20\",\"referencia\":\"casa azul\","
+                    + "\"lat\":11.54,\"lon\":-72.9,\"pago\":\"nequi\",\"paga_con\":null,\"nota\":\"\",\"items\":[{\"id\":1,\"nombre\":\"Arroz\","
+                    + "\"precio\":3200,\"cantidad\":2}],\"subtotal\":6400,\"domicilio\":3000,\"total\":9400,\"estado\":\"nuevo\","
+                    + "\"motivo\":\"\",\"tomado\":false,\"comprobante\":\"7-1700000000.jpg\",\"pagado\":false}]";
+            List<rutas.modelo.PedidoWeb> ps = t.pedidosActivos();
+            rutas.modelo.PedidoWeb pw = ps.get(0);
+            revisar("pedido en línea: se leen los datos", ps.size() == 1 && pw.total == 9400 && pw.items.get(0).cantidad == 2
+                    && pw.lat == 11.54 && pw.pagaAntes() && pw.metodo() == MetodoPago.NEQUI && pw.unidades() == 2
+                    && !pw.tomado && pw.comprobante.equals("7-1700000000.jpg") && pw.estadoTexto().equals("Nuevo"));
+            t.marcarTomados(List.of(7L, 9L));
+            t.cambiarEstado(7, "cancelado", "Se agotó un producto");
+            t.marcarPagado(7);
+            revisar("pedido en línea: tomado, cancelado con motivo y pagado", f.parches.size() == 3
+                    && f.parches.get(0).startsWith("pedidos_web?id=in.(7,9) {\"tomado\":true}")
+                    && f.parches.get(1).contains("\"estado\":\"cancelado\"") && f.parches.get(1).contains("Se agotó")
+                    && f.parches.get(2).contains("\"pagado\":true"));
+            boolean raro = false;
+            try {
+                t.cambiarEstado(7, "borrado", null);
+            } catch (IllegalArgumentException e) {
+                raro = true;
+            }
+            revisar("un estado inventado no se manda", raro);
+            boolean malo2 = false;
+            try {
+                t.enlaceComprobante("../otra/cosa.jpg");
+            } catch (IllegalArgumentException e) {
+                malo2 = true;
+            }
+            revisar("comprobante: solo rutas de la carpeta (nada de ../)", malo2);
         }
         revisar("enlace de la tienda desde la página del repartidor",
                 TiendaEnLinea.enlace("https://a.github.io/domiruta-repartidor/").equals("https://a.github.io/domiruta-repartidor/tienda.html")
