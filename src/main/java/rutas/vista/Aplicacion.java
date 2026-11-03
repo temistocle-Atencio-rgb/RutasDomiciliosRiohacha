@@ -733,6 +733,59 @@ public class Aplicacion {
         avisar();
     }
 
+    /** Se puede cancelar mientras no haya entregado nada (si ya entregó algo, se cierra con «Cerrar a mano»). */
+    public static boolean sePuedeCancelar(Salida s) {
+        return s.abierta() && !s.subiendo && s.cuantas(Salida.Entrega.ENTREGADO) == 0;
+    }
+
+    /**
+     * La tienda cancela la salida: el repartidor ya no va. Todo lo que llevaba vuelve a las pendientes (los
+     * pedidos siguen en pie, para mandarlos con otro), su enlace deja de servir y le llega un mensaje.
+     */
+    public void cancelarSalida(Salida s) throws IOException {
+        if (!sePuedeCancelar(s)) {
+            throw new IOException(s.subiendo ? "Todavía se está enviando: espere un momento"
+                    : "Ya entregó algo: ciérrela con «Cerrar a mano»");
+        }
+        List<Parada> vuelven = new ArrayList<>();
+        for (Salida.Entrega e : s.entregas) {
+            Parada vuelve = new Parada(e.parada.getNombre(), e.parada.getDireccion(), e.parada.getLat(),
+                    e.parada.getLon());
+            vuelve.setNodo(e.parada.getNodo());
+            vuelve.copiarDatosDe(e.parada);
+            vuelve.setVenta(null); // conserva el número de la venta: es la misma bolsa
+            vuelven.add(vuelve);
+        }
+        Salida.Estado antes = s.estado;
+        s.estado = Salida.Estado.CERRADA;
+        s.cerrada = java.time.LocalDateTime.now();
+        s.motivoCancelacion = "Cancelada por la tienda";
+        try {
+            guardar(() -> bd.guardarSalida(s));
+        } catch (IOException ex) {
+            s.estado = antes;
+            s.cerrada = null;
+            s.motivoCancelacion = "";
+            throw ex;
+        }
+        entregas.addAll(vuelven);
+        limpiarRuta();
+        NubeRepartidor n = getNube();
+        if (n != null && s.enLinea()) { // el seguimiento la cierra y la borra de internet; antes, el aviso
+            String uuid = s.uuidNube;
+            Thread t = new Thread(() -> {
+                try {
+                    n.escribir(uuid, "La tienda canceló esta salida. Ya no la lleves.");
+                } catch (IOException ex) {
+                    Ubicaciones.registrarError(ex);
+                }
+            }, "cancelar-salida");
+            t.setDaemon(true);
+            t.start();
+        }
+        avisar();
+    }
+
     /** Si la salida terminó y no debe nada (ni plata ni bolsas), se cierra sola. True si la cerró. */
     public boolean cerrarSiTermino(Salida s) {
         if (!s.cierraSola()) {

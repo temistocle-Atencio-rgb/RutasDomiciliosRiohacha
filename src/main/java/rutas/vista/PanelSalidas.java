@@ -64,8 +64,49 @@ public class PanelSalidas extends JPanel {
 
     private final java.util.Map<Long, JComponent> tarjetas = new java.util.HashMap<>(); // id de salida -> tarjeta
 
+    /** Los grupos del menú de arriba: cada salida está en uno solo. */
+    public enum Grupo {
+        CALLE("En la calle"), ATENCION("Necesitan atención"), TERMINADAS("Terminadas hoy"), CANCELADAS("Canceladas hoy");
+
+        final String texto;
+
+        Grupo(String texto) {
+            this.texto = texto;
+        }
+    }
+
+    private Grupo grupoActual = Grupo.CALLE;
+    private final java.util.List<OpcionGrupo> opciones = new ArrayList<>();
+
+    /**
+     * En qué grupo va una salida. «Necesitan atención»: lo que pide hacer algo ya (no la aceptan, venció,
+     * no responde, no tiene enlace, se quedó sin ubicación o la pausó).
+     */
+    public static Grupo grupo(Salida s, LocalDateTime ahora) {
+        if (!s.abierta()) {
+            return s.cancelada() ? Grupo.CANCELADAS : Grupo.TERMINADAS;
+        }
+        if (s.subiendo) {
+            return Grupo.CALLE;
+        }
+        boolean rechazo = s.enLinea() && s.rechazadaEn != null;
+        boolean sinRespuesta = s.esperandoRespuesta() && s.enviadaEn != null
+                && java.time.Duration.between(s.enviadaEn, ahora).toMinutes() >= Seguimiento.MIN_SIN_RESPUESTA;
+        boolean sinEnlace = !s.enLinea();
+        boolean sinUbicacion = s.aceptadaEn != null && s.estado == Salida.Estado.EN_CAMINO
+                && (s.ubicacionPausada || s.avisos.contains("sin_ubicacion"));
+        return rechazo || s.vencida() || sinRespuesta || sinEnlace || sinUbicacion ? Grupo.ATENCION : Grupo.CALLE;
+    }
+
     /** Baja hasta la tarjeta de esa salida (desde la campana de avisos). */
     void mostrarSalida(long id) {
+        for (Salida s : app.getSalidas()) {
+            if (s.id == id && grupo(s, LocalDateTime.now()) != grupoActual) {
+                grupoActual = grupo(s, LocalDateTime.now());
+                refrescar();
+                break;
+            }
+        }
         JComponent t = tarjetas.get(id);
         if (t != null) {
             t.scrollRectToVisible(new java.awt.Rectangle(0, 0, t.getWidth(), Math.min(t.getHeight(), 400)));
@@ -80,39 +121,162 @@ public class PanelSalidas extends JPanel {
 
     void refrescar() {
         lista.removeAll();
-        java.util.List<rutas.modelo.Correccion> porRevisar = app.correccionesPendientes();
-        if (!porRevisar.isEmpty()) {
-            lista.add(tarjetaCorrecciones(porRevisar));
-            lista.add(Tema.espacio(10));
-        }
         tarjetas.clear();
         lista.add(tarjetaPendientes());
-        List<Salida> abiertas = app.salidasAbiertas();
-        List<Salida> cerradas = new ArrayList<>();
+        LocalDateTime ahora = LocalDateTime.now();
+        java.time.LocalDate hoy = ahora.toLocalDate();
+        java.util.Map<Grupo, List<Salida>> porGrupo = new java.util.EnumMap<>(Grupo.class);
+        for (Grupo g : Grupo.values()) {
+            porGrupo.put(g, new ArrayList<>());
+        }
         for (Salida s : app.getSalidas()) {
-            if (!s.abierta() && s.cerrada != null && s.cerrada.toLocalDate().equals(java.time.LocalDate.now())) {
-                cerradas.add(s);
+            if (!s.abierta() && (s.cerrada == null || !s.cerrada.toLocalDate().equals(hoy))) {
+                continue; // las de otros días están en «Historial»
             }
+            porGrupo.get(grupo(s, ahora)).add(s);
         }
-        for (int i = abiertas.size() - 1; i >= 0; i--) { // la más nueva arriba
+        java.util.List<rutas.modelo.Correccion> porRevisar = app.correccionesPendientes();
+        lista.add(Tema.espacio(10));
+        lista.add(menuGrupos(porGrupo, porRevisar.size()));
+        List<Salida> estas = porGrupo.get(grupoActual);
+        if (grupoActual == Grupo.ATENCION && !porRevisar.isEmpty()) {
             lista.add(Tema.espacio(10));
-            JComponent tj = tarjetaSalida(abiertas.get(i));
-            tarjetas.put(abiertas.get(i).id, tj);
-            lista.add(tj);
+            lista.add(tarjetaCorrecciones(porRevisar));
         }
-        if (abiertas.isEmpty()) {
+        if (grupoActual == Grupo.CALLE || grupoActual == Grupo.ATENCION) {
+            for (int i = estas.size() - 1; i >= 0; i--) { // la más nueva arriba
+                lista.add(Tema.espacio(10));
+                JComponent tj = tarjetaSalida(estas.get(i));
+                tarjetas.put(estas.get(i).id, tj);
+                lista.add(tj);
+            }
+        } else if (!estas.isEmpty()) {
+            lista.add(Tema.espacio(10));
+            lista.add(grupoActual == Grupo.TERMINADAS ? tarjetaCerradas(estas) : tarjetaCanceladas(estas));
+        }
+        if (estas.isEmpty() && !(grupoActual == Grupo.ATENCION && !porRevisar.isEmpty())) {
             lista.add(Tema.espacio(10));
             Tema.Tarjeta t = new Tema.Tarjeta();
-            t.add(Tema.textoNormal("No hay salidas en camino."));
-            t.add(Tema.parrafo("Calcule la ruta en «Ruta» y oprima «Enviar por WhatsApp»: las entregas pasan aquí.", 260));
+            String[] vacio = grupoActual == Grupo.CALLE
+                    ? new String[]{"No hay salidas en la calle.", "Calcule la ruta en «Ruta» y oprima «Despachar»: las entregas pasan aquí."}
+                    : grupoActual == Grupo.ATENCION
+                    ? new String[]{"Nada por atender.", "Aquí llegan las que no aceptan, vencen o se quedan sin ubicación."}
+                    : grupoActual == Grupo.TERMINADAS
+                    ? new String[]{"Todavía no se ha cerrado ninguna hoy.", "Las de otros días están en «Historial»."}
+                    : new String[]{"No se ha cancelado ninguna hoy.", "Si una salida no va, use «Cancelar salida» en su tarjeta."};
+            t.add(Tema.textoNormal(vacio[0]));
+            t.add(Tema.parrafo(vacio[1], 260));
             lista.add(t);
-        }
-        if (!cerradas.isEmpty()) {
-            lista.add(Tema.espacio(10));
-            lista.add(tarjetaCerradas(cerradas));
         }
         lista.revalidate();
         lista.repaint();
+    }
+
+    /** El menú de arriba, como el de Configuración: cuatro opciones con cuántas hay en cada una. */
+    private JComponent menuGrupos(java.util.Map<Grupo, List<Salida>> porGrupo, int correcciones) {
+        Tema.Tarjeta t = new Tema.Tarjeta();
+        t.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        JPanel rejilla = new JPanel(new java.awt.GridLayout(2, 2, 6, 6));
+        rejilla.setOpaque(false);
+        rejilla.setAlignmentX(LEFT_ALIGNMENT);
+        opciones.clear();
+        for (Grupo g : Grupo.values()) {
+            int n = porGrupo.get(g).size() + (g == Grupo.ATENCION ? correcciones : 0);
+            String detalle = n == 0 ? "Ninguna" : g == Grupo.ATENCION && correcciones > 0 && porGrupo.get(g).isEmpty()
+                    ? correcciones + (correcciones == 1 ? " ubicación" : " ubicaciones") + " por revisar"
+                    : n + (n == 1 ? " salida" : " salidas");
+            OpcionGrupo o = new OpcionGrupo(g, detalle, g == Grupo.ATENCION && n > 0);
+            opciones.add(o);
+            rejilla.add(o);
+        }
+        t.add(rejilla);
+        return t;
+    }
+
+    /** Una opción del menú: título y debajo cuántas hay (como en Configuración). */
+    private class OpcionGrupo extends javax.swing.JButton {
+        final Grupo g;
+
+        OpcionGrupo(Grupo g, String detalle, boolean urgente) {
+            this.g = g;
+            setLayout(new BorderLayout());
+            JLabel ti = new JLabel(g.texto);
+            ti.setFont(Tema.textoFuerte(13.5f));
+            ti.setForeground(g == grupoActual ? Tema.AZUL_PROFUNDO : Tema.GRIS_OSCURO);
+            JLabel d = new JLabel(detalle);
+            d.setFont(urgente ? Tema.textoFuerte(12) : Tema.texto(12));
+            d.setForeground(urgente ? Tema.ERROR_TEXTO : Tema.GRIS_TEXTO);
+            JPanel c = new JPanel();
+            c.setOpaque(false);
+            c.setLayout(new BoxLayout(c, BoxLayout.Y_AXIS));
+            c.add(ti);
+            c.add(d);
+            add(c);
+            setContentAreaFilled(false);
+            setBorderPainted(false);
+            setFocusPainted(false);
+            setOpaque(false);
+            setBorder(BorderFactory.createEmptyBorder(7, 12, 7, 8));
+            setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            getAccessibleContext().setAccessibleName(g.texto + ": " + detalle);
+            getAccessibleContext().setAccessibleDescription(g == grupoActual ? "opción actual" : null);
+            addActionListener(e -> {
+                grupoActual = g;
+                refrescar();
+            });
+            addFocusListener(new java.awt.event.FocusAdapter() {
+                @Override
+                public void focusGained(java.awt.event.FocusEvent e) {
+                    repaint();
+                }
+
+                @Override
+                public void focusLost(java.awt.event.FocusEvent e) {
+                    repaint();
+                }
+            });
+        }
+
+        @Override
+        protected void paintComponent(java.awt.Graphics g0) {
+            java.awt.Graphics2D gr = (java.awt.Graphics2D) g0.create();
+            Tema.suavizar(gr);
+            if (g == grupoActual) {
+                gr.setColor(Tema.AZUL_SUAVE);
+                gr.fillRoundRect(0, 0, getWidth(), getHeight(), Tema.ARCO, Tema.ARCO);
+                gr.setColor(Tema.AZUL);
+                gr.fillRect(0, 7, 3, getHeight() - 14); // marca de la opción actual
+            } else if (getModel().isRollover()) {
+                gr.setColor(Tema.GRIS_CLARO);
+                gr.fillRoundRect(0, 0, getWidth(), getHeight(), Tema.ARCO, Tema.ARCO);
+            }
+            if (isFocusOwner()) {
+                gr.setColor(Tema.AZUL);
+                gr.setStroke(new java.awt.BasicStroke(2f));
+                gr.drawRoundRect(1, 1, getWidth() - 3, getHeight() - 3, Tema.ARCO, Tema.ARCO);
+            }
+            gr.dispose();
+            super.paintComponent(g0);
+        }
+    }
+
+    /** Las canceladas hoy: a qué hora, quién y que lo que llevaba volvió a pendientes. */
+    private JComponent tarjetaCanceladas(List<Salida> l) {
+        Tema.Tarjeta t = new Tema.Tarjeta();
+        t.add(Tema.seccion("Canceladas hoy"));
+        for (int i = l.size() - 1; i >= 0; i--) {
+            Salida s = l.get(i);
+            int n = s.entregas.size();
+            JLabel x = Tema.textoNormal(hora(s.creada) + (s.repartidor.isEmpty() ? "" : " · " + s.repartidor) + " · "
+                    + n + (n == 1 ? " entrega" : " entregas") + " · cancelada a las " + hora(s.cerrada));
+            x.setFont(Tema.texto(13));
+            t.add(Tema.anchoLibre(x));
+        }
+        t.add(Tema.espacio(6));
+        Tema.Parrafo p = Tema.parrafo("Lo que llevaban volvió a las entregas pendientes.", 260);
+        p.setForeground(Tema.GRIS_TEXTO);
+        t.add(p);
+        return t;
     }
 
     private JComponent tarjetaPendientes() {
@@ -343,8 +507,31 @@ public class PanelSalidas extends JPanel {
             agregar.addActionListener(e -> agregarEntrega(s));
             botones.add(agregar);
         }
+        if (Aplicacion.sePuedeCancelar(s)) {
+            Tema.Boton cancelar = Tema.botonPequeno("Cancelar salida");
+            cancelar.setToolTipText("El repartidor ya no va: lo que lleva vuelve a pendientes y su enlace deja de servir");
+            cancelar.addActionListener(e -> cancelarSalida(s));
+            botones.add(cancelar);
+        }
         t.add(Tema.fila(8, botones.toArray(new JComponent[0])));
         return t;
+    }
+
+    private void cancelarSalida(Salida s) {
+        int n = s.entregas.size();
+        String quien = s.repartidor.isEmpty() ? "" : " de " + PanelPedidos.primerNombre(s.repartidor);
+        Alerta.confirmar(capaDentro(), "¿Cancelar la salida" + quien + "?",
+                (n == 1 ? "La entrega vuelve a pendientes para mandarla" : "Las " + n + " entregas vuelven a pendientes para mandarlas") + " con otro."
+                        + (s.enLinea() ? " El enlace del repartidor deja de servir y le llega un mensaje." : ""),
+                "Sí, cancelar", "No", () -> {
+                    try {
+                        app.cancelarSalida(s);
+                        Aviso.mostrar(this, Aviso.Tipo.BIEN, "Salida cancelada",
+                                (n == 1 ? "La entrega volvió" : "Las entregas volvieron") + " a pendientes");
+                    } catch (IOException ex) {
+                        Aviso.mostrar(this, Aviso.Tipo.ERROR, "No se pudo cancelar", ex.getMessage());
+                    }
+                });
     }
 
     private JComponent filaEntrega(Salida s, Salida.Entrega e, int n) {

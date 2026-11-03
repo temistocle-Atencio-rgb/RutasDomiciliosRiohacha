@@ -580,6 +580,7 @@ public class BaseDatos implements AutoCloseable {
         columnaSiFalta(st, "entregas_salida", "codigo_cliente", "TEXT NOT NULL DEFAULT ''");
         columnaSiFalta(st, "entregas_salida", "enlace_cliente", "TEXT NOT NULL DEFAULT ''");
         columnaSiFalta(st, "salidas", "vence_en", "TEXT");
+        columnaSiFalta(st, "salidas", "cancelada", "TEXT NOT NULL DEFAULT ''"); // motivo; vacío = no se canceló
         columnaSiFalta(st, "domiciliarios", "id_nube", "TEXT NOT NULL DEFAULT ''");
         columnaSiFalta(st, "domiciliarios", "enlace", "TEXT NOT NULL DEFAULT ''");
         // ubicaciones que corrigieron los repartidores («La casa no está aquí»)
@@ -674,7 +675,7 @@ public class BaseDatos implements AutoCloseable {
             if (s.id == 0) {
                 try (PreparedStatement ps = con.prepareStatement("INSERT INTO salidas(codigo, uuid_nube, repartidor,"
                         + " creada, cerrada, estado, lat, lon, ubicacion_en, tipo_repartidor, aceptada_en, rechazada_en, motivo_rechazo, enviada_en,"
-                        + " vence_en) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        + " vence_en, cancelada) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         Statement.RETURN_GENERATED_KEYS)) {
                     datosSalida(ps, s);
                     ps.executeUpdate();
@@ -686,9 +687,9 @@ public class BaseDatos implements AutoCloseable {
             } else {
                 try (PreparedStatement ps = con.prepareStatement("UPDATE salidas SET codigo=?, uuid_nube=?, repartidor=?,"
                         + " creada=?, cerrada=?, estado=?, lat=?, lon=?, ubicacion_en=?, tipo_repartidor=?, aceptada_en=?, rechazada_en=?, motivo_rechazo=?, enviada_en=?,"
-                        + " vence_en=? WHERE id=?")) {
+                        + " vence_en=?, cancelada=? WHERE id=?")) {
                     datosSalida(ps, s);
-                    ps.setLong(16, s.id);
+                    ps.setLong(17, s.id);
                     ps.executeUpdate();
                 }
             }
@@ -790,6 +791,7 @@ public class BaseDatos implements AutoCloseable {
         ps.setString(13, s.motivoRechazo);
         ps.setString(14, s.enviadaEn == null ? null : s.enviadaEn.toString());
         ps.setString(15, s.venceEn == null ? null : s.venceEn.toString());
+        ps.setString(16, s.motivoCancelacion == null ? "" : s.motivoCancelacion);
     }
 
     /** Las salidas abiertas y las cerradas desde la fecha dada (las de hoy, para el apartado Salidas). */
@@ -823,7 +825,7 @@ public class BaseDatos implements AutoCloseable {
         List<Salida> l = new ArrayList<>();
         try (PreparedStatement ps = con.prepareStatement("SELECT id, codigo, uuid_nube, repartidor, creada, cerrada,"
                 + " estado, lat, lon, ubicacion_en, tipo_repartidor, aceptada_en, rechazada_en, motivo_rechazo, enviada_en,"
-                + " vence_en FROM salidas WHERE " + donde + " ORDER BY id")) {
+                + " vence_en, cancelada FROM salidas WHERE " + donde + " ORDER BY id")) {
             for (int i = 0; i < valores.length; i++) {
                 ps.setString(i + 1, valores[i]);
             }
@@ -850,6 +852,7 @@ public class BaseDatos implements AutoCloseable {
                     s.motivoRechazo = rs.getString(14);
                     s.enviadaEn = fecha(rs.getString(15));
                     s.venceEn = fecha(rs.getString(16));
+                    s.motivoCancelacion = rs.getString(17) == null ? "" : rs.getString(17);
                     l.add(s);
                 }
             }

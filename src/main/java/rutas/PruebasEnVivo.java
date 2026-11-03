@@ -36,6 +36,69 @@ public class PruebasEnVivo {
         probarCorrecciones();
         probarNotificar();
         probarRastroYPasar();
+        probarGruposYCancelar();
+    }
+
+    private static void probarGruposYCancelar() throws Exception {
+        java.time.LocalDateTime ahora = java.time.LocalDateTime.now();
+        rutas.modelo.Parada pa = new rutas.modelo.Parada("Ana", "Calle 1", 11.54, -72.9);
+        java.util.function.Supplier<Salida> nueva = () -> {
+            Salida x = new Salida();
+            x.uuidNube = "u";
+            x.entregas.add(new Salida.Entrega(pa, 0));
+            return x;
+        };
+        Salida calle = nueva.get();
+        calle.enviadaEn = ahora.minusMinutes(10);
+        calle.aceptadaEn = ahora.minusMinutes(9);
+        Salida esperando = nueva.get();
+        esperando.enviadaEn = ahora.minusMinutes(1);
+        esperando.venceEn = ahora.plusMinutes(9);
+        Salida noResponde = nueva.get();
+        noResponde.enviadaEn = ahora.minusMinutes(4);
+        noResponde.venceEn = ahora.plusMinutes(6);
+        Salida vencida = nueva.get();
+        vencida.enviadaEn = ahora.minusMinutes(12);
+        vencida.venceEn = ahora.minusMinutes(2);
+        Salida rechazo = nueva.get();
+        rechazo.enviadaEn = ahora.minusMinutes(3);
+        rechazo.rechazadaEn = ahora.minusMinutes(2);
+        Salida sinEnlace = nueva.get();
+        sinEnlace.uuidNube = "";
+        Salida sinUbic = nueva.get();
+        sinUbic.aceptadaEn = ahora.minusMinutes(9);
+        sinUbic.avisos.add("sin_ubicacion");
+        Salida cerrada = nueva.get();
+        cerrada.estado = Salida.Estado.CERRADA;
+        cerrada.cerrada = ahora;
+        Salida cancelada = nueva.get();
+        cancelada.estado = Salida.Estado.CERRADA;
+        cancelada.cerrada = ahora;
+        cancelada.motivoCancelacion = "Cancelada por la tienda";
+        java.util.function.Function<Salida, rutas.vista.PanelSalidas.Grupo> g = x -> rutas.vista.PanelSalidas.grupo(x, ahora);
+        revisar("grupos: aceptó y va bien, o esperando hace poco = En la calle",
+                g.apply(calle) == rutas.vista.PanelSalidas.Grupo.CALLE && g.apply(esperando) == rutas.vista.PanelSalidas.Grupo.CALLE);
+        revisar("grupos: no responde, venció, no puede, sin enlace o sin ubicación = Necesitan atención",
+                g.apply(noResponde) == rutas.vista.PanelSalidas.Grupo.ATENCION && g.apply(vencida) == rutas.vista.PanelSalidas.Grupo.ATENCION
+                && g.apply(rechazo) == rutas.vista.PanelSalidas.Grupo.ATENCION && g.apply(sinEnlace) == rutas.vista.PanelSalidas.Grupo.ATENCION
+                && g.apply(sinUbic) == rutas.vista.PanelSalidas.Grupo.ATENCION);
+        revisar("grupos: cerrada = Terminadas; cancelada = Canceladas",
+                g.apply(cerrada) == rutas.vista.PanelSalidas.Grupo.TERMINADAS && g.apply(cancelada) == rutas.vista.PanelSalidas.Grupo.CANCELADAS);
+        Salida.Entrega e2 = new Salida.Entrega(pa, 0);
+        e2.estado = Salida.Entrega.ENTREGADO;
+        Salida conEntrega = nueva.get();
+        conEntrega.entregas.add(e2);
+        revisar("cancelar: se puede si no ha entregado nada; si ya entregó algo, no (se cierra a mano)",
+                rutas.vista.Aplicacion.sePuedeCancelar(calle) && !rutas.vista.Aplicacion.sePuedeCancelar(conEntrega)
+                && !rutas.vista.Aplicacion.sePuedeCancelar(cerrada));
+        File tmp = java.nio.file.Files.createTempDirectory("canc").toFile();
+        try (BaseDatos bd = new BaseDatos(new File(tmp, "domiruta.db"))) {
+            bd.guardarSalida(cancelada);
+            bd.guardarSalida(cerrada);
+            List<Salida> l = bd.cargarSalidas(ahora.minusDays(1));
+            revisar("cancelar: queda guardado en la base (y la cerrada normal no sale como cancelada)",
+                    l.stream().filter(Salida::cancelada).count() == 1 && l.size() == 2);
+        }
     }
 
     private static void probarRastroYPasar() throws Exception {

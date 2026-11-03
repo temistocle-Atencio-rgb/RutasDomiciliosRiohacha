@@ -111,6 +111,8 @@ public class Salida {
     public String tipoRepartidor = "";
     public LocalDateTime creada = LocalDateTime.now();
     public LocalDateTime cerrada;
+    /** Por qué la tienda la canceló ("" = no se canceló: se cerró normal). */
+    public String motivoCancelacion = "";
     public Estado estado = Estado.EN_CAMINO;
     public double lat = Double.NaN;  // última ubicación del repartidor
     public double lon = Double.NaN;
@@ -155,6 +157,11 @@ public class Salida {
     /** Se le mandó el enlace y no ha dicho ni sí ni no. */
     public boolean esperandoRespuesta() {
         return enLinea() && aceptadaEn == null && rechazadaEn == null;
+    }
+
+    /** La tienda la canceló (nadie la llevó; lo que iba volvió a pendientes). */
+    public boolean cancelada() {
+        return estado == Estado.CERRADA && motivoCancelacion != null && !motivoCancelacion.isEmpty();
     }
 
     public boolean abierta() {
