@@ -37,6 +37,14 @@ create table if not exists public.catalogo (
   actualizado timestamptz not null default now()
 );
 
+-- La ficha del producto (como la del D1): código de barras y características de DomiRuta
+alter table public.catalogo add column if not exists codigo text not null default '';
+alter table public.catalogo add column if not exists caracteristicas jsonb not null default '[]';
+alter table public.catalogo drop constraint if exists catalogo_ficha_check;
+alter table public.catalogo add constraint catalogo_ficha_check check (
+  length(codigo) <= 40 and jsonb_typeof(caracteristicas) = 'array' and jsonb_array_length(caracteristicas) <= 20
+  and length(caracteristicas::text) <= 3000);
+
 -- Los pedidos que llegan de la página
 create table if not exists public.pedidos_web (
   id bigint generated always as identity primary key,
@@ -99,7 +107,8 @@ language sql stable security definer set search_path = public as $$
                from tienda_info where id = 1),
     'productos', coalesce((select json_agg(json_build_object('id', id, 'nombre', nombre, 'descripcion', descripcion,
                                         'marca', marca, 'categoria', categoria, 'precio', precio, 'foto', foto,
-                                        'disponible', disponible) order by categoria, orden, nombre)
+                                        'disponible', disponible, 'codigo', codigo,
+                                        'caracteristicas', caracteristicas) order by categoria, orden, nombre)
                            from catalogo), '[]'::json));
 $$;
 

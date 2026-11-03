@@ -1112,14 +1112,19 @@ public class BaseTienda implements AutoCloseable {
         public boolean manejaInventario;
         public Unidad unidad = Unidad.UNIDAD;
         public String foto;      // archivo en este computador (null = sin foto)
+        public String codigo = "";
+        /** {nombre, valor} de la ficha («¿Caracterizar producto?» encendido) */
+        public List<String[]> caracteristicas = new ArrayList<>();
     }
 
     /** Los productos activos marcados «Vender en línea», con su categoría y su descripción. */
     public List<ProductoEnLinea> productosEnLinea() throws SQLException {
         List<ProductoEnLinea> l = new ArrayList<>();
+        Map<Long, ProductoEnLinea> conCaract = new java.util.HashMap<>();
         try (Statement st = con.createStatement();
              ResultSet rs = st.executeQuery("SELECT p.id, p.nombre, p.precio_venta, p.stock, p.maneja_inventario,"
-                     + " p.unidad, p.foto, COALESCE(c.nombre, ''), COALESCE(c.orden, 0), COALESCE(f.descripcion, '')"
+                     + " p.unidad, p.foto, COALESCE(c.nombre, ''), COALESCE(c.orden, 0), COALESCE(f.descripcion, ''),"
+                     + " COALESCE(p.codigo, ''), COALESCE(f.caracterizar, 0)"
                      + " FROM en_linea e JOIN productos p ON p.id = e.producto_id"
                      + " LEFT JOIN categorias c ON c.id = p.categoria_id AND c.activo = 1"
                      + " LEFT JOIN producto_ficha f ON f.producto_id = p.id"
@@ -1140,7 +1145,23 @@ public class BaseTienda implements AutoCloseable {
                 p.categoria = rs.getString(8);
                 p.ordenCategoria = rs.getInt(9);
                 p.descripcion = rs.getString(10);
+                p.codigo = rs.getString(11);
+                if (rs.getInt(12) != 0) {
+                    conCaract.put(p.id, p);
+                }
                 l.add(p);
+            }
+        }
+        if (!conCaract.isEmpty()) {
+            try (Statement st = con.createStatement();
+                 ResultSet rs = st.executeQuery("SELECT k.producto_id, k.nombre, k.valor FROM producto_caracteristica k"
+                         + " JOIN en_linea e ON e.producto_id = k.producto_id ORDER BY k.producto_id, k.id")) {
+                while (rs.next()) {
+                    ProductoEnLinea p = conCaract.get(rs.getLong(1));
+                    if (p != null) {
+                        p.caracteristicas.add(new String[]{rs.getString(2), rs.getString(3)});
+                    }
+                }
             }
         }
         return l;

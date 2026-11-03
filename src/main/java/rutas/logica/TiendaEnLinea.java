@@ -244,6 +244,18 @@ public class TiendaEnLinea {
             }
             m.put("foto", foto);
             m.put("disponible", !p.manejaInventario || p.stock > 0);
+            m.put("codigo", corto(p.codigo, 40));
+            List<Object> cs = new ArrayList<>();
+            for (String[] c : p.caracteristicas) {
+                String n = corto(c[0], 60), v = corto(c[1], 120);
+                if (!n.isEmpty() && !v.isEmpty() && cs.size() < 20) {
+                    Map<String, Object> x = new LinkedHashMap<>();
+                    x.put("n", n);
+                    x.put("v", v);
+                    cs.add(x);
+                }
+            }
+            m.put("caracteristicas", cs);
             m.put("orden", (long) p.ordenCategoria);
             r.productos.put(p.id, m);
         }

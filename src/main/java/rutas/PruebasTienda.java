@@ -140,11 +140,25 @@ public class PruebasTienda {
                     Json.entero(a, "precio") == 3200 && "Granos".equals(a.get("categoria"))
                     && Boolean.TRUE.equals(a.get("disponible"))
                     && String.valueOf(a.get("foto")).startsWith("https://x.supabase.co/storage/v1/object/public/catalogo/p/"));
+            revisar("va el código de barras y sin características si no tiene", "770".equals(a.get("codigo"))
+                    && String.valueOf(a.get("caracteristicas")).equals("[]"));
+            rutas.modelo.FichaProducto fq = new rutas.modelo.FichaProducto();
+            fq.descripcion = "Queso fresco de la Guajira";
+            fq.medida = "Libra";
+            fq.caracterizar = true;
+            fq.caracteristicas.add(new String[]{"Origen", "Riohacha"});
+            fq.caracteristicas.add(new String[]{"Conservación", "Refrigerado"});
+            bd.guardarFicha(queso.getId(), fq);
+            r = t.sincronizar(TiendaEnLinea.Datos.leer(bd, recibo, ""), r.enviado, false);
+            Map<?, ?> qc = f.catalogo.get(queso.getId());
+            revisar("las características de la ficha van a la tienda", r.subidos == 1
+                    && String.valueOf(qc.get("caracteristicas")).equals("[{n=Origen, v=Riohacha}, {n=Conservación, v=Refrigerado}]")
+                    && "Precio por libra · Queso fresco de la Guajira".equals(qc.get("descripcion")));
             revisar("no se sube el costo ni el stock", !a.containsKey("precio_compra") && !a.containsKey("stock")
                     && !a.toString().contains("2500"));
             Map<?, ?> q = f.catalogo.get(queso.getId());
             revisar("queso sin existencias: Agotado y dice por libra", Boolean.FALSE.equals(q.get("disponible"))
-                    && "Precio por libra".equals(q.get("descripcion")));
+                    && String.valueOf(q.get("descripcion")).startsWith("Precio por libra"));
             revisar("recarga (no maneja inventario) siempre disponible",
                     Boolean.TRUE.equals(f.catalogo.get(recarga.getId()).get("disponible")));
             revisar("la tienda: nombre del recibo, logo, domicilio y medios de pago",
