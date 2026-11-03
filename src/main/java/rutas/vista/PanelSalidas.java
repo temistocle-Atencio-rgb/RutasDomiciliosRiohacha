@@ -107,6 +107,10 @@ public class PanelSalidas extends JPanel {
                 break;
             }
         }
+        if (!abiertas.contains(id)) {
+            abiertas.add(id);
+            refrescar();
+        }
         JComponent t = tarjetas.get(id);
         if (t != null) {
             t.scrollRectToVisible(new java.awt.Rectangle(0, 0, t.getWidth(), Math.min(t.getHeight(), 400)));
@@ -146,7 +150,8 @@ public class PanelSalidas extends JPanel {
         if (grupoActual == Grupo.CALLE || grupoActual == Grupo.ATENCION) {
             for (int i = estas.size() - 1; i >= 0; i--) { // la más nueva arriba
                 lista.add(Tema.espacio(10));
-                JComponent tj = tarjetaSalida(estas.get(i));
+                Salida x = estas.get(i);
+                JComponent tj = estas.size() == 1 || abiertas.contains(x.id) ? tarjetaSalida(x) : tarjetaPlegada(x);
                 tarjetas.put(estas.get(i).id, tj);
                 lista.add(tj);
             }
@@ -356,6 +361,75 @@ public class PanelSalidas extends JPanel {
         return Ruta.FORMATO_HORA.format(t);
     }
 
+    /** Las tarjetas que el cajero abrió («Ver detalle»); las demás se ven plegadas en dos líneas. */
+    private final java.util.Set<Long> abiertas = new java.util.HashSet<>();
+
+    private void abrirOCerrar(Salida s, boolean abrir) {
+        if (abrir) {
+            abiertas.add(s.id);
+        } else {
+            abiertas.remove(s.id);
+        }
+        refrescar();
+    }
+
+    /** Plegada: quién, a qué hora, cómo va, lo que debe (o el problema) y el botón que más se usa. */
+    private JComponent tarjetaPlegada(Salida s) {
+        Tema.Tarjeta t = new Tema.Tarjeta();
+        boolean sinNadie = s.enLinea() && s.rechazadaEn != null;
+        boolean esperando = s.esperandoRespuesta() && !s.subiendo;
+        boolean termino = s.estado == Salida.Estado.REGRESANDO;
+        boolean vencida = esperando && s.vencida();
+        JPanel cab = new JPanel(new BorderLayout(8, 0));
+        cab.setOpaque(false);
+        cab.setAlignmentX(LEFT_ALIGNMENT);
+        JLabel tit = new JLabel("Salida " + hora(s.creada) + (s.repartidor.isEmpty() ? "" : " · " + s.repartidor));
+        tit.setFont(Tema.textoFuerte(14f));
+        tit.setForeground(Tema.AZUL_PROFUNDO);
+        JLabel est = new JLabel(sinNadie ? "Sin domiciliario" : vencida ? "Venció" : esperando ? "Esperando"
+                : termino ? "Por cuadrar" : s.estado.toString());
+        est.setFont(Tema.textoFuerte(13f));
+        est.setForeground(sinNadie || vencida ? Tema.ERROR_TEXTO : esperando || termino ? Tema.AVISO_TEXTO : Tema.AZUL);
+        cab.add(tit, BorderLayout.CENTER);
+        cab.add(est, BorderLayout.EAST);
+        cab.setMaximumSize(new Dimension(Integer.MAX_VALUE, cab.getPreferredSize().height));
+        t.add(cab);
+        // la segunda línea: el problema si lo hay; si no, cómo va
+        String problema = sinNadie ? "No puede llevarla: escoja a otro" : vencida ? "No respondió a tiempo: escoja a otro"
+                : s.estado == Salida.Estado.EN_CAMINO && s.ubicacionPausada ? "Pausó su ubicación"
+                : s.estado == Salida.Estado.EN_CAMINO && s.avisos.contains("sin_ubicacion")
+                ? "Sin ubicación hace más de " + Seguimiento.MIN_SIN_UBICACION + " min"
+                : !s.enLinea() && !s.subiendo ? "El domiciliario no tiene el enlace" : "";
+        int entregadas = s.cuantas(Salida.Entrega.ENTREGADO), debe = s.debeEntregar();
+        JLabel linea = Tema.textoNormal(problema.isEmpty() ? entregadas + " de " + s.entregas.size() + " entregadas"
+                + (debe > 0 ? " · Debe " + Tarifa.pesos(debe) : "") : problema);
+        linea.setFont(problema.isEmpty() ? Tema.texto(13f) : Tema.textoFuerte(13f));
+        linea.setForeground(problema.isEmpty() ? Tema.GRIS_OSCURO : sinNadie || vencida ? Tema.ERROR_TEXTO : Tema.AVISO_TEXTO);
+        Tema.Boton ver = Tema.botonPlano("Ver detalle");
+        ver.getAccessibleContext().setAccessibleName("Ver detalle de la salida de las " + hora(s.creada));
+        ver.addActionListener(e -> abrirOCerrar(s, true));
+        JPanel l2 = new JPanel(new BorderLayout(6, 0));
+        l2.setOpaque(false);
+        l2.setAlignmentX(LEFT_ALIGNMENT);
+        l2.add(linea, BorderLayout.CENTER);
+        l2.add(ver, BorderLayout.EAST);
+        l2.setMaximumSize(new Dimension(Integer.MAX_VALUE, l2.getPreferredSize().height));
+        t.add(l2);
+        List<JComponent> botones = new ArrayList<>();
+        if (termino && !s.subiendo) {
+            int bolsas = s.bolsasPorDevolver().size();
+            Tema.Boton volvio = Tema.botonPrimario(debe > 0 ? "Recibí " + Tarifa.pesos(debe) : debe < 0 ? "Le pagué "
+                    + Tarifa.pesos(-debe) : bolsas == 1 ? "Devolvió la bolsa" : bolsas > 1 ? "Devolvió las bolsas" : "Cerrar ya");
+            volvio.addActionListener(e -> cerrarSalida(s, new HashSet<>(s.bolsasPorDevolver())));
+            botones.add(volvio);
+        }
+        if (!botones.isEmpty()) {
+            t.add(Tema.espacio(6));
+            t.add(Tema.fila(8, botones.toArray(new JComponent[0])));
+        }
+        return t;
+    }
+
     private JComponent tarjetaSalida(Salida s) {
         Tema.Tarjeta t = new Tema.Tarjeta();
         JPanel cab = new JPanel(new BorderLayout(8, 0));
@@ -514,6 +588,12 @@ public class PanelSalidas extends JPanel {
             botones.add(cancelar);
         }
         t.add(Tema.fila(8, botones.toArray(new JComponent[0])));
+        if (abiertas.contains(s.id)) {
+            Tema.Boton menos = Tema.botonPlano("Ver menos");
+            menos.addActionListener(e -> abrirOCerrar(s, false));
+            t.add(Tema.espacio(4));
+            t.add(menos);
+        }
         return t;
     }
 
