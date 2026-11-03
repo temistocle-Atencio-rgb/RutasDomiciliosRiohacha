@@ -30,6 +30,8 @@ public class PruebasTienda {
         final List<String> fotos = new ArrayList<>();
         boolean sinInternet;
         List<?> cuentas;
+        List<?> existencias;
+        String trabajosJson = "[]";
         String pedidosJson = "[]";
         final List<String> parches = new ArrayList<>();
         int fotoResponde = 200;
@@ -60,6 +62,17 @@ public class PruebasTienda {
                 if (metodo.equals("POST") && ruta.startsWith("tienda_info")) {
                     tienda = (Map<?, ?>) ((List<?>) Json.leer(cuerpo)).get(0);
                     return new NubeRepartidor.Respuesta(201, "");
+                }
+                if (ruta.startsWith("existencias_web")) {
+                    existencias = metodo.equals("DELETE") ? List.of() : (List<?>) Json.leer(cuerpo);
+                    return new NubeRepartidor.Respuesta(metodo.equals("DELETE") ? 204 : 201, "");
+                }
+                if (ruta.startsWith("caja_estado") || ruta.startsWith("encargados") || (ruta.startsWith("trabajos_caja") && !metodo.equals("GET"))) {
+                    parches.add(metodo + " " + ruta + " " + cuerpo);
+                    return new NubeRepartidor.Respuesta(metodo.equals("POST") ? 201 : 204, "");
+                }
+                if (ruta.startsWith("trabajos_caja")) {
+                    return new NubeRepartidor.Respuesta(200, trabajosJson);
                 }
                 if (ruta.startsWith("pagos_tienda")) {
                     if (metodo.equals("DELETE")) {
@@ -172,6 +185,10 @@ public class PruebasTienda {
             revisar("las características de la ficha van a la tienda", r.subidos == 1
                     && String.valueOf(qc.get("caracteristicas")).equals("[{n=Origen, v=Riohacha}, {n=Conservación, v=Refrigerado}]")
                     && "Precio por libra · Queso fresco de la Guajira".equals(qc.get("descripcion")));
+            revisar("cuántos quedan va aparte (solo para el encargado), en unidades", f.existencias != null
+                    && f.existencias.stream().anyMatch(x -> Json.entero((Map<?, ?>) x, "id") == arroz.getId()
+                            && Json.decimal((Map<?, ?>) x, "stock") == 0.01) // 10 milésimas
+                    && !String.valueOf(f.catalogo).contains("maneja"));
             revisar("no se sube el costo ni el stock", !a.containsKey("precio_compra") && !a.containsKey("stock")
                     && !a.toString().contains("2500"));
             Map<?, ?> q = f.catalogo.get(queso.getId());
@@ -324,6 +341,32 @@ public class PruebasTienda {
                 malo2 = true;
             }
             revisar("comprobante: solo rutas de la carpeta (nada de ../)", malo2);
+
+            // 12. el encargado de pedidos
+            f.parches.clear();
+            t.latido();
+            revisar("latido de la caja", f.parches.get(0).startsWith("PATCH caja_estado?id=eq.1 {\"visto_en\":"));
+            f.trabajosJson = "[{\"id\":3,\"tipo\":\"asignar\",\"datos\":{\"pedidos\":[7,8],\"repartidor\":\"1b4e28ba-2fa1-41d2-883f-0016d3cca427\"}}]";
+            List<TiendaEnLinea.Trabajo> tr = t.trabajosPendientes();
+            revisar("trabajos de la caja: se leen", tr.size() == 1 && tr.get(0).tipo.equals("asignar")
+                    && String.valueOf(tr.get(0).datos.get("pedidos")).equals("[7.0, 8.0]"));
+            t.terminarTrabajo(3, false, "No se encontró la dirección");
+            revisar("trabajo terminado con el problema", f.parches.get(1).contains("\"estado\":\"error\"")
+                    && f.parches.get(1).contains("No se encontró"));
+            String malCel = "";
+            try {
+                t.crearEncargado("Laura", "12345");
+            } catch (IllegalArgumentException e) {
+                malCel = e.getMessage();
+            }
+            t.crearEncargado("  Laura Gómez ", "+57 300 123 4567");
+            revisar("encargado: celular malo se rechaza y el bueno se limpia", malCel.contains("10 números")
+                    && f.parches.get(2).contains("\"celular\":\"3001234567\"") && f.parches.get(2).contains("\"nombre\":\"Laura Gómez\""));
+            revisar("enlace del encargado junto a la tienda", TiendaEnLinea.enlaceEncargado("https://a.github.io/r/")
+                    .equals("https://a.github.io/r/pedidos.html"));
+            rutas.modelo.PedidoWeb conFalta = TiendaEnLinea.pedido((Map<?, ?>) ((List<?>) Json.leer(f.pedidosJson)).get(0));
+            conFalta.faltantes.add(1L);
+            revisar("lo que falta no se cobra (queda el domicilio)", conFalta.totalEmpacado() == 3000);
         }
         revisar("enlace de la tienda desde la página del repartidor",
                 TiendaEnLinea.enlace("https://a.github.io/domiruta-repartidor/").equals("https://a.github.io/domiruta-repartidor/tienda.html")

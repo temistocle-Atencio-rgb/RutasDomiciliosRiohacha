@@ -146,6 +146,7 @@ public class TiendaEnLinea {
         /** nombre en la nube → {archivo local, "logo" o "foto"} */
         final Map<String, String[]> fotos = new LinkedHashMap<>();
         final List<Object> cuentas = new ArrayList<>();
+        final List<Object> existencias = new ArrayList<>();
     }
 
     /** Cómo terminó una subida. */
@@ -304,6 +305,11 @@ public class TiendaEnLinea {
             m.put("caracteristicas", cs);
             m.put("orden", (long) p.ordenCategoria);
             r.productos.put(p.id, m);
+            Map<String, Object> x = new LinkedHashMap<>();
+            x.put("id", p.id);
+            x.put("stock", p.stock % 1000 == 0 ? (Object) (p.stock / 1000) : (Object) (p.stock / 1000.0)); // milésimas -> unidades
+            x.put("maneja", p.manejaInventario);
+            r.existencias.add(x);
         }
         return r;
     }
@@ -386,6 +392,22 @@ public class TiendaEnLinea {
             }
         }
 
+        // 2c. cuántos quedan (solo lo ve el encargado de pedidos): se manda todo junto si algo cambió
+        String ex = Json.escribir(des.existencias);
+        if (!ex.equals(env.get("s"))) {
+            try {
+                llamar("DELETE", "existencias_web?id=not.is.null", null);
+                if (!des.existencias.isEmpty()) {
+                    llamar("POST", "existencias_web?on_conflict=id", ex);
+                }
+                env.put("s", ex);
+            } catch (NubeRepartidor.ErrorNube e) {
+                if (!e.getMessage().startsWith("Falta la tienda")) { // sin encargados.sql todavía
+                    throw e;
+                }
+            }
+        }
+
         // 3. los productos cambiados o nuevos (de a 200)
         List<String> cambiados = new ArrayList<>();
         List<Long> ids = new ArrayList<>();
@@ -455,6 +477,140 @@ public class TiendaEnLinea {
     }
 
 
+
+    // ------------------------------------------------------------------
+    //  La caja como «cerebro» del encargado de pedidos (página pedidos.html)
+    // ------------------------------------------------------------------
+
+    /** Un trabajo que el encargado le dejó a la caja: asignar, imprimir o vender. */
+    public static class Trabajo {
+        public long id;
+        public String tipo = "";
+        public Map<?, ?> datos = Map.of();
+    }
+
+    /** La caja está prendida (el encargado ve «Caja conectada»). */
+    public void latido() throws IOException {
+        llamar("PATCH", "caja_estado?id=eq.1", "{\"visto_en\":\"" + java.time.OffsetDateTime.now() + "\"}");
+    }
+
+    public List<Trabajo> trabajosPendientes() throws IOException {
+        Object o = Json.leer(llamar("GET", "trabajos_caja?estado=eq.pendiente&select=id,tipo,datos&order=id.asc&limit=10", null).cuerpo);
+        List<Trabajo> l = new ArrayList<>();
+        if (o instanceof List) {
+            for (Object x : (List<?>) o) {
+                if (x instanceof Map) {
+                    Map<?, ?> m = (Map<?, ?>) x;
+                    Trabajo t = new Trabajo();
+                    t.id = Json.entero(m, "id");
+                    t.tipo = Json.texto(m, "tipo");
+                    t.datos = m.get("datos") instanceof Map ? (Map<?, ?>) m.get("datos") : Map.of();
+                    l.add(t);
+                }
+            }
+        }
+        return l;
+    }
+
+    public void terminarTrabajo(long id, boolean ok, String resultado) throws IOException {
+        Map<String, Object> c = new LinkedHashMap<>();
+        c.put("estado", ok ? "hecho" : "error");
+        c.put("resultado", corto(resultado == null ? "" : resultado, 300));
+        c.put("hecho_en", java.time.OffsetDateTime.now().toString());
+        llamar("PATCH", "trabajos_caja?id=eq." + id, Json.escribir(c));
+    }
+
+    public rutas.modelo.PedidoWeb pedidoPorId(long id) throws IOException {
+        Object o = Json.leer(llamar("GET", "pedidos_web?id=eq." + id + "&select=" + CAMPOS + ",faltantes,venta", null).cuerpo);
+        if (o instanceof List && !((List<?>) o).isEmpty() && ((List<?>) o).get(0) instanceof Map) {
+            Map<?, ?> m = (Map<?, ?>) ((List<?>) o).get(0);
+            rutas.modelo.PedidoWeb p = pedido(m);
+            if (m.get("faltantes") instanceof List) {
+                for (Object f : (List<?>) m.get("faltantes")) {
+                    if (f instanceof Number) {
+                        p.faltantes.add(((Number) f).longValue());
+                    }
+                }
+            }
+            p.venta = m.get("venta") instanceof Number ? ((Number) m.get("venta")).longValue() : 0;
+            return p;
+        }
+        return null;
+    }
+
+    public void anotarVenta(long pedido, long numero) throws IOException {
+        llamar("PATCH", "pedidos_web?id=eq." + pedido, "{\"venta\":" + numero + "}");
+    }
+
+    /** Un encargado de pedidos (entra a pedidos.html con su celular y su clave). */
+    public static class Encargado {
+        public String id = "";
+        public String nombre = "";
+        public String celular = "";
+        public boolean conClave;
+    }
+
+    public List<Encargado> encargados() throws IOException {
+        Object o = Json.leer(llamar("GET", "encargados?activo=eq.true&select=id,nombre,celular,con_clave&order=nombre", null).cuerpo);
+        List<Encargado> l = new ArrayList<>();
+        if (o instanceof List) {
+            for (Object x : (List<?>) o) {
+                if (x instanceof Map) {
+                    Map<?, ?> m = (Map<?, ?>) x;
+                    Encargado e = new Encargado();
+                    e.id = Json.texto(m, "id");
+                    e.nombre = Json.texto(m, "nombre");
+                    e.celular = Json.texto(m, "celular");
+                    e.conClave = Boolean.TRUE.equals(m.get("con_clave"));
+                    l.add(e);
+                }
+            }
+        }
+        return l;
+    }
+
+    /** Lo crea (o lo vuelve a activar si ese celular ya estuvo). */
+    public void crearEncargado(String nombre, String celular) throws IOException {
+        String n = corto(nombre, 80);
+        String c = celular == null ? "" : celular.replaceAll("[^0-9]", "");
+        if (c.matches("573[0-9]{9}")) {
+            c = c.substring(2);
+        }
+        if (n.isEmpty()) {
+            throw new IllegalArgumentException("Escriba el nombre");
+        }
+        if (!c.matches("3[0-9]{9}")) {
+            throw new IllegalArgumentException("El celular son 10 números y empieza por 3");
+        }
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("nombre", n);
+        m.put("celular", c);
+        m.put("activo", true);
+        llamar("POST", "encargados?on_conflict=celular", "[" + Json.escribir(m) + "]");
+    }
+
+    public void quitarEncargado(String id) throws IOException {
+        if (!id.matches("[0-9a-f-]{36}")) {
+            throw new IllegalArgumentException("Encargado no válido");
+        }
+        llamar("PATCH", "encargados?id=eq." + id, "{\"activo\":false}");
+    }
+
+    /** Le pone la clave de 6 números (la que tenía y su sesión dejan de servir). Devuelve "ok" o el problema. */
+    public String claveEncargado(String id, String clave) throws IOException {
+        Map<String, Object> c = new LinkedHashMap<>();
+        c.put("p_id", id);
+        c.put("p_clave", clave);
+        Object o = Json.leer(llamar("POST", "rpc/dr_clave_encargado", Json.escribir(c)).cuerpo);
+        return o == null ? "Supabase no respondió" : o.toString();
+    }
+
+    /** La página del encargado (junto a la del repartidor). */
+    public static String enlaceEncargado(String paginaRepartidor) {
+        String t = enlace(paginaRepartidor);
+        return t.isEmpty() ? "" : t.replace("tienda.html", "pedidos.html");
+    }
+
     // ------------------------------------------------------------------
     //  Los pedidos que llegan de la página
     // ------------------------------------------------------------------
@@ -480,7 +636,7 @@ public class TiendaEnLinea {
         return l;
     }
 
-    static rutas.modelo.PedidoWeb pedido(Map<?, ?> m) {
+    public static rutas.modelo.PedidoWeb pedido(Map<?, ?> m) {
         rutas.modelo.PedidoWeb p = new rutas.modelo.PedidoWeb();
         p.id = Json.entero(m, "id");
         p.codigo = Json.texto(m, "codigo");
@@ -506,8 +662,10 @@ public class TiendaEnLinea {
             for (Object x : (List<?>) m.get("items")) {
                 if (x instanceof Map) {
                     Map<?, ?> i = (Map<?, ?>) x;
-                    p.items.add(new rutas.modelo.PedidoWeb.Item(Json.texto(i, "nombre"), Json.entero(i, "precio"),
-                            (int) Json.entero(i, "cantidad")));
+                    rutas.modelo.PedidoWeb.Item it = new rutas.modelo.PedidoWeb.Item(Json.texto(i, "nombre"),
+                            Json.entero(i, "precio"), (int) Json.entero(i, "cantidad"));
+                    it.id = Json.entero(i, "id");
+                    p.items.add(it);
                 }
             }
         }

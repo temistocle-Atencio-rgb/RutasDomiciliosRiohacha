@@ -231,34 +231,44 @@ class PanelEnLinea extends JPanel {
         }, this::resultado);
     }
 
+    /** La parada de la ruta para un pedido en línea (con el pin del cliente o buscando la dirección). */
+    static Parada parada(Aplicacion app, PedidoWeb p) {
+        Parada parada;
+        if (p.lat != null && p.lon != null) {
+            parada = new Parada(p.nombre, p.direccion, p.lat, p.lon);
+            app.getGeo().asignarNodo(parada, Geo.x(p.lon), Geo.y(p.lat), null);
+            parada.setPrecision("Marcado por el cliente en el mapa");
+        } else {
+            Parada encontrada = app.getGeo().ubicar(p.direccion); // IllegalArgumentException si no la encuentra
+            parada = new Parada(p.nombre, encontrada.getDireccion(), encontrada.getLat(), encontrada.getLon());
+            parada.setNodo(encontrada.getNodo());
+            parada.setPrecision(encontrada.getPrecision());
+        }
+        long total = p.faltantes.isEmpty() ? p.total : p.totalEmpacado();
+        parada.setTelefono(p.celular);
+        parada.setValorPedido((int) Math.min(Integer.MAX_VALUE, total));
+        parada.setPagado(p.pagaAntes() && p.pagado);
+        parada.setPagaCon((int) Math.min(Integer.MAX_VALUE, p.pagaCon));
+        parada.setProductos(p.unidades());
+        if (p.venta > 0) {
+            parada.setVentaNumero(p.venta);
+        }
+        parada.setNota((p.referencia.isBlank() ? "" : p.referencia + ". ") + (p.nota.isBlank() ? "" : p.nota + ". ")
+                + "Pedido en línea " + p.codigo);
+        return parada;
+    }
+
     /** El pedido pasa a la lista de la ruta, como si lo hubieran escrito en la caja. */
     private void aLaRuta(PedidoWeb p) {
         Parada parada;
         try {
-            if (p.lat != null && p.lon != null) {
-                parada = new Parada(p.nombre, p.direccion, p.lat, p.lon);
-                app.getGeo().asignarNodo(parada, Geo.x(p.lon), Geo.y(p.lat), null);
-                parada.setPrecision("Marcado por el cliente en el mapa");
-            } else {
-                Parada encontrada = app.getGeo().ubicar(p.direccion);
-                parada = new Parada(p.nombre, encontrada.getDireccion(), encontrada.getLat(), encontrada.getLon());
-                parada.setNodo(encontrada.getNodo());
-                parada.setPrecision(encontrada.getPrecision());
-            }
+            parada = parada(app, p);
         } catch (IllegalArgumentException e) {
             JOptionPane.showMessageDialog(this, "No se encontró la dirección «" + p.direccion + "».\n"
                     + "Llame al cliente al " + p.celular + " o márquela en el mapa desde Ruta.", "Dirección no encontrada",
                     JOptionPane.WARNING_MESSAGE);
             return;
         }
-        parada.setTelefono(p.celular);
-        parada.setValorPedido((int) Math.min(Integer.MAX_VALUE, p.total));
-        parada.setPagado(p.pagaAntes() && p.pagado);
-        parada.setPagaCon((int) Math.min(Integer.MAX_VALUE, p.pagaCon));
-        parada.setProductos(p.unidades());
-        String nota = (p.referencia.isBlank() ? "" : p.referencia + ". ") + (p.nota.isBlank() ? "" : p.nota + ". ")
-                + "Pedido en línea " + p.codigo;
-        parada.setNota(nota);
         if (p.pagaAntes() && !p.pagado) {
             int r = JOptionPane.showConfirmDialog(this, "Todavía no se ha confirmado el pago por " + p.metodo().getTexto()
                     + ".\n¿Lo pasa a la ruta igual? (el domiciliario cobraría " + SubidaTienda.plata(p.total) + ")",

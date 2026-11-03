@@ -55,6 +55,11 @@ public class SubidaTienda {
     private final List<Runnable> oyentesPedidos = new ArrayList<>();
     private java.util.function.BiConsumer<String, String> alLlegar = (a, b) -> { };
     private boolean mirandoPedidos;
+    private TrabajosCaja trabajos;      // lo que pide el encargado desde pedidos.html
+
+    void setTrabajos(TrabajosCaja t) {
+        trabajos = t;
+    }
     private String errorPedidos = "";
 
     public SubidaTienda(Aplicacion app) {
@@ -149,7 +154,35 @@ public class SubidaTienda {
             List<rutas.modelo.PedidoWeb> l = null;
             String falla = "";
             List<rutas.modelo.PedidoWeb> nuevos = new ArrayList<>();
+            List<Object[]> porHacer = new ArrayList<>(); // {trabajo, pedidos[]}
             try {
+                try {
+                    t.latido();
+                    if (trabajos != null) {
+                        for (TiendaEnLinea.Trabajo tr : t.trabajosPendientes()) {
+                            List<Long> ids = new ArrayList<>();
+                            Object uno = tr.datos.get("pedido");
+                            if (uno instanceof Number) {
+                                ids.add(((Number) uno).longValue());
+                            } else if (tr.datos.get("pedidos") instanceof List) {
+                                for (Object x : (List<?>) tr.datos.get("pedidos")) {
+                                    if (x instanceof Number) {
+                                        ids.add(((Number) x).longValue());
+                                    }
+                                }
+                            }
+                            rutas.modelo.PedidoWeb[] ps = new rutas.modelo.PedidoWeb[Math.max(1, ids.size())];
+                            for (int i = 0; i < ids.size(); i++) {
+                                ps[i] = t.pedidoPorId(ids.get(i));
+                            }
+                            porHacer.add(new Object[]{tr, ps});
+                        }
+                    }
+                } catch (NubeRepartidor.ErrorNube e) {
+                    if (!e.getMessage().startsWith("Falta la tienda")) { // sin encargados.sql: solo no hay trabajos
+                        throw e;
+                    }
+                }
                 l = t.pedidosActivos();
                 List<Long> ids = new ArrayList<>();
                 for (rutas.modelo.PedidoWeb p : l) {
@@ -190,11 +223,48 @@ public class SubidaTienda {
                         }
                     }
                 }
+                for (Object[] x : porHacer) {
+                    hacerTrabajo(t, (TiendaEnLinea.Trabajo) x[0], (rutas.modelo.PedidoWeb[]) x[1]);
+                }
                 for (Runnable r : oyentesPedidos) {
                     r.run();
                 }
             });
         });
+    }
+
+    /** En el hilo de la pantalla: hace el trabajo y anota en Supabase cómo le fue. */
+    private void hacerTrabajo(TiendaEnLinea t, TiendaEnLinea.Trabajo tr, rutas.modelo.PedidoWeb[] ps) {
+        if (ps.length == 0 || (ps[0] == null && !tr.tipo.equals("asignar"))) {
+            hiloPedidos.execute(() -> anotar(t, tr.id, false, "Ese pedido ya no existe", 0, 0));
+            return;
+        }
+        java.util.Map<String, rutas.modelo.Domiciliario> porNube = new java.util.HashMap<>();
+        for (rutas.modelo.Domiciliario d : app.getDomiciliarios()) {
+            if (d.idNube != null && !d.idNube.isEmpty()) {
+                porNube.put(d.idNube, d);
+            }
+        }
+        String r = trabajos.hacer(tr, ps, porNube);
+        long venta = r != null && r.startsWith("venta:") ? Long.parseLong(r.substring(6)) : 0;
+        boolean ok = r == null || venta > 0;
+        String texto = venta > 0 ? "Venta registrada: recibo " + venta : r == null ? "Listo" : r;
+        long pedido = ps[0] == null ? 0 : ps[0].id;
+        if (!ok) {
+            alLlegar.accept("No se pudo hacer lo que pidió el encargado", texto);
+        }
+        hiloPedidos.execute(() -> anotar(t, tr.id, ok, texto, pedido, venta));
+    }
+
+    private static void anotar(TiendaEnLinea t, long trabajo, boolean ok, String texto, long pedido, long venta) {
+        try {
+            if (venta > 0) {
+                t.anotarVenta(pedido, venta);
+            }
+            t.terminarTrabajo(trabajo, ok, texto);
+        } catch (Exception e) {
+            Ubicaciones.registrarError(e);
+        }
     }
 
     static String primerNombre(String n) {

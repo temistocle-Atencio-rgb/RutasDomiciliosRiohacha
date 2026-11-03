@@ -179,7 +179,34 @@ async function recibir(datos: any): Promise<void> {
   }
 }
 
+/** El encargado (pedidos.html) ve la foto del comprobante: enlace de 10 minutos, solo con su sesión. */
+async function enlaceComprobante(pedido: number, sesion: string): Promise<Response> {
+  if (!Number.isInteger(pedido) || !/^[0-9a-f]{64}$/.test(sesion)) return json({ error: "datos" }, 400);
+  let ruta: string | null = null;
+  try {
+    ruta = await rpc<string | null>("enc_ruta_comprobante", { p_sesion: sesion, p_pedido: pedido });
+  } catch {
+    return json({ error: "sesion_cerrada" }, 401);
+  }
+  if (!ruta || !/^[0-9]+-[0-9]+\.(jpg|png|pdf)$/.test(ruta)) return json({ error: "sin comprobante" }, 404);
+  const r = await fetch(`${env("SUPABASE_URL")}/storage/v1/object/sign/comprobantes/${ruta}`, {
+    method: "POST", headers: cabecerasBase(), body: JSON.stringify({ expiresIn: 600 }),
+  });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok || !d?.signedURL) return json({ error: "no se pudo firmar" }, 502);
+  const url = `${env("SUPABASE_URL")}/storage/v1${String(d.signedURL).startsWith("/") ? "" : "/"}${d.signedURL}`;
+  return new Response(JSON.stringify({ url }), {
+    status: 200, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+  });
+}
+
 Deno.serve(async (req) => {
+  // la página del encargado llama desde el navegador (otro dominio)
+  if (req.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: {
+      "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "POST",
+      "Access-Control-Allow-Headers": "content-type, apikey, authorization, x-client-info" } });
+  }
   const url = new URL(req.url);
 
   // Meta comprueba el webhook una sola vez (al configurarlo)
@@ -200,6 +227,11 @@ Deno.serve(async (req) => {
     try { datos = JSON.parse(cuerpo); } catch { /* vacío */ }
     trabajo = recibir(datos).catch((e) => console.error("recibir:", e.message)).then(vaciarBandeja);
   } else {
+    let datos: any = null;
+    try { datos = JSON.parse(cuerpo || "null"); } catch { /* vacío */ }
+    if (datos && datos.comprobante !== undefined) {
+      return await enlaceComprobante(Number(datos.comprobante), String(datos.sesion ?? ""));
+    }
     // la base avisa que hay mensajes en la bandeja (no trae datos: la función lee la bandeja ella misma)
     trabajo = vaciarBandeja();
   }

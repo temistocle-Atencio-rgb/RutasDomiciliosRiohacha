@@ -8,6 +8,7 @@ import java.util.List;
 public class PedidoWeb {
 
     public static class Item {
+        public long id;
         public final String nombre;
         public final long precio;
         public final int cantidad;
@@ -41,6 +42,20 @@ public class PedidoWeb {
     public boolean tomado;
     public String comprobante;             // ruta en la carpeta privada (null = no ha mandado)
     public boolean pagado;
+    /** Productos que el encargado marcó «No hay» al empacar (no se venden ni se cobran). */
+    public final List<Long> faltantes = new ArrayList<>();
+    public long venta;                     // número del recibo en DomiRuta (0 = todavía no)
+
+    /** Lo que de verdad se lleva (sin lo que faltó). */
+    public long totalEmpacado() {
+        long t = domicilio;
+        for (Item i : items) {
+            if (!faltantes.contains(i.id)) {
+                t += i.precio * i.cantidad;
+            }
+        }
+        return t;
+    }
 
     public boolean aDomicilio() {
         return !"retiro".equals(entrega);

@@ -183,6 +183,9 @@ public class VentanaPrincipal extends JFrame {
         subidaTienda = new SubidaTienda(app);
         app.setSubidaTienda(subidaTienda);
         panelEnLinea.conectar(subidaTienda);
+        // lo que pide el encargado de pedidos desde la página (vender, imprimir, asignar domiciliario)
+        subidaTienda.setTrabajos(new TrabajosCaja(app, () -> pedidos,
+                (titulo, texto) -> avisar(null, Aviso.Tipo.BIEN, titulo, texto, false)));
         // llega un pedido de la página (o el comprobante del pago): suena y queda en «Para atender»
         subidaTienda.alLlegarPedido((titulo, texto) -> {
             Pitido.aviso();

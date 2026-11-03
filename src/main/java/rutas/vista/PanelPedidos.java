@@ -1413,12 +1413,33 @@ public class PanelPedidos extends JPanel {
      * Sin internet sale igual, sin enlace, y al volver se cierra con «Volvió».
      */
     private void despachar(Ruta r, rutas.modelo.Domiciliario d) {
+        despachar(r, d, true);
+    }
+
+    /**
+     * Despacho pedido desde la página del encargado: arma la ruta solo con esas paradas y la manda, sin abrir
+     * WhatsApp en la caja (al repartidor le llega el aviso y la plantilla «salida_nueva»). Devuelve null si salió
+     * o el problema.
+     */
+    public String despacharRemoto(List<Parada> paradas, rutas.modelo.Domiciliario d) {
+        if (paradas.isEmpty()) {
+            return "No hay paradas";
+        }
+        Ruta r = app.getPlanificador().planificar(app.getBase(), new java.util.ArrayList<>(paradas), chkVolver.isSelected(),
+                rutas.logica.Criterio.MAS_RAPIDA, java.time.LocalTime.now());
+        if (r == null || r.getParadas().isEmpty()) {
+            return "No se pudo armar la ruta";
+        }
+        return despachar(r, d, false);
+    }
+
+    private String despachar(Ruta r, rutas.modelo.Domiciliario d, boolean abrirWa) {
         rutas.modelo.Salida s;
         try {
             s = app.despachar(r, d.nombre);
         } catch (java.io.IOException ex) {
             aviso("No se pudo guardar la salida: " + ex.getMessage());
-            return;
+            return "No se pudo guardar la salida: " + ex.getMessage();
         }
         s.tipoRepartidor = d.tipo.name();
         nombreUltimo = d.nombre;
@@ -1429,9 +1450,11 @@ public class PanelPedidos extends JPanel {
         if (nube == null) {
             s.errorNube = "No estaba configurada la conexión (Configuración › Conexión).";
             guardarSilencio(s);
-            abrirWhatsApp(d.celular, rutas.logica.MensajesWhatsApp.salida(app.getNegocio(), hora, d.nombre, s.entregas,
-                    "", mapa), null);
-            return;
+            if (abrirWa) {
+                abrirWhatsApp(d.celular, rutas.logica.MensajesWhatsApp.salida(app.getNegocio(), hora, d.nombre, s.entregas,
+                        "", mapa), null);
+            }
+            return abrirWa ? null : "Salió sin enlace: falta la conexión con Supabase";
         }
         String codigo = rutas.logica.NubeRepartidor.nuevoCodigo();
         java.util.List<rutas.modelo.Salida.Entrega> copia = new java.util.ArrayList<>();
@@ -1476,6 +1499,9 @@ public class PanelPedidos extends JPanel {
                     }
                 }
                 app.avisar();
+                if (!abrirWa) {
+                    return; // pedido desde la página: el repartidor recibe el aviso y el WhatsApp automático
+                }
                 String enlace = s.enLinea() ? rutas.logica.NubeRepartidor.enlace(aj.pagina, codigo) : "";
                 String texto = rutas.logica.MensajesWhatsApp.salida(app.getNegocio(), hora, d.nombre, s.entregas, enlace, mapa,
                         s.enLinea() && s.venceEn != null ? s.venceEn.toLocalTime() : null);
@@ -1483,6 +1509,7 @@ public class PanelPedidos extends JPanel {
                         + "). La ruta va por WhatsApp; en «Salidas» puede volver a enviar el enlace.");
             }
         }.execute();
+        return null;
     }
 
     private String nombreUltimo = "";
