@@ -1494,6 +1494,63 @@ public class PanelMapa extends JPanel {
      * orden de la ruta, para no confundirlas con las pendientes). El repartidor es un círculo azul
      * profundo con una R y la hora de su última ubicación.
      */
+    // el dibujo moto.png mira a la izquierda y moto-izq.png a la derecha
+    private static final java.awt.image.BufferedImage MIRA_IZQ = imagen("moto"), MIRA_DER = imagen("moto-izq");
+    private static final java.awt.image.BufferedImage MIRA_IZQ_GRIS = gris(MIRA_IZQ), MIRA_DER_GRIS = gris(MIRA_DER);
+
+    private static java.awt.image.BufferedImage imagen(String nombre) {
+        try (java.io.InputStream in = PanelMapa.class.getResourceAsStream("/imagenes/mapa/" + nombre + ".png")) {
+            return in == null ? null : javax.imageio.ImageIO.read(in);
+        } catch (java.io.IOException e) {
+            return null; // sin la imagen no se dibuja la moto (queda el nombre)
+        }
+    }
+
+    /** La misma moto en grises (ubicación vieja). */
+    private static java.awt.image.BufferedImage gris(java.awt.image.BufferedImage img) {
+        if (img == null) {
+            return null;
+        }
+        java.awt.image.BufferedImage r = new java.awt.image.BufferedImage(img.getWidth(), img.getHeight(),
+                java.awt.image.BufferedImage.TYPE_INT_ARGB);
+        for (int yy = 0; yy < img.getHeight(); yy++) {
+            for (int xx = 0; xx < img.getWidth(); xx++) {
+                int c = img.getRGB(xx, yy), a = c >>> 24;
+                int l = (int) (0.3 * ((c >> 16) & 255) + 0.59 * ((c >> 8) & 255) + 0.11 * (c & 255));
+                l = 120 + l * 100 / 255; // gris medio, que se lea sobre el mapa claro
+                r.setRGB(xx, yy, (a << 24) | (l << 16) | (l << 8) | l);
+            }
+        }
+        return r;
+    }
+
+    /** Más chica cuando se ve toda la ciudad (no tapa las calles) y normal de cerca. */
+    private int altoMoto() {
+        double t = (Math.log(escala) - Math.log(0.15)) / (Math.log(1.2) - Math.log(0.15));
+        return (int) Math.round(26 + 22 * Math.max(0, Math.min(1, t)));
+    }
+
+    /** Hacia dónde mira la moto de cada salida: cambia solo con un movimiento claro (unos 10 m este-oeste). */
+    private final java.util.Map<Long, double[]> orientacion = new java.util.HashMap<>(); // id -> {lon, izq 0/1}
+
+    private boolean mirandoIzquierda(Salida s) {
+        double[] o = orientacion.get(s.id);
+        if (o == null) {
+            boolean izq = false;
+            if (s.rastro.size() >= 2) { // al abrir: según los últimos puntos del rastro
+                double[] a = s.rastro.get(Math.max(0, s.rastro.size() - 4));
+                izq = s.lon < a[1] - 0.00009;
+            }
+            orientacion.put(s.id, new double[]{s.lon, izq ? 1 : 0});
+            return izq;
+        }
+        if (Math.abs(s.lon - o[0]) >= 0.00009) {
+            o[1] = s.lon < o[0] ? 1 : 0;
+            o[0] = s.lon;
+        }
+        return o[1] == 1;
+    }
+
     /** Entre dos puntos del rastro: más de esto y no se unen (no se sabe por dónde fue). */
     static final double SALTO_RASTRO_M = 150;
     static final long HUECO_RASTRO_MS = 60_000;
@@ -1554,18 +1611,26 @@ public class PanelMapa extends JPanel {
             }
             int x = (int) sx(Geo.x(s.lon)), y = (int) sy(Geo.y(s.lat));
             boolean vieja = java.time.Duration.between(s.ubicacionEn, java.time.LocalDateTime.now()).toMinutes() >= 5;
-            g.setColor(Color.WHITE);
-            g.fillOval(x - 16, y - 16, 32, 32);
-            g.setColor(vieja ? Tema.GRIS_TEXTO : Tema.AZUL_PROFUNDO);
-            g.fillOval(x - 13, y - 13, 26, 26);
-            g.setFont(Tema.titulo(13));
-            FontMetrics fm = g.getFontMetrics();
-            g.setColor(Color.WHITE);
-            g.drawString("R", x - fm.stringWidth("R") / 2, y + fm.getAscent() / 2 - 2);
+            // la moto (el diseño de DomiRuta): mira hacia donde va; gris y transparente si la ubicación es vieja
+            boolean izq = mirandoIzquierda(s);
+            java.awt.image.BufferedImage img = izq ? (vieja ? MIRA_IZQ_GRIS : MIRA_IZQ) : (vieja ? MIRA_DER_GRIS : MIRA_DER);
+            int h = altoMoto(), w = img == null ? h : img.getWidth() * h / img.getHeight();
+            if (img != null) {
+                java.awt.Composite antes2 = g.getComposite();
+                if (vieja) {
+                    g.setComposite(java.awt.AlphaComposite.getInstance(java.awt.AlphaComposite.SRC_OVER, 0.6f));
+                }
+                Object interp = g.getRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION);
+                g.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION, java.awt.RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+                g.drawImage(img, x - w / 2, y - h + h / 6, w, h, null); // las ruedas quedan sobre el punto
+                g.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION,
+                        interp == null ? java.awt.RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR : interp);
+                g.setComposite(antes2);
+            }
             g.setFont(Tema.textoFuerte(12));
             String txt = (s.repartidor.isEmpty() ? "Repartidor" : s.repartidor) + " · "
                     + Ruta.FORMATO_HORA.format(s.ubicacionEn);
-            textoConHalo(g, txt, x + 18, y + 5, vieja ? Tema.GRIS_TEXTO : Tema.AZUL_PROFUNDO);
+            textoConHalo(g, txt, x + w / 2 + 4, y - h / 3 + 5, vieja ? Tema.GRIS_TEXTO : Tema.AZUL_PROFUNDO);
         }
     }
 
