@@ -60,6 +60,7 @@ public class VentanaPrincipal extends JFrame {
     private Runnable oyenteLector; // el estado del lector de arriba (se quita al cerrar la ventana)
     private final IndicadorConexion indicadorConexion = new IndicadorConexion(); // en línea / sin internet / Supabase
     private Seguimiento seguimiento;
+    private SubidaTienda subidaTienda;
     private JPanel zonaDomicilio;            // mapa + Ruta/Buscar prestados al cobro a domicilio
     private final List<javax.swing.JButton> pestanasDomicilio = new ArrayList<>();
     private java.awt.Component tarjetaAntes; // la columna que se veia antes de prestarla
@@ -176,6 +177,11 @@ public class VentanaPrincipal extends JFrame {
         app.alCambiar(this::marcarMensajes);
         marcarMensajes();
         seguimiento.empezar();
+
+        // la tienda en línea se mantiene al día sola (catálogo, logo, medios de pago)
+        subidaTienda = new SubidaTienda(app);
+        app.setSubidaTienda(subidaTienda);
+        subidaTienda.empezar();
     }
 
     /** El aviso de abajo (se va solo) y además queda en la campana de arriba. */
@@ -230,6 +236,9 @@ public class VentanaPrincipal extends JFrame {
         }
         if (seguimiento != null) {
             seguimiento.parar();
+        }
+        if (subidaTienda != null) {
+            subidaTienda.parar();
         }
         super.dispose();
     }

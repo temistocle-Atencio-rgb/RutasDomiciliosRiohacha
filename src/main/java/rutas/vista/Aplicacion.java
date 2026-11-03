@@ -875,6 +875,25 @@ public class Aplicacion {
     public void nubeCambio() {
         ajustesNube = null;
         nube = null;
+        tiendaCambio();
+    }
+
+    private SubidaTienda subidaTienda;
+
+    void setSubidaTienda(SubidaTienda s) {
+        subidaTienda = s;
+    }
+
+    /** La que mantiene al día la tienda en línea (null en las pruebas sin ventana). */
+    public SubidaTienda getSubidaTienda() {
+        return subidaTienda;
+    }
+
+    /** Cambió algo que se ve en la tienda en línea: se sube en unos segundos. */
+    public void tiendaCambio() {
+        if (subidaTienda != null) {
+            subidaTienda.cambio();
+        }
     }
 
     void setSeguimiento(Seguimiento s) {

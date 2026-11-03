@@ -41,6 +41,7 @@ public class Pruebas {
         PruebasValidacion.correr();
         PruebasLector.correr();
         PruebasEnVivo.correr();
+        PruebasTienda.correr();
         probarAvl();
         probarMonticulo();
         probarGrafoPequeno();

@@ -132,6 +132,8 @@ public class BaseTienda implements AutoCloseable {
             }
             ampliarMediosPago(st);
             crearTablasFicha(st);
+            // los productos que se venden en la tienda en línea (la página del cliente)
+            st.execute("CREATE TABLE IF NOT EXISTS en_linea (producto_id INTEGER PRIMARY KEY REFERENCES productos(id))");
             crearTablasCompras(st);
             BaseOrdenes.crearTablas(st); // proveedores y ordenes de compra
             st.execute("CREATE TABLE IF NOT EXISTS config (clave TEXT PRIMARY KEY, valor TEXT NOT NULL)");
@@ -1075,6 +1077,73 @@ public class BaseTienda implements AutoCloseable {
             }
         }
         bajarLotes(porProducto);
+    }
+
+    // ------------------------------------------------------------------
+    //  Tienda en línea: qué productos se venden en la página
+    // ------------------------------------------------------------------
+
+    public boolean enLinea(long productoId) throws SQLException {
+        try (PreparedStatement ps = con.prepareStatement("SELECT 1 FROM en_linea WHERE producto_id = ?")) {
+            ps.setLong(1, productoId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        }
+    }
+
+    public void ponerEnLinea(long productoId, boolean si) throws SQLException {
+        try (PreparedStatement ps = con.prepareStatement(si ? "INSERT OR IGNORE INTO en_linea(producto_id) VALUES(?)"
+                : "DELETE FROM en_linea WHERE producto_id = ?")) {
+            ps.setLong(1, productoId);
+            ps.executeUpdate();
+        }
+    }
+
+    /** Un producto tal como lo necesita la página (sin costos ni proveedores). */
+    public static class ProductoEnLinea {
+        public long id;
+        public String nombre = "";
+        public String descripcion = "";
+        public String categoria = "";
+        public int ordenCategoria;
+        public long precio;
+        public long stock;
+        public boolean manejaInventario;
+        public Unidad unidad = Unidad.UNIDAD;
+        public String foto;      // archivo en este computador (null = sin foto)
+    }
+
+    /** Los productos activos marcados «Vender en línea», con su categoría y su descripción. */
+    public List<ProductoEnLinea> productosEnLinea() throws SQLException {
+        List<ProductoEnLinea> l = new ArrayList<>();
+        try (Statement st = con.createStatement();
+             ResultSet rs = st.executeQuery("SELECT p.id, p.nombre, p.precio_venta, p.stock, p.maneja_inventario,"
+                     + " p.unidad, p.foto, COALESCE(c.nombre, ''), COALESCE(c.orden, 0), COALESCE(f.descripcion, '')"
+                     + " FROM en_linea e JOIN productos p ON p.id = e.producto_id"
+                     + " LEFT JOIN categorias c ON c.id = p.categoria_id AND c.activo = 1"
+                     + " LEFT JOIN producto_ficha f ON f.producto_id = p.id"
+                     + " WHERE p.activo = 1 ORDER BY p.id")) {
+            while (rs.next()) {
+                ProductoEnLinea p = new ProductoEnLinea();
+                p.id = rs.getLong(1);
+                p.nombre = rs.getString(2);
+                p.precio = rs.getLong(3);
+                p.stock = rs.getLong(4);
+                p.manejaInventario = rs.getInt(5) != 0;
+                try {
+                    p.unidad = Unidad.valueOf(rs.getString(6));
+                } catch (IllegalArgumentException | NullPointerException e) {
+                    p.unidad = Unidad.UNIDAD;
+                }
+                p.foto = rs.getString(7);
+                p.categoria = rs.getString(8);
+                p.ordenCategoria = rs.getInt(9);
+                p.descripcion = rs.getString(10);
+                l.add(p);
+            }
+        }
+        return l;
     }
 
     // ------------------------------------------------------------------

@@ -49,6 +49,7 @@ public class PanelConfiguracion extends JPanel {
     private static final String REPARTIDOR = "Conexión";
     private static final String REPARTIDORES = "Domiciliarios";
     private static final String USUARIOS = "Usuarios";
+    private static final String TIENDA = "Tienda en línea";
     /** Las vistas que tienen que ver con el recibo (a la derecha se ve cómo sale). */
     private static final List<String> CON_RECIBO = List.of("Mi negocio", "Impresora", "Medios de pago", "Correo");
     private static final String PREGUNTAR = "Preguntar cada vez";
@@ -140,6 +141,7 @@ public class PanelConfiguracion extends JPanel {
         zonaVistas.add(desliza(vistaRepartidor()), REPARTIDOR);
         zonaVistas.add(desliza(vistaCuentas()), REPARTIDORES);
         if (app.getTienda() != null) {
+            zonaVistas.add(desliza(new VistaTiendaEnLinea(app)), TIENDA);
             PanelUsuarios usuarios = new PanelUsuarios(app);
             JPanel envUsuarios = new JPanel(new BorderLayout());
             envUsuarios.setOpaque(false);
@@ -214,8 +216,9 @@ public class PanelConfiguracion extends JPanel {
         for (String[] o : new String[][]{{NEGOCIO, "Logo y datos del recibo"}, {IMPRESORA, "Papel, márgenes y corte"},
             {MEDIOS, "Cómo le pueden pagar"}, {CORREO, "Enviar recibos por Gmail"},
             {USUARIOS, "Cuentas de la caja y permisos"},
-            {REPARTIDORES, "Quién lleva los domicilios"}, {REPARTIDOR, "Enlace para marcar entregas"}}) {
-            if (USUARIOS.equals(o[0]) && app.getTienda() == null) {
+            {REPARTIDORES, "Quién lleva los domicilios"}, {REPARTIDOR, "Enlace para marcar entregas"},
+            {TIENDA, "Pedidos desde la página"}}) {
+            if ((USUARIOS.equals(o[0]) || TIENDA.equals(o[0])) && app.getTienda() == null) {
                 continue;
             }
             Opcion op = new Opcion(o[0], o[1]);
@@ -432,6 +435,7 @@ public class PanelConfiguracion extends JPanel {
             ajustes = a;
             logoElegido = null;
             quitarLogo = false;
+            app.tiendaCambio(); // el logo y los datos también van a la tienda en línea
             decir(msgNegocio, "Cambios guardados. Los próximos recibos salen así.", true);
             Aviso.mostrar(this, Aviso.Tipo.BIEN, "Mi negocio", "Cambios guardados");
         } catch (IllegalArgumentException e) {
@@ -510,6 +514,7 @@ public class PanelConfiguracion extends JPanel {
         });
         try {
             rutas.logica.MediosPago.guardar(app.getTienda(), elegidos);
+            app.tiendaCambio();
             int n = Math.max(1, elegidos.size());
             decir(msgMedios, "Guardado. En el cobro salen " + n + (n == 1 ? " medio de pago." : " medios de pago."), true);
             Aviso.mostrar(this, Aviso.Tipo.BIEN, "Medios de pago", "Cambios guardados");
@@ -1619,7 +1624,7 @@ public class PanelConfiguracion extends JPanel {
     //  Ayudas
     // ------------------------------------------------------------------
 
-    private static Tema.Tarjeta tarjeta() {
+    static Tema.Tarjeta tarjeta() {
         Tema.Tarjeta t = new Tema.Tarjeta();
         t.setLayout(new BoxLayout(t, BoxLayout.Y_AXIS));
         t.setBorder(BorderFactory.createEmptyBorder(16, 20, 18, 20));
@@ -1675,7 +1680,7 @@ public class PanelConfiguracion extends JPanel {
         return p;
     }
 
-    private static JPanel grilla() {
+    static JPanel grilla() {
         JPanel g = new JPanel(new GridBagLayout());
         g.setOpaque(false);
         g.setAlignmentX(LEFT_ALIGNMENT);
@@ -1683,7 +1688,7 @@ public class PanelConfiguracion extends JPanel {
     }
 
     /** Pone una etiqueta con su campo en la grilla de dos columnas. */
-    private static void poner(JPanel grilla, int x, int y, int ancho, String etiqueta, JComponent c) {
+    static void poner(JPanel grilla, int x, int y, int ancho, String etiqueta, JComponent c) {
         FormularioProducto.compactar(c);
         JPanel p = columna();
         JLabel l = etiqueta(etiqueta);
@@ -1715,7 +1720,7 @@ public class PanelConfiguracion extends JPanel {
         return l;
     }
 
-    private static Tema.Parrafo nota(String texto) {
+    static Tema.Parrafo nota(String texto) {
         Tema.Parrafo l = Tema.parrafo(texto, 400);
         l.setFont(Tema.texto(12.5f));
         l.setForeground(Tema.GRIS_TEXTO);
@@ -1723,19 +1728,19 @@ public class PanelConfiguracion extends JPanel {
         return l;
     }
 
-    private static Tema.Parrafo mensaje() {
+    static Tema.Parrafo mensaje() {
         Tema.Parrafo p = Tema.parrafo(" ", 360);
         p.setFont(Tema.texto(13));
         return p;
     }
 
-    private static void decir(Tema.Parrafo l, String texto, boolean bien) {
+    static void decir(Tema.Parrafo l, String texto, boolean bien) {
         l.setForeground(bien ? Tema.EXITO_TEXTO : Tema.ERROR_TEXTO);
         l.setText(texto);
     }
 
     /** Pie de la vista: mensaje a la izquierda y el boton Guardar cambios (naranja) a la derecha. */
-    private static JPanel pie(Tema.Parrafo msg, Runnable guardar) {
+    static JPanel pie(Tema.Parrafo msg, Runnable guardar) {
         JPanel p = new JPanel(new BorderLayout(12, 0));
         p.setOpaque(false);
         p.setAlignmentX(LEFT_ALIGNMENT);

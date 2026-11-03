@@ -20,6 +20,8 @@ create table if not exists public.tienda_info (
   actualizado timestamptz not null default now()
 );
 insert into public.tienda_info (id) values (1) on conflict do nothing;
+-- Los medios de pago que acepta la tienda (los mismos nombres de DomiRuta, en minúscula: efectivo, nequi, ...)
+alter table public.tienda_info add column if not exists pagos text[] not null default '{efectivo}';
 
 -- Los productos que se venden en línea (solo los que la tienda marcó en DomiRuta)
 create table if not exists public.catalogo (
@@ -48,7 +50,7 @@ create table if not exists public.pedidos_web (
   referencia text not null default '',
   lat double precision,
   lon double precision,
-  pago text not null check (pago in ('efectivo', 'transferencia')),
+  pago text not null check (pago ~ '^[a-z_]{2,20}$'),
   paga_con int,
   nota text not null default '',
   items jsonb not null,                                             -- [{id, nombre, precio, cantidad}] con el precio REAL
@@ -62,6 +64,9 @@ create table if not exists public.pedidos_web (
   tomado boolean not null default false,                            -- DomiRuta ya lo bajó
   ip text not null default ''
 );
+-- Antes solo había efectivo y transferencia: ahora vale cualquier medio que la tienda tenga activo
+alter table public.pedidos_web drop constraint if exists pedidos_web_pago_check;
+alter table public.pedidos_web add constraint pedidos_web_pago_check check (pago ~ '^[a-z_]{2,20}$');
 create index if not exists pedidos_web_tomado_idx on public.pedidos_web (tomado) where not tomado;
 
 alter table public.tienda_info enable row level security;
@@ -89,7 +94,8 @@ returns json
 language sql stable security definer set search_path = public as $$
   select json_build_object(
     'tienda', (select json_build_object('nombre', nombre, 'logo', logo, 'direccion', direccion, 'telefono', telefono,
-                                        'horario', horario, 'abierta', abierta, 'domicilio', domicilio, 'minimo', minimo)
+                                        'horario', horario, 'abierta', abierta, 'domicilio', domicilio, 'minimo', minimo,
+                                        'pagos', to_json(pagos))
                from tienda_info where id = 1),
     'productos', coalesce((select json_agg(json_build_object('id', id, 'nombre', nombre, 'descripcion', descripcion,
                                         'marca', marca, 'categoria', categoria, 'precio', precio, 'foto', foto,
@@ -158,7 +164,7 @@ begin
     v_lat := null;
     v_lon := null;
   end if;
-  if v_pago not in ('efectivo', 'transferencia') then
+  if not (v_pago = any(t.pagos)) then
     return json_build_object('ok', false, 'error', 'datos', 'detalle', 'Escoge cómo vas a pagar');
   end if;
   if json_typeof(p->'items') <> 'array' or json_array_length(p->'items') not between 1 and 60 then

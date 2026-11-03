@@ -103,6 +103,7 @@ final class FormularioProducto {
     private final JCheckBox chkProducto = Tema.casilla("Producto");
     private final JCheckBox chkInsumo = Tema.casilla("Insumo");
     private final JCheckBox chkReceta = Tema.casilla("Receta / Servicio / Combo");
+    private final JCheckBox chkEnLinea = Tema.casilla("Vender en línea");
     private final ZonaFoto zonaFoto = new ZonaFoto();
     private final CodigoBarras.Vista vistaCodigo = new CodigoBarras.Vista();
     private final JTextField campoStock = Controles.campoNumero("0");   // punto de venta
@@ -336,6 +337,10 @@ final class FormularioProducto {
         chkReceta.addActionListener(sugerir);
         chkProducto.addActionListener(sugerir);
         chkInsumo.addActionListener(sugerir);
+        col.add(Tema.espacio(10));
+        chkEnLinea.setToolTipText("Sale en la tienda en línea con su foto y su precio. El cliente no ve cuántos quedan:"
+                + " solo «Agotado» cuando se acaba.");
+        col.add(tipo(chkEnLinea));
         col.add(Tema.espacio(12));
 
         vistaCodigo.setPreferredSize(new Dimension(210, 78));
@@ -898,6 +903,15 @@ final class FormularioProducto {
         chkProducto.setSelected(f.esProducto);
         chkInsumo.setSelected(f.esInsumo);
         chkReceta.setSelected(f.esReceta);
+        boolean enLinea = false;
+        if (p != null) {
+            try {
+                enLinea = bd.enLinea(p.getId());
+            } catch (java.sql.SQLException e) {
+                Ubicaciones.registrarError(e);
+            }
+        }
+        chkEnLinea.setSelected(enLinea);
         areaUrl.setText(f.urlImagen);
         urlBajada = f.urlImagen; // la que ya esta guardada no se vuelve a bajar
         esperaUrl.stop();
@@ -1114,6 +1128,8 @@ final class FormularioProducto {
             p = eraNuevo ? cat.crear(p) : cat.editar(p);
             editando = p; // si lo que sigue falla, guardar otra vez edita este producto en vez de duplicarlo
             bd.guardarFicha(p.getId(), f);
+            bd.ponerEnLinea(p.getId(), chkEnLinea.isSelected());
+            app.tiendaCambio();
             ficha = f;
             String ruta = null;
             if (fotoElegida != null) {
