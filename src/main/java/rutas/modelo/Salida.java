@@ -38,6 +38,7 @@ public class Salida {
         public final Parada parada;
         public int cobrar;         // lo que cobra en la puerta (0 = ya pagó)
         public int domicilio;      // valor del domicilio de esta entrega
+        public int ganancia;       // lo que gana el domiciliario si la entrega (se sube a su página)
         public String estado = EN_CAMINO;
         public String motivo = "";
         public boolean tieneFoto;
@@ -53,6 +54,7 @@ public class Salida {
         public Entrega copia() {
             Entrega c = new Entrega(parada, cobrar);
             c.domicilio = domicilio;
+            c.ganancia = ganancia;
             c.estado = estado;
             c.motivo = motivo;
             return c;
@@ -109,6 +111,8 @@ public class Salida {
     public String repartidor = "";
     /** FIJO, INDEPENDIENTE o GRUPO ("" = sin saber): los no fijos se quedan con los domicilios. */
     public String tipoRepartidor = "";
+    /** Lo que gana el fijo por cada entrega hecha (copiado al despachar; 0 = sueldo). */
+    public int tarifaRepartidor;
     public LocalDateTime creada = LocalDateTime.now();
     public LocalDateTime cerrada;
     /** Por qué la tienda la canceló ("" = no se canceló: se cerró normal). */
@@ -194,12 +198,51 @@ public class Salida {
         return tipoRepartidor.equals("INDEPENDIENTE") || tipoRepartidor.equals("GRUPO");
     }
 
+    /** Copia del domiciliario cómo se le paga (al asignarle la salida). */
+    public void pagoDe(Domiciliario d) {
+        tipoRepartidor = d.tipo.name();
+        tarifaRepartidor = d.tipo == Domiciliario.Tipo.FIJO ? Math.max(0, d.tarifa) : 0;
+        for (Entrega e : entregas) {
+            e.ganancia = gananciaDe(e);
+        }
+    }
+
+    /** Lo que gana el domiciliario por esa entrega si la entrega: su domicilio, o la tarifa del fijo. */
+    public int gananciaDe(Entrega e) {
+        return seQuedaConDomicilios() ? e.domicilio : tarifaRepartidor;
+    }
+
+    /** Lo que ya ganó (solo por lo entregado). */
+    public int ganancia() {
+        int t = 0;
+        for (Entrega e : entregas) {
+            if (e.entregada()) {
+                t += gananciaDe(e);
+            }
+        }
+        return t;
+    }
+
+    /** Lo que ganaría si entrega todas. */
+    public int gananciaTotal() {
+        int t = 0;
+        for (Entrega e : entregas) {
+            t += gananciaDe(e);
+        }
+        return t;
+    }
+
+    /** Si gana algo por entrega (independiente, grupo o fijo con tarifa); false = sueldo. */
+    public boolean ganaPorEntrega() {
+        return seQuedaConDomicilios() || tarifaRepartidor > 0;
+    }
+
     /**
-     * Lo que el domiciliario le debe entregar a la tienda por lo entregado: un fijo trae todo lo que cobró;
-     * un independiente o grupo se queda con los domicilios. Negativo = la tienda le debe a él.
+     * Lo que el domiciliario le debe entregar a la tienda por lo entregado: lo que cobró menos lo que gana
+     * (sus domicilios o su tarifa por entrega). Negativo = la tienda le debe a él.
      */
     public int debeEntregar() {
-        return seQuedaConDomicilios() ? plataATraer() - domiciliosEntregados() : plataATraer();
+        return plataATraer() - ganancia();
     }
 
     /** Ya marcó todas (ninguna sigue en camino). */

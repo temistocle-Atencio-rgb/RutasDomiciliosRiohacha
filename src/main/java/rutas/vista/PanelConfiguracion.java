@@ -1236,6 +1236,7 @@ public class PanelConfiguracion extends JPanel {
         JTextField correo = Tema.campo("Ej. carlos@gmail.com (opcional)");
         JComboBox<rutas.modelo.Domiciliario.Tipo> tipo = new JComboBox<>(rutas.modelo.Domiciliario.Tipo.values());
         Tema.estiloCombo(tipo, String::valueOf);
+        JTextField tarifa = Controles.campoNumero("0 = tiene sueldo");
         javax.swing.JCheckBox activo = Tema.casilla("Aparece al despachar");
         activo.setSelected(true);
         if (d != null) {
@@ -1244,16 +1245,29 @@ public class PanelConfiguracion extends JPanel {
             correo.setText(d.correo);
             tipo.setSelectedItem(d.tipo);
             activo.setSelected(d.activo);
+            tarifa.setText(d.tarifa > 0 ? String.valueOf(d.tarifa) : "");
         }
         JPanel g = grilla();
         poner(g, 0, 0, 2, "Nombre", nombre);
         poner(g, 0, 1, 1, "Celular (WhatsApp)", celular);
         poner(g, 1, 1, 1, "Tipo", tipo);
-        poner(g, 0, 2, 2, "Correo (para mandarle la clave)", correo);
+        poner(g, 0, 2, 1, "Gana por entrega ($)", tarifa);
+        poner(g, 0, 3, 2, "Correo (para mandarle la clave)", correo);
         t.add(g);
         t.add(activo);
-        t.add(nota("Fijo: le entrega toda la plata a la tienda. Independiente o grupo: se queda con los domicilios"
-                + " (al volver, DomiRuta dice cuánto le entrega). Para un grupo, ponga el celular de quien reparte."));
+        Tema.Parrafo explica = nota(" ");
+        Runnable explicar = () -> {
+            boolean fijo = tipo.getSelectedItem() == rutas.modelo.Domiciliario.Tipo.FIJO;
+            tarifa.setEnabled(fijo);
+            explica.setText(fijo
+                    ? "Fijo: si pone lo que gana por entrega, se lo queda de lo que cobra y le entrega el resto a la"
+                    + " tienda (el domicilio que paga el cliente es de la tienda). Con 0, tiene sueldo y entrega todo."
+                    : "Se queda con el domicilio que paga el cliente en cada entrega y le entrega a la tienda el valor de"
+                    + " los productos. Para un grupo, ponga el celular de quien reparte.");
+        };
+        tipo.addActionListener(a -> explicar.run());
+        explicar.run();
+        t.add(explica);
         Tema.Parrafo error = mensaje();
         t.add(Tema.espacio(6));
         t.add(error);
@@ -1272,6 +1286,13 @@ public class PanelConfiguracion extends JPanel {
                     celular.getText(), (rutas.modelo.Domiciliario.Tipo) tipo.getSelectedItem());
             x.activo = activo.isSelected();
             x.correo = correo.getText().trim();
+            String soloNumeros = tarifa.getText().replaceAll("\\D", "");
+            x.tarifa = x.tipo == rutas.modelo.Domiciliario.Tipo.FIJO && !soloNumeros.isEmpty()
+                    ? (soloNumeros.length() > 6 ? -1 : Integer.parseInt(soloNumeros)) : 0;
+            if (x.tarifa < 0 || x.tarifa > 100_000) {
+                decir(error, "Lo que gana por entrega va de $0 a $100.000", false);
+                return;
+            }
             if (!x.correo.isEmpty() && !rutas.logica.CorreoSmtp.esCorreo(x.correo)) {
                 decir(error, "Revise el correo (ej. carlos@gmail.com) o déjelo vacío", false);
                 return;

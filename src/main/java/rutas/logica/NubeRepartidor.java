@@ -423,6 +423,7 @@ public class NubeRepartidor {
         f.put("lat", e.parada.getLat());
         f.put("lon", e.parada.getLon());
         f.put("cobrar", e.cobrar);
+        f.put("ganancia", e.ganancia); // lo que es de él: su página muestra cuánto gana y cuánto entrega
         f.put("paga_con", e.parada.getPagaCon());
         f.put("venta", e.parada.getVentaNumero() > 0 ? String.format("%05d", e.parada.getVentaNumero()) : "");
         f.put("productos", e.parada.getProductos());

@@ -681,6 +681,7 @@ public class Aplicacion {
         }
         Salida.Entrega e = new Salida.Entrega(p, cobrarEnPuerta(p));
         e.domicilio = domicilioDe(p);
+        e.ganancia = s.gananciaDe(e);
         s.entregas.add(e);
         Salida.Estado antes = s.estado;
         s.revisarEstado();

@@ -1441,7 +1441,7 @@ public class PanelPedidos extends JPanel {
             aviso("No se pudo guardar la salida: " + ex.getMessage());
             return "No se pudo guardar la salida: " + ex.getMessage();
         }
-        s.tipoRepartidor = d.tipo.name();
+        s.pagoDe(d); // cómo se le paga: sus domicilios, su tarifa por entrega o sueldo
         nombreUltimo = d.nombre;
         rutas.logica.NubeRepartidor nube = app.getNube();
         rutas.logica.NubeRepartidor.Ajustes aj = app.getAjustesNube();
@@ -1451,8 +1451,8 @@ public class PanelPedidos extends JPanel {
             s.errorNube = "No estaba configurada la conexión (Configuración › Conexión).";
             guardarSilencio(s);
             if (abrirWa) {
-                abrirWhatsApp(d.celular, rutas.logica.MensajesWhatsApp.salida(app.getNegocio(), hora, d.nombre, s.entregas,
-                        "", mapa), null);
+                abrirWhatsApp(d.celular, rutas.logica.MensajesWhatsApp.salida(app.getNegocio(), hora, d.nombre, s,
+                        "", mapa, null), null);
             }
             return abrirWa ? null : "Salió sin enlace: falta la conexión con Supabase";
         }
@@ -1503,7 +1503,7 @@ public class PanelPedidos extends JPanel {
                     return; // pedido desde la página: el repartidor recibe el aviso y el WhatsApp automático
                 }
                 String enlace = s.enLinea() ? rutas.logica.NubeRepartidor.enlace(aj.pagina, codigo) : "";
-                String texto = rutas.logica.MensajesWhatsApp.salida(app.getNegocio(), hora, d.nombre, s.entregas, enlace, mapa,
+                String texto = rutas.logica.MensajesWhatsApp.salida(app.getNegocio(), hora, d.nombre, s, enlace, mapa,
                         s.enLinea() && s.venceEn != null ? s.venceEn.toLocalTime() : null);
                 abrirWhatsApp(d.celular, texto, s.enLinea() ? null : "No se pudo crear el enlace (" + error
                         + "). La ruta va por WhatsApp; en «Salidas» puede volver a enviar el enlace.");

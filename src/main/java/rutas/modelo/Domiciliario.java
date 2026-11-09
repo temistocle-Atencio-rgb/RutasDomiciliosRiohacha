@@ -3,7 +3,7 @@ package rutas.modelo;
 /**
  * Quien lleva los domicilios. No necesita cuenta ni contraseña: a cada salida le llega por WhatsApp
  * un enlace solo para esa salida.
- * - FIJO: trabaja con la tienda.
+ * - FIJO: trabaja con la tienda. Se le paga por entrega (tarifa) o con sueldo (tarifa 0).
  * - INDEPENDIENTE: presta el servicio cuando está disponible (se le pregunta) y se queda con los domicilios.
  * - GRUPO: un grupo de domicilios con nombre; el celular es el de quien reparte los pedidos.
  */
@@ -23,7 +23,7 @@ public class Domiciliario {
             return texto;
         }
 
-        /** El fijo le entrega todo a la tienda; los demás se quedan con el valor de los domicilios. */
+        /** El fijo gana su tarifa por entrega (o sueldo); los demás se quedan con el valor de los domicilios. */
         public boolean seQuedaConDomicilios() {
             return this != FIJO;
         }
@@ -35,6 +35,8 @@ public class Domiciliario {
     /** Para mandarle la clave por correo ("" = no tiene). */
     public String correo = "";
     public Tipo tipo;
+    /** Solo para el fijo: lo que gana por cada entrega hecha (0 = tiene sueldo y entrega todo). */
+    public int tarifa;
     public boolean activo = true;
     /** En Supabase: su id y su enlace personal ("" = todavía no se ha creado allá). */
     public String idNube = "";

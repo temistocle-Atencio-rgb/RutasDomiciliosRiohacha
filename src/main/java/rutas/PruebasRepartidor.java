@@ -307,6 +307,8 @@ public class PruebasRepartidor {
         File archivo = new File(tmp, "domiruta.db");
         Salida s = salidaDePrueba();
         s.uuidNube = "uuid-9";
+        s.tipoRepartidor = "FIJO";
+        s.tarifaRepartidor = 2500;
         s.mensajes.add(new Salida.Mensaje(5, false, "No encuentro la dirección", LocalDateTime.now(), false));
         try (BaseDatos bd = new BaseDatos(archivo)) {
             bd.guardarSalida(s);
@@ -332,6 +334,8 @@ public class PruebasRepartidor {
             Salida r = l.isEmpty() ? null : l.get(0);
             revisar("salidas: se guardan y se leen al abrir el programa", l.size() == 1 && r.uuidNube.equals("uuid-9")
                     && r.entregas.size() == 2 && r.mensajes.size() == 1 && r.repartidor.equals("Moto 1"));
+            revisar("salidas: guardan lo que gana el fijo por entrega", r != null && r.tarifaRepartidor == 2500
+                    && r.tipoRepartidor.equals("FIJO"));
             revisar("salidas: queda Regresando con lo marcado y la ubicación", r != null
                     && r.estado == Salida.Estado.REGRESANDO && r.entregas.get(1).motivo.equals("No abrieron")
                     && r.entregas.get(0).cobrar == 12500 && r.lat == 11.54 && r.plataATraer() == 12500);
@@ -393,8 +397,11 @@ public class PruebasRepartidor {
             bd.guardarDomiciliario(a);
             bd.guardarDomiciliario(b);
             b.celular = "3009998877";
+            b.tarifa = 2500;
             bd.guardarDomiciliario(b); // editar no duplica
             List<rutas.modelo.Domiciliario> l = bd.cargarDomiciliarios();
+            revisar("domiciliarios: guardan lo que gana el fijo por entrega", l.stream()
+                    .anyMatch(x -> x.nombre.equals("Carlos") && x.tarifa == 2500));
             revisar("domiciliarios: se guardan, se editan y los fijos salen primero", l.size() == 2
                     && l.get(0).nombre.equals("Carlos") && l.get(0).celular.equals("3009998877")
                     && l.get(1).tipo == rutas.modelo.Domiciliario.Tipo.GRUPO);
@@ -428,6 +435,41 @@ public class PruebasRepartidor {
         ind.entregas.get(1).estado = Salida.Entrega.ENTREGADO;
         revisar("independiente: cobró 12.500 y se queda con 6.000 de domicilios (entrega 6.500)",
                 ind.seQuedaConDomicilios() && ind.plataATraer() == 12500 && ind.domiciliosEntregados() == 6000);
+        revisar("independiente: su ganancia son sus domicilios y entrega el resto",
+                ind.ganancia() == 6000 && ind.debeEntregar() == 6500 && ind.ganaPorEntrega());
+        String mi = rutas.logica.MensajesWhatsApp.salida("T", java.time.LocalTime.of(9, 0), "Diego", ind, "", "", null);
+        revisar("mensaje: al independiente le dice cuánto gana y cuánto entrega", mi.contains("Cobras en las puertas *$12.500*")
+                && mi.contains("Tu ganancia *$6.000* (tus domicilios)") && mi.contains("A la tienda le entregas *$6.500*")
+                && !mi.contains("Cobras en total"));
+        // fijo que gana por entrega: el domicilio del cliente es de la tienda; él se queda con su tarifa
+        rutas.modelo.Domiciliario carlos = new rutas.modelo.Domiciliario(1, "Carlos", "3001112233",
+                rutas.modelo.Domiciliario.Tipo.FIJO);
+        carlos.tarifa = 2500;
+        Salida fij = salidaDePrueba();
+        fij.entregas.forEach(e -> e.domicilio = 3000);
+        fij.pagoDe(carlos);
+        String mf = rutas.logica.MensajesWhatsApp.salida("T", java.time.LocalTime.of(9, 0), "Carlos", fij, "", "", null);
+        fij.entregas.forEach(e -> e.estado = Salida.Entrega.ENTREGADO);
+        revisar("fijo con tarifa: gana 2 × 2.500 y entrega 7.500 de lo que cobró", fij.ganancia() == 5000
+                && fij.debeEntregar() == 7500 && fij.entregas.get(0).ganancia == 2500);
+        revisar("mensaje: al fijo con tarifa le dice su ganancia por entrega", mf.contains("Tu ganancia *$5.000* (2 entregas × $2.500)")
+                && mf.contains("A la tienda le entregas *$7.500*"));
+        fij.entregas.get(1).estado = Salida.Entrega.NO_ENTREGADO;
+        revisar("fijo con tarifa: la que no entregó no la gana", fij.ganancia() == 2500 && fij.debeEntregar() == 10000);
+        carlos.tarifa = 0;
+        Salida sue = salidaDePrueba();
+        sue.pagoDe(carlos);
+        String ms = rutas.logica.MensajesWhatsApp.salida("T", java.time.LocalTime.of(9, 0), "Carlos", sue, "", "", null);
+        revisar("fijo con sueldo: entrega todo y el mensaje lo dice", !sue.ganaPorEntrega() && sue.gananciaTotal() == 0
+                && ms.contains("Toda esa plata es de la tienda") && !ms.contains("Tu ganancia"));
+        Salida todoPago = salidaDePrueba();
+        todoPago.entregas.forEach(e -> { e.domicilio = 3000; e.cobrar = 0; });
+        rutas.modelo.Domiciliario ana = new rutas.modelo.Domiciliario(2, "Ana", "3002223344",
+                rutas.modelo.Domiciliario.Tipo.INDEPENDIENTE);
+        todoPago.pagoDe(ana);
+        String mt = rutas.logica.MensajesWhatsApp.salida("T", java.time.LocalTime.of(9, 0), "Ana", todoPago, "", "", null);
+        revisar("mensaje: si todo ya está pagado, la tienda le paga su ganancia", mt.contains("La tienda te paga *$6.000*")
+                && !mt.contains("Cobras en las puertas"));
         Salida t = salidaDePrueba();
         Set<Salida.Entrega> nada = new HashSet<>();
         t.entregas.get(0).estado = Salida.Entrega.ENTREGADO;

@@ -27,6 +27,20 @@ public final class MensajesWhatsApp {
     /** responderAntes: hasta qué hora puede aceptar (null = sin hora). */
     public static String salida(String negocio, LocalTime hora, String domiciliario, List<Salida.Entrega> entregas,
                                 String enlace, String mapa, LocalTime responderAntes) {
+        return salida(negocio, hora, domiciliario, entregas, enlace, mapa, responderAntes, null);
+    }
+
+    /**
+     * Con la salida: además de lo que cobra, le dice cuánto gana (sus domicilios o su tarifa por entrega)
+     * y cuánto le entrega a la tienda. Así sabe qué plata es suya.
+     */
+    public static String salida(String negocio, LocalTime hora, String domiciliario, Salida s,
+                                String enlace, String mapa, LocalTime responderAntes) {
+        return salida(negocio, hora, domiciliario, s.entregas, enlace, mapa, responderAntes, s);
+    }
+
+    private static String salida(String negocio, LocalTime hora, String domiciliario, List<Salida.Entrega> entregas,
+                                 String enlace, String mapa, LocalTime responderAntes, Salida pago) {
         StringBuilder b = new StringBuilder();
         if (negocio != null && !negocio.isBlank()) {
             b.append('*').append(negocio.trim().toUpperCase()).append("*\n");
@@ -38,8 +52,12 @@ public final class MensajesWhatsApp {
         }
         b.append("Hola *").append(primerNombre(domiciliario)).append("*, tienes *").append(entregas.size())
                 .append(entregas.size() == 1 ? " entrega" : " entregas").append("*.\n");
-        if (total > 0) {
-            b.append("Cobras en total *").append(Tarifa.pesos(total)).append("*\n");
+        if (pago == null) {
+            if (total > 0) {
+                b.append("Cobras en total *").append(Tarifa.pesos(total)).append("*\n");
+            }
+        } else {
+            b.append(cuentas(total, pago));
         }
         if (enlace != null && !enlace.isBlank()) {
             b.append("\n> Abre el enlace y toca *Acepto* (o *No puedo*)")
@@ -83,6 +101,32 @@ public final class MensajesWhatsApp {
             b.append("\nRuta en el mapa:\n").append(mapa);
         }
         return b.toString().trim();
+    }
+
+    /** Las cuentas de la salida si entrega todas: cobra, gana y entrega (o la tienda le paga). */
+    static String cuentas(int cobra, Salida s) {
+        StringBuilder b = new StringBuilder();
+        int gana = s.gananciaTotal();
+        if (cobra > 0) {
+            b.append("Cobras en las puertas *").append(Tarifa.pesos(cobra)).append("*\n");
+        }
+        if (!s.ganaPorEntrega()) {
+            if (cobra > 0) {
+                b.append("Toda esa plata es de la tienda (tienes sueldo).\n");
+            }
+            return b.toString();
+        }
+        int n = s.entregas.size();
+        String de = s.seQuedaConDomicilios() ? "tus domicilios"
+                : n + (n == 1 ? " entrega × " : " entregas × ") + Tarifa.pesos(s.tarifaRepartidor);
+        b.append("Tu ganancia *").append(Tarifa.pesos(gana)).append("* (").append(de).append(")\n");
+        int neto = cobra - gana;
+        if (neto > 0) {
+            b.append("A la tienda le entregas *").append(Tarifa.pesos(neto)).append("*\n");
+        } else if (neto < 0) {
+            b.append("La tienda te paga *").append(Tarifa.pesos(-neto)).append("*\n");
+        }
+        return b.toString();
     }
 
     /** Para el grupo o los independientes: «Hay domicilio… ¿Quién puede venir?». */

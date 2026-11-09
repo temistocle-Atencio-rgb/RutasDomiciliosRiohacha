@@ -804,19 +804,22 @@ public class PanelSalidas extends JPanel {
         detalle.setForeground(Tema.GRIS_TEXTO);
         detalle.setAlignmentX(LEFT_ALIGNMENT);
         Runnable sumar = () -> {
-            int plata = 0, domicilios = 0;
+            int plata = 0, gana = 0, cuantas = 0;
             for (int i = 0; i < casillas.size(); i++) {
                 if (casillas.get(i).isSelected()) {
                     plata += vistas.get(i).cobrar;
-                    domicilios += vistas.get(i).domicilio;
+                    gana += s.gananciaDe(vistas.get(i));
+                    cuantas++;
                 }
             }
-            if (s.seQuedaConDomicilios()) { // el independiente cobra todo y se queda con los domicilios
-                int neto = plata - domicilios;
-                detalle.setText("Cobró " + Tarifa.pesos(plata) + " · domicilios " + Tarifa.pesos(domicilios) + " (son de él)");
+            if (s.ganaPorEntrega()) { // cobra todo y se queda con lo suyo: sus domicilios o su tarifa por entrega
+                int neto = plata - gana;
+                String de = s.seQuedaConDomicilios() ? "sus domicilios"
+                        : cuantas + (cuantas == 1 ? " entrega × " : " entregas × ") + Tarifa.pesos(s.tarifaRepartidor);
+                detalle.setText("Cobró " + Tarifa.pesos(plata) + " · su ganancia " + Tarifa.pesos(gana) + " (" + de + ")");
                 total.setText(neto >= 0 ? "Le entrega " + Tarifa.pesos(neto) : "Usted le paga " + Tarifa.pesos(-neto));
             } else {
-                detalle.setText("Lo que cobró en las puertas");
+                detalle.setText("Lo que cobró en las puertas (tiene sueldo)");
                 total.setText("Debe traer " + Tarifa.pesos(plata));
             }
         };
@@ -1065,8 +1068,12 @@ public class PanelSalidas extends JPanel {
         boton.setEnabled(false);
         boton.setText("Enviando…");
         List<Salida.Entrega> copia = new ArrayList<>();
+        Salida pago = new Salida(); // cómo se le paga a quien la lleva ahora
+        pago.pagoDe(rep);
         for (Salida.Entrega e : s.entregas) {
-            copia.add(e.copia());
+            Salida.Entrega c = e.copia();
+            c.ganancia = pago.gananciaDe(c);
+            copia.add(c);
         }
         NubeRepartidor.Extra extra = app.extraPara(s);
         String idAntes = rep.idNube;
@@ -1105,7 +1112,7 @@ public class PanelSalidas extends JPanel {
                     get().aplicar(s);
                     s.codigo = codigo;
                     s.repartidor = rep.nombre;
-                    s.tipoRepartidor = rep.tipo.name();
+                    s.pagoDe(rep);
                     s.errorNube = "";
                     s.enviadaEn = LocalDateTime.now();
                     s.avisos.clear();
@@ -1120,7 +1127,7 @@ public class PanelSalidas extends JPanel {
                         }
                     }
                     String msj = rutas.logica.MensajesWhatsApp.salida(app.getNegocio(), s.creada.toLocalTime(), rep.nombre,
-                            s.entregas, NubeRepartidor.enlace(aj.pagina, codigo), "", s.venceEn.toLocalTime());
+                            s, NubeRepartidor.enlace(aj.pagina, codigo), "", s.venceEn.toLocalTime());
                     String cel = rutas.logica.Avisos.numeroWhatsApp(rep.celular).isEmpty() ? "" : rep.celular;
                     try {
                         AbrirWhatsApp.abrir(cel, msj);

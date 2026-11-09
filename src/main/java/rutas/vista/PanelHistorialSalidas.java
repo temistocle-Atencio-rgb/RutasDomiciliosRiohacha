@@ -73,7 +73,7 @@ public class PanelHistorialSalidas extends Tema.Tarjeta {
         public int entregadas;
         public int noEntregadas;
         public int cobro;       // lo que cobró en las puertas
-        public int domicilios;  // domicilios entregados (un independiente se queda con esto)
+        public int domicilios;  // lo que ganó: sus domicilios (independiente) o su tarifa por entrega (fijo)
 
         public boolean seQueda() {
             return tipo.equals("INDEPENDIENTE") || tipo.equals("GRUPO");
@@ -205,7 +205,7 @@ public class PanelHistorialSalidas extends Tema.Tarjeta {
             c.entregadas += s.cuantas(Salida.Entrega.ENTREGADO);
             c.noEntregadas += s.cuantas(Salida.Entrega.NO_ENTREGADO);
             c.cobro += s.plataATraer();
-            c.domicilios += s.domiciliosEntregados();
+            c.domicilios += s.ganancia();
         }
         return m;
     }
@@ -239,9 +239,7 @@ public class PanelHistorialSalidas extends Tema.Tarjeta {
             entregadas += c.entregadas;
             no += c.noEntregadas;
             cobro += c.cobro;
-            if (c.seQueda()) {
-                deEllos += c.domicilios;
-            }
+            deEllos += c.domicilios;
         }
         JLabel l1 = Tema.textoNormal(ver.size() + (ver.size() == 1 ? " salida" : " salidas") + " · "
                 + entregadas + (entregadas == 1 ? " entregada" : " entregadas") + " · "
@@ -253,7 +251,7 @@ public class PanelHistorialSalidas extends Tema.Tarjeta {
         l2.setFont(Tema.texto(13.5f));
         resumen.add(Tema.anchoLibre(l2));
         if (deEllos > 0) {
-            Tema.Parrafo l3 = Tema.parrafo("Domicilios de independientes: " + Tarifa.pesos(deEllos) + " (son de ellos)", 262);
+            Tema.Parrafo l3 = Tema.parrafo("Ganancia de los domiciliarios: " + Tarifa.pesos(deEllos) + " (se quedan con eso)", 262);
             l3.setFont(Tema.texto(13));
             l3.setForeground(Tema.GRIS_TEXTO);
             resumen.add(l3);
@@ -292,8 +290,8 @@ public class PanelHistorialSalidas extends Tema.Tarjeta {
             b.append(" · ").append(c.noEntregadas).append(" no");
         }
         b.append(" · cobró ").append(Tarifa.pesos(c.cobro));
-        if (c.seQueda() && c.domicilios > 0) {
-            b.append(" · domicilios ").append(Tarifa.pesos(c.domicilios)).append(" (de él)");
+        if (c.domicilios > 0) {
+            b.append(" · ganó ").append(Tarifa.pesos(c.domicilios));
         }
         Tema.Parrafo d = Tema.parrafo(b.toString(), 262);
         d.setFont(Tema.texto(13));
@@ -320,8 +318,8 @@ public class PanelHistorialSalidas extends Tema.Tarjeta {
             t.setForeground(Tema.AZUL_PROFUNDO);
             detalle.add(Tema.anchoLibre(t));
             String vuelta = s.cerrada == null ? "" : "Cerrada " + Ruta.FORMATO_HORA.format(s.cerrada);
-            if (s.seQuedaConDomicilios()) {
-                int neto = s.plataATraer() - s.domiciliosEntregados();
+            if (s.ganaPorEntrega()) {
+                int neto = s.debeEntregar();
                 vuelta += (vuelta.isEmpty() ? "" : " · ") + (neto >= 0 ? "le entregó " + Tarifa.pesos(neto)
                         : "se le pagó " + Tarifa.pesos(-neto));
             } else {
