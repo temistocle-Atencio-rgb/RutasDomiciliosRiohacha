@@ -1256,6 +1256,16 @@ public class Aplicacion {
         return ordenes;
     }
 
+    private rutas.logica.BaseGastos gastos;
+
+    /** Gastos de la tienda (en la misma base). */
+    public rutas.logica.BaseGastos getGastos() {
+        if (gastos == null && tienda != null) {
+            gastos = new rutas.logica.BaseGastos(tienda);
+        }
+        return gastos;
+    }
+
     public rutas.logica.Catalogo getCatalogo() { return catalogo; }
 
     public rutas.logica.Sesion getSesion() { return sesion; }

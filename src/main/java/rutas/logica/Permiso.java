@@ -12,6 +12,8 @@ public enum Permiso {
     EDITAR_PRODUCTOS("Editar productos, precios y categorías"),
     /** Registrar y ver compras a proveedores (incluye ver los costos). */
     REGISTRAR_COMPRAS("Registrar compras a proveedores (ve los costos)"),
+    /** Registrar, abonar, anular y ver los gastos de la tienda (arriendo, servicios...). */
+    REGISTRAR_GASTOS("Registrar y ver gastos de la tienda"),
     /** Ver el valor de compra y la ganancia de los productos. */
     VER_COSTOS("Ver costos y ganancias"),
     /** Usuarios y Configuración: solo el administrador. */

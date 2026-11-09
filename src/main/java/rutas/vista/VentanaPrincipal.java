@@ -94,6 +94,9 @@ public class VentanaPrincipal extends JFrame {
         setContentPane(raiz);
 
         app.avisar();
+        Timer fijos = new Timer(2500, e -> avisarGastosFijos());
+        fijos.setRepeats(false);
+        fijos.start();
         // la ventana se ajusta a la pantalla (con la escala de Windows al 125 % la pantalla "mide" menos)
         java.awt.Rectangle util = java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
         setMinimumSize(new Dimension(Math.min(1100, util.width), Math.min(640, util.height)));
@@ -202,6 +205,35 @@ public class VentanaPrincipal extends JFrame {
         // si está vendiendo, el aviso sale igual (sobre la ventana, no solo sobre el mapa)
         JComponent donde = conMapa.isShowing() ? conMapa : (JComponent) getContentPane();
         Aviso.mostrar(donde, tipo, titulo, texto, importante);
+    }
+
+    /** Al abrir: los gastos fijos vencidos o que vencen en los próximos 3 días van a la campana. */
+    private void avisarGastosFijos() {
+        rutas.logica.Sesion sesion = app.getSesion();
+        if (sesion == null || app.getGastos() == null || !sesion.puede(rutas.logica.Permiso.REGISTRAR_GASTOS)) {
+            return;
+        }
+        try {
+            java.time.LocalDate hoy = java.time.LocalDate.now();
+            java.util.List<rutas.logica.BaseGastos.Fijo> l = app.getGastos().fijosPorVencer(hoy, 3);
+            if (l.isEmpty()) {
+                return;
+            }
+            long total = 0;
+            StringBuilder sb = new StringBuilder();
+            for (rutas.logica.BaseGastos.Fijo x : l) {
+                total += x.valor;
+                if (sb.length() < 160) {
+                    sb.append(sb.length() == 0 ? "" : "; ").append(x.descripcion.isEmpty() ? x.categoria : x.descripcion)
+                            .append(" (").append(PanelGastosFijos.cuando(x.diasPara(hoy))).append(")");
+                }
+            }
+            avisar(null, Aviso.Tipo.AVISO, l.size() == 1 ? "Hay 1 gasto fijo por pagar" : "Hay " + l.size()
+                    + " gastos fijos por pagar", sb + " · " + rutas.logica.Tarifa.pesos(total)
+                    + ". Páguelos en Gastos › Gastos fijos.", false);
+        } catch (java.sql.SQLException e) {
+            rutas.logica.Ubicaciones.registrarError(e);
+        }
     }
 
     Notificaciones getNotificaciones() {
@@ -515,6 +547,18 @@ public class VentanaPrincipal extends JFrame {
             agregarCompleta("Proveedores", new PanelProveedores(app));
             pestanas.get(pestanas.size() - 1).grupo = "Compras";
         }
+        if (sesion != null && app.getTienda() != null && sesion.puede(rutas.logica.Permiso.REGISTRAR_GASTOS)) {
+            agregarCompleta("Gastos", new PanelGastos(app));
+            pestanas.get(pestanas.size() - 1).grupo = "Gastos";
+            agregarCompleta("Gastos fijos", new PanelGastosFijos(app));
+            pestanas.get(pestanas.size() - 1).grupo = "Gastos";
+            agregarCompleta("Abonos de gastos", new PanelAbonosGastos(app));
+            pestanas.get(pestanas.size() - 1).grupo = "Gastos";
+            agregarCompleta("Categorías de gastos", new PanelCategoriasGasto(app));
+            pestanas.get(pestanas.size() - 1).grupo = "Gastos";
+            agregarCompleta("Gastos por categoría", new PanelGastosPorCategoria(app));
+            pestanas.get(pestanas.size() - 1).grupo = "Gastos";
+        }
         // Domicilios
         pedidos = new PanelPedidos(app);
         panelNovedades = new PanelNovedades(app);
@@ -824,6 +868,24 @@ public class VentanaPrincipal extends JFrame {
         int i = visibles.indexOf(desde);
         if (i >= 0 && !visibles.isEmpty()) {
             visibles.get((i + paso + visibles.size()) % visibles.size()).requestFocusInWindow();
+        }
+    }
+
+    /** Abre una seccion por su nombre (para los botones dentro de los paneles: Fijos, Abonos, Regresar). */
+    public void irA(String nombre) {
+        for (Pestana p : pestanas) {
+            if (p.nombre.equals(nombre)) {
+                seleccionar(p.indice);
+                return;
+            }
+        }
+    }
+
+    /** La ventana que contiene ese panel y abre la seccion (si la encuentra). */
+    static void irA(java.awt.Component desde, String nombre) {
+        VentanaPrincipal v = (VentanaPrincipal) javax.swing.SwingUtilities.getAncestorOfClass(VentanaPrincipal.class, desde);
+        if (v != null) {
+            v.irA(nombre);
         }
     }
 

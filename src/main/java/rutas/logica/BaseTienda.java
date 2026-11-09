@@ -136,6 +136,7 @@ public class BaseTienda implements AutoCloseable {
             st.execute("CREATE TABLE IF NOT EXISTS en_linea (producto_id INTEGER PRIMARY KEY REFERENCES productos(id))");
             crearTablasCompras(st);
             BaseOrdenes.crearTablas(st); // proveedores y ordenes de compra
+            BaseGastos.crearTablas(st); // gastos, abonos, fijos y sus categorias
             st.execute("CREATE TABLE IF NOT EXISTS config (clave TEXT PRIMARY KEY, valor TEXT NOT NULL)");
             st.execute("CREATE INDEX IF NOT EXISTS idx_lineas_venta ON venta_lineas(venta_id)");
             st.execute("CREATE INDEX IF NOT EXISTS idx_pagos_venta ON venta_pagos(venta_id)");

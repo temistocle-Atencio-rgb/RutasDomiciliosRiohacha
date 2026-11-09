@@ -37,6 +37,7 @@ public class Pruebas {
         PruebasCaja.correr();
         PruebasRepartidor.correr();
         PruebasOrdenes.correr();
+        PruebasGastos.correr();
         PruebasClientes.correr();
         PruebasValidacion.correr();
         PruebasLector.correr();
