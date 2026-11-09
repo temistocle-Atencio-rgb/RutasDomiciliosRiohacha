@@ -464,10 +464,17 @@ public class PanelGastos extends ListaGastos<BaseGastos.Gasto> {
         caja.setSelected(true);
         caja.setAlignmentX(LEFT_ALIGNMENT);
         t.add(caja);
-        JLabel notaCredito = new JLabel("A crédito: queda por pagar y se le hacen abonos desde el detalle.");
-        notaCredito.setFont(Tema.texto(12.5f));
-        notaCredito.setForeground(Tema.GRIS_TEXTO);
+        JPanel notaCredito = new JPanel(new BorderLayout(10, 0));
+        notaCredito.setOpaque(false);
+        Controles.CampoFecha venceCredito = new Controles.CampoFecha("Paga hasta");
+        venceCredito.setFecha(LocalDate.now().plusDays(rutas.logica.BaseCartera.PLAZO));
+        notaCredito.add(apilados("Paga hasta", venceCredito, null, null), BorderLayout.WEST);
+        JLabel txtCredito = new JLabel("<html>Queda en Cuentas por pagar; se abona desde el detalle o desde allá.</html>");
+        txtCredito.setFont(Tema.texto(12.5f));
+        txtCredito.setForeground(Tema.GRIS_TEXTO);
+        notaCredito.add(txtCredito, BorderLayout.CENTER);
         notaCredito.setAlignmentX(LEFT_ALIGNMENT);
+        Tema.anchoCompleto(notaCredito);
         t.add(notaCredito);
         t.add(Tema.espacio(10));
         Runnable ajustar = () -> {
@@ -517,10 +524,18 @@ public class PanelGastos extends ListaGastos<BaseGastos.Gasto> {
                 g.descripcion = desc.getText();
                 g.valor = pesos(valor.getText());
                 g.usuarioId = app.getSesion().getUsuario().getId();
+                if (g.credito) {
+                    g.vence = venceCredito.getFecha();
+                    if (g.vence == null) {
+                        throw new IllegalArgumentException("Escriba hasta cuándo hay que pagarlo (dd/mm/aaaa)");
+                    }
+                }
                 app.getGastos().registrar(g);
                 capa.cerrar();
                 recargar();
-                Aviso.mostrar(this, Aviso.Tipo.BIEN, "Gasto No. " + g.numero + " guardado", Tarifa.pesos(g.valor)
+                String pres = avisoPresupuesto(g.categoriaId, java.time.YearMonth.from(g.fecha));
+                Aviso.mostrar(this, pres != null ? Aviso.Tipo.AVISO : Aviso.Tipo.BIEN, "Gasto No. " + g.numero + " guardado",
+                        pres != null ? pres : Tarifa.pesos(g.valor)
                         + (g.credito ? " a crédito (por pagar)" : g.saleCaja ? " · salió de la caja" : ""));
             } catch (IllegalArgumentException ex) {
                 error.setText(ex.getMessage());
@@ -722,6 +737,21 @@ public class PanelGastos extends ListaGastos<BaseGastos.Gasto> {
         motivo.addActionListener(e -> hacer.run());
         no.addActionListener(e -> capa.cerrar());
         capa.mostrar(motivo);
+    }
+
+    /** Si con este gasto la categoría llega al 80 % o se pasa del presupuesto del mes: el texto del aviso. */
+    private String avisoPresupuesto(long categoriaId, java.time.YearMonth mes) {
+        try {
+            rutas.logica.BaseCartera.Presupuesto p = app.getCartera().deCategoria(categoriaId, mes);
+            if (p == null || p.usado() < 80) {
+                return null;
+            }
+            return "Con este gasto, " + p.categoria + " llega al " + Math.round(p.usado()) + " % del presupuesto ("
+                    + Tarifa.pesos(p.gastado) + " de " + Tarifa.pesos(p.valor) + ")";
+        } catch (java.sql.SQLException e) {
+            Ubicaciones.registrarError(e);
+            return null;
+        }
     }
 
     static LocalDateTime hoy(boolean fin) {

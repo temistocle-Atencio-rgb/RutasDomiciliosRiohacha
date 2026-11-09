@@ -1419,6 +1419,54 @@ public class PanelCompras extends JPanel implements RecibeCodigo {
         t.add(Tema.espacio(10));
         t.add(campoConEtiqueta("Bodega donde entra la mercancía", combo));
         t.add(Tema.espacio(10));
+        // forma de pago: contado (con qué) o crédito (hasta cuándo; el plazo sale del proveedor)
+        JComboBox<String> forma = new JComboBox<>(new String[]{"CONTADO", "CRÉDITO"});
+        Tema.estiloCombo(forma, String::valueOf);
+        forma.getAccessibleContext().setAccessibleName("Forma de pago");
+        JComboBox<Object> metodoCompra = new JComboBox<>();
+        Tema.estiloCombo(metodoCompra, PanelGastos::nombre);
+        metodoCompra.getAccessibleContext().setAccessibleName("Método de pago");
+        try {
+            PanelGastos.llenarMetodos(app, metodoCompra, rutas.modelo.MetodoPago.EFECTIVO);
+        } catch (SQLException ex) {
+            Ubicaciones.registrarError(ex);
+        }
+        Controles.CampoFecha vence = new Controles.CampoFecha("Paga hasta");
+        JPanel filaPago = new JPanel(new java.awt.GridLayout(1, 2, 8, 0));
+        filaPago.setOpaque(false);
+        filaPago.add(campoConEtiqueta("Forma de pago", forma));
+        JPanel conMetodo = (JPanel) campoConEtiqueta("Método de pago", metodoCompra);
+        JPanel conVence = (JPanel) campoConEtiqueta("Paga hasta", vence);
+        java.awt.CardLayout cartas = new java.awt.CardLayout();
+        JPanel segunda = new JPanel(cartas);
+        segunda.setOpaque(false);
+        segunda.add(conMetodo, "CONTADO");
+        segunda.add(conVence, "CRÉDITO");
+        filaPago.add(segunda);
+        filaPago.setAlignmentX(LEFT_ALIGNMENT);
+        t.add(filaPago);
+        t.add(Tema.espacio(10));
+        Runnable plazo = () -> { // el plazo de la forma de pago del proveedor (si no tiene, 30 días)
+            int dias = 0;
+            Object pv = comboProv.getEditor().getItem();
+            try {
+                for (rutas.modelo.Proveedor x : app.getOrdenes().listarProveedores(false)) {
+                    if (pv != null && rutas.modelo.Geo.normalizar(x.nombre).equals(rutas.modelo.Geo.normalizar(String.valueOf(pv)))) {
+                        dias = rutas.logica.BaseCartera.diasDe(x.formaPago);
+                    }
+                }
+            } catch (SQLException ex) {
+                Ubicaciones.registrarError(ex);
+            }
+            vence.setFecha(java.time.LocalDate.now().plusDays(dias > 0 ? dias : rutas.logica.BaseCartera.PLAZO));
+            if (dias > 0) {
+                forma.setSelectedItem("CRÉDITO");
+            }
+        };
+        plazo.run();
+        comboProv.addActionListener(e -> plazo.run());
+        forma.addActionListener(e -> cartas.show(segunda, String.valueOf(forma.getSelectedItem())));
+        cartas.show(segunda, String.valueOf(forma.getSelectedItem()));
         Tema.Parrafo nota = Tema.parrafo("Al guardar, la cantidad se suma al stock de esa bodega y el valor compra"
                 + " queda como costo de cada producto. Si cambió el valor venta, también se actualiza.", 400);
         nota.setFont(Tema.texto(12.5f));
@@ -1448,6 +1496,20 @@ public class PanelCompras extends JPanel implements RecibeCodigo {
             compra.setFactura(factura.getText());
             Bodega b = (Bodega) combo.getSelectedItem();
             compra.setBodegaId(b == null ? Bodega.PUNTO_DE_VENTA : b.getId());
+            boolean credito = "CRÉDITO".equals(forma.getSelectedItem());
+            java.time.LocalDate hasta = vence.getFecha();
+            if (credito && (hasta == null || hasta.isBefore(java.time.LocalDate.now()))) {
+                error.setText("Escriba hasta cuándo hay que pagar (una fecha de hoy en adelante)");
+                return;
+            }
+            if (credito && (elegido == null || String.valueOf(elegido).isBlank())) {
+                error.setText("Para comprar a crédito escoja el proveedor");
+                return;
+            }
+            if (!credito && !(metodoCompra.getSelectedItem() instanceof rutas.modelo.MetodoPago)) {
+                error.setText("Escoja con qué se pagó la compra");
+                return;
+            }
             long numero;
             try {
                 numero = bd.registrarCompra(idEspera, app.getSesion().getUsuario().getId(), compra);
@@ -1458,6 +1520,14 @@ public class PanelCompras extends JPanel implements RecibeCodigo {
                 Ubicaciones.registrarError(ex);
                 error.setText("No se pudo guardar: " + ex.getMessage());
                 return;
+            }
+            String avisoPago = null;
+            try { // contado o crédito (si falla, la compra igual quedó guardada de contado)
+                app.getCartera().formaDePagoCompra(numero, credito,
+                        credito ? null : (rutas.modelo.MetodoPago) metodoCompra.getSelectedItem(), hasta);
+            } catch (RuntimeException | SQLException ex) {
+                Ubicaciones.registrarError(ex);
+                avisoPago = "No se pudo marcar a crédito: quedó de contado (" + ex.getMessage() + ")";
             }
             // ya quedo guardada: la pantalla se limpia de una vez para que no se pueda guardar dos veces
             List<Compra.Linea> guardadas = new ArrayList<>(compra.getLineas());
@@ -1474,8 +1544,10 @@ public class PanelCompras extends JPanel implements RecibeCodigo {
             }
             refrescarProductos();
             String donde = b == null || b.esPuntoDeVenta() ? "" : " en " + b.getNombre();
-            Aviso.mostrar(this, Aviso.Tipo.BIEN, "Compra No. " + Comprobante.numeroTexto(numero) + " guardada",
-                    avisoOrden != null ? avisoOrden : "El stock ya subió" + donde);
+            Aviso.mostrar(this, avisoPago != null ? Aviso.Tipo.AVISO : Aviso.Tipo.BIEN,
+                    "Compra No. " + Comprobante.numeroTexto(numero) + " guardada", avisoPago != null ? avisoPago
+                    : avisoOrden != null ? avisoOrden : "El stock ya subió" + donde
+                    + (credito ? " · a crédito hasta el " + hasta.format(PanelCartera.DIA) : ""));
         });
         no.addActionListener(e -> capa.cerrar());
         capa.mostrar(proveedor);

@@ -52,32 +52,6 @@ public class PanelGastosPorCategoria extends ListaGastos<BaseGastos.Total> {
         consultar();
     }
 
-    private static JLabel numero() {
-        JLabel l = new JLabel("$ 0");
-        l.setFont(Tema.titulo(22));
-        l.setForeground(Tema.AZUL_PROFUNDO);
-        return l;
-    }
-
-    private static JComponent cuadro(String titulo, JLabel valor, String ayuda) {
-        JPanel p = new JPanel();
-        p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
-        p.setBackground(Color.WHITE);
-        p.setBorder(BorderFactory.createCompoundBorder(new Tema.BordeRedondo(Tema.BORDE, Tema.RADIO),
-                BorderFactory.createEmptyBorder(10, 14, 10, 14)));
-        JLabel t = new JLabel(titulo);
-        t.setFont(Tema.textoFuerte(13));
-        t.setForeground(Tema.GRIS_TEXTO);
-        p.add(t);
-        p.add(Box.createVerticalStrut(4));
-        p.add(valor);
-        JLabel a = new JLabel(ayuda);
-        a.setFont(Tema.texto(12));
-        a.setForeground(Tema.GRIS_TEXTO);
-        p.add(a);
-        return p;
-    }
-
     @Override
     protected JComponent filtros() {
         fechaInicial.setFecha(LocalDate.now().withDayOfMonth(1));

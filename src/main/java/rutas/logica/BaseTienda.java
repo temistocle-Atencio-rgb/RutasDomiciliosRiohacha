@@ -137,6 +137,7 @@ public class BaseTienda implements AutoCloseable {
             crearTablasCompras(st);
             BaseOrdenes.crearTablas(st); // proveedores y ordenes de compra
             BaseGastos.crearTablas(st); // gastos, abonos, fijos y sus categorias
+            BaseCartera.crearTablas(st); // fiado, compras a credito, abonos y presupuestos
             st.execute("CREATE TABLE IF NOT EXISTS config (clave TEXT PRIMARY KEY, valor TEXT NOT NULL)");
             st.execute("CREATE INDEX IF NOT EXISTS idx_lineas_venta ON venta_lineas(venta_id)");
             st.execute("CREATE INDEX IF NOT EXISTS idx_pagos_venta ON venta_pagos(venta_id)");
@@ -303,7 +304,7 @@ public class BaseTienda implements AutoCloseable {
         }
     }
 
-    private static boolean tieneColumna(Statement st, String tabla, String columna) throws SQLException {
+    static boolean tieneColumna(Statement st, String tabla, String columna) throws SQLException {
         try (ResultSet rs = st.executeQuery("PRAGMA table_info(" + tabla + ")")) {
             while (rs.next()) {
                 if (columna.equalsIgnoreCase(rs.getString("name"))) {
@@ -907,6 +908,23 @@ public class BaseTienda implements AutoCloseable {
         if (!comprobado.isAlcanza() || r == null || !r.isAlcanza()) {
             throw new IllegalArgumentException("El pago no alcanza");
         }
+        return guardarVenta(idEspera, usuarioId, cliente, c, pagos, comprobado, null);
+    }
+
+    /**
+     * Venta fiada: queda cobrada (sale del stock y tiene número) pero sin pagos; lo que debe el cliente
+     * queda en Cuentas por cobrar hasta que lo abone. Todo en la misma transacción.
+     */
+    public long cobrarFiado(Long idEspera, long usuarioId, Carrito c, BaseCartera.Fiado f) throws SQLException {
+        if (c.estaVacio()) {
+            throw new IllegalArgumentException("La venta no tiene productos");
+        }
+        BaseCartera.validarFiado(f, c.getTotal(), java.time.LocalDate.now());
+        return guardarVenta(idEspera, usuarioId, f.cliente, c, new ArrayList<>(), Cobro.calcular(0, new ArrayList<>()), f);
+    }
+
+    private long guardarVenta(Long idEspera, long usuarioId, String cliente, Carrito c, List<Pago> pagos,
+            Cobro.Resultado comprobado, BaseCartera.Fiado fiado) throws SQLException {
         try {
             return enTransaccion(() -> {
                 long numero = siguienteNumero();
@@ -953,6 +971,9 @@ public class BaseTienda implements AutoCloseable {
                 }
                 guardarLineas(ventaId, c);
                 guardarPagos(ventaId, pagos, comprobado.getVueltas());
+                if (fiado != null) {
+                    BaseCartera.guardarFiado(con, ventaId, c.getTotal(), fiado);
+                }
                 bajarStock(c);
                 return numero;
             });

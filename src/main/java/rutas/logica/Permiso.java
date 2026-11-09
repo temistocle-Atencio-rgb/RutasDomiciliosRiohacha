@@ -14,7 +14,9 @@ public enum Permiso {
     REGISTRAR_COMPRAS("Registrar compras a proveedores (ve los costos)"),
     /** Registrar, abonar, anular y ver los gastos de la tienda (arriendo, servicios...). */
     REGISTRAR_GASTOS("Registrar y ver gastos de la tienda"),
-    /** Ver el valor de compra y la ganancia de los productos. */
+    /** Cuentas por cobrar (fiado) y por pagar, abonos y flujo de efectivo. */
+    VER_CARTERA("Cuentas por cobrar y por pagar, y flujo de efectivo"),
+        /** Ver el valor de compra y la ganancia de los productos. */
     VER_COSTOS("Ver costos y ganancias"),
     /** Usuarios y Configuración: solo el administrador. */
     ADMIN_USUARIOS(null);

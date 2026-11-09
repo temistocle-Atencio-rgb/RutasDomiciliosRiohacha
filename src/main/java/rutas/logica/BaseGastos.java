@@ -100,6 +100,7 @@ public class BaseGastos {
         public long fijoId;                 // vino de un gasto fijo
         public long abonado;                // lo abonado (crédito)
         public long abonadoCaja;            // de lo abonado, lo que salió de la caja
+        public LocalDate vence;             // crédito: hasta cuándo hay plazo (sin fecha = 30 días)
 
         /** Lo que falta por pagar (0 en contado). */
         public long saldo() {
@@ -351,6 +352,16 @@ public class BaseGastos {
                     g.id = k.getLong(1);
                 }
             }
+            if (g.credito) {
+                if (g.vence == null) {
+                    g.vence = g.fecha.toLocalDate().plusDays(BaseCartera.PLAZO);
+                }
+                try (PreparedStatement ps = con.prepareStatement("UPDATE gastos SET vence = ? WHERE id = ?")) {
+                    ps.setString(1, g.vence.toString());
+                    ps.setLong(2, g.id);
+                    ps.executeUpdate();
+                }
+            }
             con.commit();
             g.numero = numero;
             g.saleCaja = !g.credito && g.metodo == MetodoPago.EFECTIVO && g.saleCaja;
@@ -384,6 +395,9 @@ public class BaseGastos {
         if (g.usuarioId <= 0) {
             throw new IllegalArgumentException("No hay un usuario con la sesión abierta");
         }
+        if (g.credito && g.vence != null && g.vence.isBefore(g.fecha.toLocalDate())) {
+            throw new IllegalArgumentException("La fecha para pagar es antes de la fecha del gasto");
+        }
     }
 
     /** Filtros del historial (null o 0 = todos). */
@@ -401,8 +415,8 @@ public class BaseGastos {
             + " COALESCE(g.proveedor_id, 0), CASE WHEN p.nombre IS NOT NULL THEN p.nombre ELSE g.proveedor END,"
             + " g.descripcion, g.valor, g.credito, g.metodo, g.sale_caja, g.usuario_id, u.nombre, g.anulado, g.motivo,"
             + " COALESCE(g.fijo_id, 0),"
-            + " (SELECT COALESCE(SUM(a.valor), 0) FROM gasto_abonos a WHERE a.gasto_id = g.id),"
-            + " (SELECT COALESCE(SUM(a.valor), 0) FROM gasto_abonos a WHERE a.gasto_id = g.id AND a.sale_caja = 1)"
+            + " (SELECT COALESCE(SUM(a.valor), 0) FROM gasto_abonos a WHERE a.gasto_id = g.id AND a.anulado = 0),"
+            + " (SELECT COALESCE(SUM(a.valor), 0) FROM gasto_abonos a WHERE a.gasto_id = g.id AND a.sale_caja = 1 AND a.anulado = 0)"
             + " FROM gastos g JOIN gasto_categorias c ON c.id = g.categoria_id"
             + " LEFT JOIN proveedores p ON p.id = g.proveedor_id JOIN usuarios u ON u.id = g.usuario_id";
 
@@ -565,7 +579,7 @@ public class BaseGastos {
         StringBuilder sql = new StringBuilder("SELECT a.id, a.gasto_id, g.numero, a.fecha, a.valor, a.metodo, a.sale_caja,"
                 + " g.descripcion, CASE WHEN p.nombre IS NOT NULL THEN p.nombre ELSE g.proveedor END, u.nombre"
                 + " FROM gasto_abonos a JOIN gastos g ON g.id = a.gasto_id LEFT JOIN proveedores p ON p.id = g.proveedor_id"
-                + " JOIN usuarios u ON u.id = a.usuario_id WHERE g.anulado = 0 AND a.fecha >= ? AND a.fecha <= ?");
+                + " JOIN usuarios u ON u.id = a.usuario_id WHERE g.anulado = 0 AND a.anulado = 0 AND a.fecha >= ? AND a.fecha <= ?");
         List<Object> p = new ArrayList<>();
         p.add(desde.withNano(0).toString());
         p.add(hasta.withSecond(59).withNano(0).toString());
@@ -611,7 +625,7 @@ public class BaseGastos {
     public List<Abono> abonosDe(long gastoId) throws SQLException {
         List<Abono> l = new ArrayList<>();
         try (PreparedStatement ps = con.prepareStatement("SELECT a.id, a.fecha, a.valor, a.metodo, a.sale_caja, u.nombre"
-                + " FROM gasto_abonos a JOIN usuarios u ON u.id = a.usuario_id WHERE a.gasto_id = ? ORDER BY a.id")) {
+                + " FROM gasto_abonos a JOIN usuarios u ON u.id = a.usuario_id WHERE a.gasto_id = ? AND a.anulado = 0 ORDER BY a.id")) {
             ps.setLong(1, gastoId);
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
@@ -878,7 +892,7 @@ public class BaseGastos {
         try (PreparedStatement ps = con.prepareStatement("SELECT"
                 + " (SELECT COALESCE(SUM(valor), 0) FROM gastos WHERE anulado = 0 AND sale_caja = 1 AND fecha >= ? AND fecha <= ?)"
                 + " + (SELECT COALESCE(SUM(a.valor), 0) FROM gasto_abonos a JOIN gastos g ON g.id = a.gasto_id"
-                + "    WHERE g.anulado = 0 AND a.sale_caja = 1 AND a.fecha >= ? AND a.fecha <= ?)")) {
+                + "    WHERE g.anulado = 0 AND a.anulado = 0 AND a.sale_caja = 1 AND a.fecha >= ? AND a.fecha <= ?)")) {
             ps.setString(1, d);
             ps.setString(2, h);
             ps.setString(3, d);

@@ -1276,6 +1276,16 @@ public class Aplicacion {
         return gastos;
     }
 
+    private rutas.logica.BaseCartera cartera;
+
+    /** Fiado, compras a crédito, abonos, presupuesto y flujo de efectivo (en la misma base). */
+    public rutas.logica.BaseCartera getCartera() {
+        if (cartera == null && tienda != null) {
+            cartera = new rutas.logica.BaseCartera(tienda);
+        }
+        return cartera;
+    }
+
     public rutas.logica.Catalogo getCatalogo() { return catalogo; }
 
     public rutas.logica.Sesion getSesion() { return sesion; }

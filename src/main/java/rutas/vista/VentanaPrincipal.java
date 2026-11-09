@@ -94,7 +94,10 @@ public class VentanaPrincipal extends JFrame {
         setContentPane(raiz);
 
         app.avisar();
-        Timer fijos = new Timer(2500, e -> avisarGastosFijos());
+        Timer fijos = new Timer(2500, e -> {
+            avisarGastosFijos();
+            avisarPresupuesto();
+        });
         fijos.setRepeats(false);
         fijos.start();
         // la ventana se ajusta a la pantalla (con la escala de Windows al 125 % la pantalla "mide" menos)
@@ -231,6 +234,28 @@ public class VentanaPrincipal extends JFrame {
             avisar(null, Aviso.Tipo.AVISO, l.size() == 1 ? "Hay 1 gasto fijo por pagar" : "Hay " + l.size()
                     + " gastos fijos por pagar", sb + " · " + rutas.logica.Tarifa.pesos(total)
                     + ". Páguelos en Gastos › Gastos fijos.", false);
+        } catch (java.sql.SQLException e) {
+            rutas.logica.Ubicaciones.registrarError(e);
+        }
+    }
+
+    /** Al abrir: las categorías que ya se pasaron del presupuesto del mes van a la campana. */
+    private void avisarPresupuesto() {
+        rutas.logica.Sesion sesion = app.getSesion();
+        if (sesion == null || app.getCartera() == null || !sesion.puede(rutas.logica.Permiso.REGISTRAR_GASTOS)) {
+            return;
+        }
+        try {
+            java.util.List<String> pasadas = new java.util.ArrayList<>();
+            for (rutas.logica.BaseCartera.Presupuesto p : app.getCartera().presupuesto(java.time.YearMonth.now())) {
+                if (p.valor > 0 && p.usado() > 100) {
+                    pasadas.add(p.categoria + " (" + Math.round(p.usado()) + " %)");
+                }
+            }
+            if (!pasadas.isEmpty()) {
+                avisar(null, Aviso.Tipo.AVISO, "Gastos pasados del presupuesto", String.join(", ", pasadas)
+                        + ". Mírelo en Gastos › Presupuesto.", false);
+            }
         } catch (java.sql.SQLException e) {
             rutas.logica.Ubicaciones.registrarError(e);
         }
@@ -558,6 +583,16 @@ public class VentanaPrincipal extends JFrame {
             pestanas.get(pestanas.size() - 1).grupo = "Gastos";
             agregarCompleta("Gastos por categoría", new PanelGastosPorCategoria(app));
             pestanas.get(pestanas.size() - 1).grupo = "Gastos";
+            agregarCompleta("Presupuesto", new PanelPresupuestos(app));
+            pestanas.get(pestanas.size() - 1).grupo = "Gastos";
+        }
+        if (sesion != null && app.getTienda() != null && sesion.puede(rutas.logica.Permiso.VER_CARTERA)) {
+            agregarCompleta("Cuentas por cobrar", new PanelCartera(app, true));
+            pestanas.get(pestanas.size() - 1).grupo = "Cuentas";
+            agregarCompleta("Cuentas por pagar", new PanelCartera(app, false));
+            pestanas.get(pestanas.size() - 1).grupo = "Cuentas";
+            agregarCompleta("Flujo de efectivo", new PanelFlujo(app));
+            pestanas.get(pestanas.size() - 1).grupo = "Cuentas";
         }
         // Domicilios
         pedidos = new PanelPedidos(app);

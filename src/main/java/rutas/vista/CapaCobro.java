@@ -48,6 +48,11 @@ import rutas.modelo.Pago;
 final class CapaCobro {
 
     private static final String COMBINADO = "Combinado";
+    private static final String FIADO = "FIADO";
+    /** Hasta cuándo paga lo fiado (por defecto en 30 días). */
+    private final Controles.CampoFecha venceFiado = new Controles.CampoFecha("Paga hasta");
+    private final JLabel infoFiado = new JLabel(" ");
+    private rutas.logica.BaseCartera.Fiado fiado; // listo para guardar cuando el modo es FIADO
     private static final long[] BILLETES = {500, 1000, 2000, 5000, 10_000, 20_000, 50_000, 100_000};
 
     private final JComponent dentroDe;
@@ -495,7 +500,7 @@ final class CapaCobro {
         p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
         p.add(etiqueta("Método de pago"));
         // solo los medios que acepta la tienda (Configuración › Medios de pago)
-        int botones = activos.size() + (activos.size() > 1 ? 1 : 0);
+        int botones = activos.size() + (activos.size() > 1 ? 1 : 0) + 1; // + Fiado
         int columnas = Math.min(4, botones);
         int filas = (botones + columnas - 1) / columnas;
         JPanel metodos = new JPanel(new GridLayout(filas, columnas, 6, 6));
@@ -508,6 +513,7 @@ final class CapaCobro {
         if (activos.size() > 1) { // combinado necesita al menos dos medios
             metodos.add(botonMetodo(COMBINADO, COMBINADO));
         }
+        metodos.add(botonMetodo("Fiado", FIADO)); // queda en Cuentas por cobrar
         metodosPanel = metodos;
         filasMetodos = filas;
         compactoBase = compacto;
@@ -521,6 +527,7 @@ final class CapaCobro {
         cuerpo.add(cuerpoEfectivo(), MetodoPago.EFECTIVO.name());
         cuerpo.add(cuerpoOtro(), "OTRO");
         cuerpo.add(cuerpoCombinado(), COMBINADO);
+        cuerpo.add(cuerpoFiado(), FIADO);
         p.add(cuerpo);
         p.add(hueco(8));
         resultado.setFont(Tema.titulo(Tema.LETRA_CIFRA_MEDIA));
@@ -634,7 +641,8 @@ final class CapaCobro {
         b.setFont(Tema.textoFuerte(compacto ? 12.5f : 13.5f));
         b.setBorder(compacto ? BorderFactory.createEmptyBorder(5, 4, 4, 4)
                 : BorderFactory.createEmptyBorder(8, 6, 7, 6)); // "Transferencia" cabe completo
-        b.setToolTipText(COMBINADO.equals(clave) ? "Pagar con dos medios" : MetodoPago.valueOf(clave).getDetalle());
+        b.setToolTipText(COMBINADO.equals(clave) ? "Pagar con dos medios" : FIADO.equals(clave)
+                ? "Fiar al cliente escogido: queda en Cuentas por cobrar" : MetodoPago.valueOf(clave).getDetalle());
         // logo de la forma de pago encima del nombre
         b.setIcon(new LogoPago("/imagenes/pagos/" + clave.toLowerCase() + ".png", compacto ? 22 : 30));
         b.setVerticalTextPosition(javax.swing.SwingConstants.BOTTOM);
@@ -658,6 +666,11 @@ final class CapaCobro {
         } else if (clave.equals(COMBINADO)) {
             cuerpos.show(cuerpo, COMBINADO);
             valor1.requestFocusInWindow();
+        } else if (clave.equals(FIADO)) {
+            cuerpos.show(cuerpo, FIADO);
+            if (elegido == null) {
+                cliente.requestFocusInWindow();
+            }
         } else {
             cuerpos.show(cuerpo, "OTRO");
             valorOtro.setText(Tarifa.pesos(total).replace("$", ""));
@@ -731,6 +744,25 @@ final class CapaCobro {
         p.add(Tema.espacio(6));
         Tema.Parrafo nota = Tema.parrafo("Revise en el celular que el pago sí llegó antes de cobrar.", 560);
         p.add(nota);
+        return p;
+    }
+
+    /** Fiado: a quién (el cliente escogido a la izquierda), hasta cuándo paga y cuánto debe ya. */
+    private JComponent cuerpoFiado() {
+        JPanel p = new JPanel();
+        p.setOpaque(false);
+        p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
+        p.add(Tema.etiqueta("Paga hasta"));
+        venceFiado.setFecha(java.time.LocalDate.now().plusDays(rutas.logica.BaseCartera.PLAZO));
+        venceFiado.setAlignmentX(Component.LEFT_ALIGNMENT);
+        venceFiado.setMaximumSize(new Dimension(220, venceFiado.getPreferredSize().height));
+        venceFiado.setAlCambiar(this::calcular);
+        p.add(venceFiado);
+        p.add(Tema.espacio(6));
+        infoFiado.setFont(Tema.texto(13));
+        infoFiado.setForeground(Tema.GRIS_TEXTO);
+        infoFiado.setAlignmentX(Component.LEFT_ALIGNMENT);
+        p.add(infoFiado);
         return p;
     }
 
@@ -808,6 +840,8 @@ final class CapaCobro {
         } else if (modo.equals(COMBINADO)) {
             l.add(new Pago((MetodoPago) metodo1.getSelectedItem(), leer(valor1)));
             l.add(new Pago((MetodoPago) metodo2.getSelectedItem(), leer(valor2)));
+        } else if (modo.equals(FIADO)) {
+            return l; // no entra plata: queda por cobrar
         } else {
             l.add(new Pago(MetodoPago.valueOf(modo), leer(valorOtro)));
         }
@@ -825,7 +859,58 @@ final class CapaCobro {
         }
     }
 
+    /** Fiado: necesita cliente guardado, fecha y que no se pase del cupo. */
+    private void calcularFiado() {
+        fiado = null;
+        String error = null;
+        if (domicilio) {
+            error = "El fiado es para ventas en la tienda (el domicilio se cobra al entregar)";
+        } else if (elegido == null) {
+            error = "Escoja o cree el cliente a la izquierda para fiarle";
+        } else {
+            rutas.logica.BaseCartera.Fiado f = new rutas.logica.BaseCartera.Fiado();
+            f.cliente = elegido.getNombre();
+            f.documento = elegido.getDocumento();
+            f.celular = elegido.getTelefono();
+            f.cupo = elegido.getCreditoMaximo();
+            f.vence = venceFiado.fechaSiEsValida();
+            try {
+                f.debeAntes = app.getCartera() == null ? 0 : app.getCartera().debe(f.cliente);
+                if (f.vence == null) {
+                    throw new IllegalArgumentException("Escriba hasta cuándo paga (dd/mm/aaaa)");
+                }
+                rutas.logica.BaseCartera.validarFiado(f, total, java.time.LocalDate.now());
+                fiado = f;
+            } catch (IllegalArgumentException e) {
+                error = e.getMessage();
+            } catch (java.sql.SQLException e) {
+                rutas.logica.Ubicaciones.registrarError(e);
+                error = "No se pudo revisar lo que debe: " + e.getMessage();
+            }
+            infoFiado.setText(f.debeAntes > 0 ? "Ya debe " + Tarifa.pesos(f.debeAntes)
+                    + (f.cupo > 0 ? " · cupo " + Tarifa.pesos(f.cupo) : " · sin tope de fiado")
+                    : f.cupo > 0 ? "No debe nada · cupo " + Tarifa.pesos(f.cupo) : "No debe nada · sin tope de fiado");
+        }
+        if (error != null) {
+            cuenta = Cobro.calcular(total, new ArrayList<>());
+            resultado.setForeground(Tema.ERROR_TEXTO);
+            resultado.setFont(Tema.textoFuerte(14));
+            resultado.setText(error);
+            cobrar.setEnabled(false);
+        } else {
+            cuenta = Cobro.calcular(0, new ArrayList<>());
+            resultado.setForeground(Tema.AVISO_TEXTO);
+            resultado.setFont(Tema.titulo(Tema.LETRA_CIFRA_MEDIA));
+            resultado.setText("Queda debiendo " + Tarifa.pesos(total));
+            cobrar.setEnabled(true);
+        }
+    }
+
     private void calcularNormal() {
+        if (modo.equals(FIADO)) {
+            calcularFiado();
+            return;
+        }
         String error = null;
         for (JTextField f : campoActivos()) {
             if (error == null) {
@@ -860,6 +945,9 @@ final class CapaCobro {
         if (modo.equals(COMBINADO)) {
             return new JTextField[]{valor1, valor2};
         }
+        if (modo.equals(FIADO)) {
+            return new JTextField[0];
+        }
         return new JTextField[]{valorOtro};
     }
 
@@ -869,6 +957,9 @@ final class CapaCobro {
             return;
         }
         elegido = null;
+        if (FIADO.equals(modo)) {
+            javax.swing.SwingUtilities.invokeLater(this::calcular); // ya no hay cliente escogido para fiarle
+        }
         sugerencias.clear();
         String t = cliente.getText().trim();
         if (t.length() >= 2) {
@@ -918,6 +1009,9 @@ final class CapaCobro {
 
     /** Debajo del buscador: documento, celular y tope de fiado del cliente escogido. */
     private void mostrarElegido() {
+        if (FIADO.equals(modo)) {
+            javax.swing.SwingUtilities.invokeLater(this::calcular); // el fiado depende del cliente escogido
+        }
         if (elegido == null) {
             lblCliente.setText(" ");
             return;
@@ -1450,8 +1544,16 @@ final class CapaCobro {
         String nombreCliente = cliente.getText().trim();
         long numero;
         try {
-            numero = app.getTienda().cobrar(idEspera, app.getSesion().getUsuario().getId(), nombreCliente,
-                    carrito, pagos, cuenta);
+            if (modo.equals(FIADO)) {
+                if (fiado == null) {
+                    return;
+                }
+                numero = app.getTienda().cobrarFiado(idEspera, app.getSesion().getUsuario().getId(), carrito, fiado);
+                nombreCliente = fiado.cliente;
+            } else {
+                numero = app.getTienda().cobrar(idEspera, app.getSesion().getUsuario().getId(), nombreCliente,
+                        carrito, pagos, cuenta);
+            }
         } catch (Exception e) {
             rutas.logica.Ubicaciones.registrarError(e);
             calcular();
@@ -1544,6 +1646,11 @@ final class CapaCobro {
             izq.add(centrado(Tarifa.pesos(comp.vueltas), Tema.titulo(Tema.LETRA_CIFRA), Tema.EXITO_TEXTO));
             izq.add(centrado("Total " + Tarifa.pesos(comp.total) + "  ·  recibió " + Tarifa.pesos(comp.recibido),
                     Tema.texto(13), Tema.GRIS_TEXTO));
+        } else if (modo.equals(FIADO) && fiado != null) { // fiado: lo importante es lo que queda debiendo
+            izq.add(centrado("Quedó fiado", Tema.texto(13), Tema.GRIS_TEXTO));
+            izq.add(centrado(Tarifa.pesos(comp.total), Tema.titulo(Tema.LETRA_CIFRA), Tema.AVISO_TEXTO));
+            izq.add(centrado("Paga hasta el " + fiado.vence.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"))
+                    + "  ·  en Cuentas por cobrar", Tema.texto(13), Tema.GRIS_TEXTO));
         } else {
             izq.add(centrado("Total", Tema.texto(13), Tema.GRIS_TEXTO));
             izq.add(centrado(Tarifa.pesos(comp.total), Tema.titulo(Tema.LETRA_CIFRA), Tema.GRIS_OSCURO));
