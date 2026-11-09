@@ -1040,26 +1040,36 @@ public class Aplicacion {
      * "" si no está guardado en la lista o no se pudo crear (la salida sale igual, sin enlace personal).
      * Cambia el objeto d: después, en el hilo de la pantalla, se guarda con {@link #guardarDomiciliario}.
      */
-    static String repartidorEnNube(NubeRepartidor nube, rutas.modelo.Domiciliario d) {
+    /**
+     * El id del repartidor en Supabase (lo crea si no esta). Si falla, NO se sigue con un id vacio: una
+     * salida sin dueño no la puede abrir nadie (la pagina pide la cuenta del repartidor y dice «es de
+     * otro repartidor»). Asi la tienda ve el error y la vuelve a mandar.
+     */
+    static String repartidorEnNube(NubeRepartidor nube, rutas.modelo.Domiciliario d) throws IOException {
         if (d == null || d.id == 0) {
-            return "";
+            throw new IOException("ese domiciliario no está guardado en Configuración › Domiciliarios");
         }
-        try {
-            if (d.enNube()) {
-                if (nube.existeRepartidor(d.idNube)) {
-                    return d.idNube;
-                }
-                d.idNube = ""; // lo borraron en Supabase: se crea otra vez con enlace nuevo
-                d.enlace = "";
+        if (d.enNube()) {
+            boolean existe;
+            try {
+                existe = nube.existeRepartidor(d.idNube);
+            } catch (IOException e) {
+                Ubicaciones.registrarError(e);
+                return d.idNube; // no se pudo revisar (internet lento): se usa el que ya tenia
             }
-            String[] r = nube.crearRepartidor(d.nombre, d.celular);
-            d.idNube = r[0];
-            d.enlace = r[1];
-            return d.idNube;
-        } catch (IOException e) {
-            Ubicaciones.registrarError(e);
-            return "";
+            if (existe) {
+                return d.idNube;
+            }
+            d.idNube = ""; // lo borraron en Supabase: se crea otra vez con enlace nuevo
+            d.enlace = "";
         }
+        String[] r = nube.crearRepartidor(d.nombre, d.celular);
+        if (r == null || r.length == 0 || r[0] == null || r[0].isEmpty()) {
+            throw new IOException("no se pudo crear la cuenta del domiciliario en internet");
+        }
+        d.idNube = r[0];
+        d.enlace = r.length > 1 ? r[1] : "";
+        return d.idNube;
     }
 
     /** Pide una revision ya (por ejemplo despues de marcar o agregar algo); null si no hay ventana. */
