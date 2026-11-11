@@ -412,6 +412,52 @@ public class BaseTienda implements AutoCloseable {
         }
     }
 
+    /**
+     * El dueño: el primer administrador que se creó (el que instaló el programa). Nadie más le puede
+     * cambiar la contraseña ni desactivarlo. 0 si no hay administradores.
+     */
+    public long idDueno() throws SQLException {
+        try (Statement st = con.createStatement();
+             ResultSet rs = st.executeQuery("SELECT MIN(id) FROM usuarios WHERE rol = 'ADMIN'")) {
+            return rs.next() ? rs.getLong(1) : 0;
+        }
+    }
+
+    /**
+     * Quién puede tocar la cuenta de quién: cada uno la suya; un administrador a los cajeros; y solo
+     * el dueño a los demás administradores. Al dueño solo lo toca él mismo.
+     */
+    public void revisarQuienPuede(long quien, long a) throws SQLException {
+        if (quien == a) {
+            return;
+        }
+        if (!esAdmin(quien)) {
+            throw new IllegalStateException("Solo un administrador puede cambiar otras cuentas");
+        }
+        long dueno = idDueno();
+        if (a == dueno) {
+            throw new IllegalStateException("Es la cuenta del dueño: solo él la puede cambiar");
+        }
+        if (esAdmin(a) && quien != dueno) {
+            throw new IllegalStateException("Solo el dueño puede cambiar la contraseña o desactivar a otro administrador");
+        }
+    }
+
+    /** Cambiar la contraseña de otro (revisa que quien lo hace pueda). */
+    public void cambiarClave(long quien, long id, char[] clave) throws SQLException {
+        revisarQuienPuede(quien, id);
+        cambiarClave(id, clave);
+    }
+
+    /** Activar o desactivar a otro (revisa que quien lo hace pueda; nadie se desactiva a sí mismo). */
+    public void cambiarActivo(long quien, long id, boolean activo) throws SQLException {
+        if (quien == id && !activo) {
+            throw new IllegalStateException("No puede desactivar su propio usuario");
+        }
+        revisarQuienPuede(quien, id);
+        cambiarActivo(id, activo);
+    }
+
     public void cambiarActivo(long id, boolean activo) throws SQLException {
         if (!activo && esAdmin(id)) {
             try (PreparedStatement ps = con.prepareStatement(

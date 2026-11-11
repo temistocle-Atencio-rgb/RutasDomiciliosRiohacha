@@ -115,7 +115,14 @@ public class PanelUsuarios extends JPanel {
         return app.getSesion().getUsuario().getId();
     }
 
+    private long dueno; // el primer administrador: nadie más toca su cuenta
+
     private void refrescar() {
+        try {
+            dueno = bd.idDueno();
+        } catch (SQLException e) {
+            dueno = 0;
+        }
         Usuario sel = lista.getSelectedValue();
         modelo.clear();
         try {
@@ -133,10 +140,22 @@ public class PanelUsuarios extends JPanel {
 
     private void actualizarBotones() {
         Usuario u = lista.getSelectedValue();
-        btnClave.setEnabled(u != null);
-        btnActivo.setEnabled(u != null && u.getId() != miId());
+        String noPuede = null; // por qué no se puede tocar esa cuenta (el dueño la protege)
+        if (u != null && u.getId() != miId()) {
+            try {
+                bd.revisarQuienPuede(miId(), u.getId());
+            } catch (IllegalStateException | SQLException e) {
+                noPuede = e.getMessage();
+            }
+        }
+        btnClave.setEnabled(u != null && noPuede == null);
+        btnClave.setToolTipText(noPuede);
+        btnActivo.setEnabled(u != null && u.getId() != miId() && noPuede == null);
         btnActivo.setText(u != null && !u.isActivo() ? "Activar" : "Desactivar");
-        btnActivo.setToolTipText(u != null && u.getId() == miId() ? "Es su propio usuario" : null);
+        btnActivo.setToolTipText(u != null && u.getId() == miId() ? "Es su propio usuario" : noPuede);
+        if (noPuede != null) {
+            decir(lblLista, noPuede, false);
+        }
         mostrarPermisos(u);
     }
 
@@ -263,7 +282,7 @@ public class PanelUsuarios extends JPanel {
                 decir(lblLista, "Las contraseñas no coinciden", false);
                 return;
             }
-            bd.cambiarClave(u.getId(), c1);
+            bd.cambiarClave(miId(), u.getId(), c1);
             decir(lblLista, "Contraseña de " + u.getNombre() + " cambiada", true);
         } catch (IllegalArgumentException e) {
             decir(lblLista, e.getMessage(), false);
@@ -281,7 +300,7 @@ public class PanelUsuarios extends JPanel {
             return;
         }
         try {
-            bd.cambiarActivo(u.getId(), !u.isActivo());
+            bd.cambiarActivo(miId(), u.getId(), !u.isActivo());
             decir(lblLista, u.getNombre() + (u.isActivo() ? " ya no puede entrar" : " puede entrar de nuevo"), true);
             refrescar();
         } catch (IllegalStateException e) {
@@ -303,6 +322,7 @@ public class PanelUsuarios extends JPanel {
             }
             String detalle = "Usuario «" + u.getUsuario() + "» · " + u.getRol().getTexto()
                     + (u.getRol() == Rol.CAJERO && extra > 0 ? " · " + extra + (extra == 1 ? " permiso más" : " permisos más") : "")
+                    + (u.getId() == dueno ? " · Dueño" : "")
                     + (u.isActivo() ? "" : " · Desactivado") + (u.getId() == miId() ? " · Usted" : "");
             return Tema.celda(list, u.getNombre(), Tema.textoFuerte(14),
                     u.isActivo() ? Tema.GRIS_OSCURO : Tema.GRIS_TEXTO, detalle, sel, Color.WHITE);

@@ -26,6 +26,7 @@ public class PruebasCartera {
         System.out.println("--- Cartera, presupuesto y flujo de efectivo ---");
         probarSinBase();
         probarTodo();
+        probarDueno();
     }
 
     interface Accion {
@@ -58,6 +59,28 @@ public class PruebasCartera {
         BaseCartera.Fiado sin = new BaseCartera.Fiado();
         sin.vence = LocalDate.now();
         revisar("fiado: sin cliente se rechaza", lanza("cliente", () -> BaseCartera.validarFiado(sin, 1000, LocalDate.now())));
+    }
+
+    /** Usuarios: al dueño (primer administrador) nadie más lo desactiva ni le cambia la clave. */
+    private static void probarDueno() throws Exception {
+        try (BaseTienda bd = PruebasCaja.baseTemporal()) {
+            long dueno = bd.crearUsuario("teatencio", "Temistocle", Rol.ADMIN, "clave123".toCharArray()).getId();
+            long luis = bd.crearUsuario("luis2", "Luis", Rol.ADMIN, "clave123".toCharArray()).getId();
+            long caja = bd.crearUsuario("caleb", "Caleb", Rol.CAJERO, "clave123".toCharArray()).getId();
+            revisar("dueño: es el primer administrador", bd.idDueno() == dueno);
+            revisar("dueño: otro administrador no lo puede desactivar",
+                    lanza("dueño", () -> bd.cambiarActivo(luis, dueno, false)));
+            revisar("dueño: otro administrador no le puede cambiar la contraseña",
+                    lanza("dueño", () -> bd.cambiarClave(luis, dueno, "otraclave".toCharArray())));
+            revisar("un administrador sí maneja a los cajeros", !lanza("", () -> bd.cambiarActivo(luis, caja, false)));
+            revisar("un administrador no toca a otro administrador (solo el dueño)",
+                    lanza("Solo el dueño", () -> bd.cambiarClave(luis, bd.crearUsuario("ana", "Ana", Rol.ADMIN,
+                            "clave123".toCharArray()).getId(), "otraclave".toCharArray())));
+            revisar("el dueño sí puede desactivar a otro administrador", !lanza("", () -> bd.cambiarActivo(dueno, luis, false)));
+            revisar("el dueño cambia su propia clave", !lanza("", () -> bd.cambiarClave(dueno, dueno, "nueva123".toCharArray())));
+            revisar("nadie se desactiva a sí mismo", lanza("propio", () -> bd.cambiarActivo(dueno, dueno, false)));
+            revisar("un cajero no cambia otras cuentas", lanza("administrador", () -> bd.cambiarActivo(caja, luis, true)));
+        }
     }
 
     private static List<Pago> pago(MetodoPago m, long v) {
