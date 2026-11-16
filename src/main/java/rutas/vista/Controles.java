@@ -48,6 +48,9 @@ final class Controles {
 
     /** Interruptor redondo con su pregunta al lado. Encendido en azul. */
     static class Interruptor extends JToggleButton {
+        private static final int ANCHO = 38;
+        private static final int ALTO = 22;
+
         Interruptor(String texto) {
             super(texto);
             setFont(Tema.textoFuerte(13));
@@ -58,7 +61,23 @@ final class Controles {
             setOpaque(false);
             setHorizontalAlignment(LEFT);
             setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-            setBorder(BorderFactory.createEmptyBorder(6, 48, 6, 4));
+            // el espacio del interruptor lo ocupa un icono vacio: el aspecto de Windows ignora el borde
+            // izquierdo en estos botones y montaba el texto encima; el texto siempre va despues del icono
+            setIcon(new javax.swing.Icon() {
+                public void paintIcon(Component c, Graphics g, int x, int y) {
+                }
+
+                public int getIconWidth() {
+                    return ANCHO + 4;
+                }
+
+                public int getIconHeight() {
+                    return ALTO + 4;
+                }
+            });
+            setIconTextGap(8);
+            setMargin(new java.awt.Insets(0, 0, 0, 0));
+            setBorder(BorderFactory.createEmptyBorder(6, 0, 6, 4));
             setAlignmentX(Component.LEFT_ALIGNMENT);
             addItemListener(e -> repaint());
             addFocusListener(new java.awt.event.FocusAdapter() {
@@ -83,7 +102,7 @@ final class Controles {
         protected void paintComponent(Graphics g0) {
             Graphics2D g = (Graphics2D) g0.create();
             Tema.suavizar(g);
-            int w = 38, h = 22, x = 2, y = (getHeight() - h) / 2;
+            int w = ANCHO, h = ALTO, x = getInsets().left + 2, y = (getHeight() - h) / 2;
             if (isFocusOwner()) {
                 g.setColor(Tema.AZUL);
                 g.setStroke(new BasicStroke(2f));
